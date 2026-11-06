@@ -46,6 +46,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import android.os.SystemClock
+import com.music.bitchord.data.TrackLog
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -85,7 +87,15 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         // The shared trackers report model failures and their timings through
         // this; with no sink they went nowhere on the phone, which is how a
         // beat model that found nothing went unnoticed.
-        AnalysisLog.install { message, error -> Log.w(TAG, message, error) }
+        AnalysisLog.install { message, error ->
+            if (error != null) {
+                Log.w(TAG, message, error)
+                TrackLog.w(TAG, message, error)
+            } else {
+                Log.d(TAG, message)
+                TrackLog.d(TAG, message)
+            }
+        }
     }
 
     /**
@@ -393,7 +403,10 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // rest, and a queued track reaches its own transition carrying an
             // entry-only estimate: no content end, no mix-out anchor, no vocal
             // mask, which is most of what the outgoing half of a blend reads.
-            if (trackId in provisional && !usableComplete) cache.requestAnalysisHead(analysisUri)
+            if (trackId in provisional && !usableComplete) {
+                TrackLog.d(TAG, "Automix waiting for cache to complete on $trackId to run whole-track pass", trackId)
+                cache.requestAnalysisHead(analysisUri)
+            }
             return
         }
         // The strike count belongs to the attempt that was given up on, not to
@@ -443,9 +456,19 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 // backlog without needing to reach into the executor's queue.
                 if (stopped) return@execute
                 if (usableComplete) {
+                    val wholeStart = SystemClock.elapsedRealtime()
+                    TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
                     val outcome = analyze(trackId, analysisUri, durationSeconds)
                     val whole = outcome.analysis
                     if (whole != null) {
+                        val wholeTook = SystemClock.elapsedRealtime() - wholeStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix finished whole-track pass for $trackId in ${wholeTook}ms: bpm=${whole.bpm.roundToInt()} " +
+                                "conf=${"%.2f".format(Locale.ROOT, whole.beatConfidence)} " +
+                                "mixOut=${"%.1f".format(Locale.ROOT, whole.contentEndTime)}s",
+                            trackId,
+                        )
                         results[trackId] = whole
                         provisional.remove(trackId)
                         shortDecodes.remove(trackId)
@@ -463,6 +486,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                         // isn't re-decoded on every tick for the rest of the
                         // session. Any provisional head result already published
                         // stays: a partial analysis beats an empty one.
+                        TrackLog.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes", trackId)
                         Log.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes")
                         if (trackId !in provisional) {
                             results[trackId] = TrackAnalysis(
@@ -473,10 +497,19 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                         }
                     }
                 } else {
+                    val headStart = SystemClock.elapsedRealtime()
+                    TrackLog.d(TAG, "Automix head pass started for $trackId", trackId)
                     // Marked before it is published, so a reader on the playback
                     // thread can never see a provisional result that is not
                     // flagged as one.
                     analyzeHead(trackId, analysisUri, durationSeconds, headRendition!!)?.let { head ->
+                        val headTook = SystemClock.elapsedRealtime() - headStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix finished head pass for $trackId in ${headTook}ms: bpm=${head.bpm.roundToInt()} " +
+                                "conf=${"%.2f".format(Locale.ROOT, head.beatConfidence)}",
+                            trackId,
+                        )
                         provisional.add(trackId)
                         results[trackId] = head
                     }
@@ -488,6 +521,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 // entire failure mode is meant to be "this track goes
                 // unanalysed".
                 Log.w(TAG, "Analysis of $trackId failed", error)
+                TrackLog.w(TAG, "Analysis of $trackId failed: ${error.message}", error, trackId)
                 // A failed head pass records nothing: the whole-track pass reads
                 // a different, complete file and deserves its own attempt.
                 // [headWorthTrying] has already made sure the head is not tried
@@ -1078,7 +1112,9 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         // held while the models ran, in a process that was reaching a 256 MB heap limit and had
         // died on it. Returning is what releases them — a `val` cannot be nulled, and a narrower
         // scope alone does not make ART treat one as dead.
+        val dspStart = SystemClock.elapsedRealtime()
         val structural = structure(trackId, uri, copy, effectiveDuration)
+        val dspTook = SystemClock.elapsedRealtime() - dspStart
         // A party started while Pass 1 was decoding. Dropped as "no result"
         // rather than as a failure — the track was never measured, so nothing
         // should be recorded against it and nothing should stop it being
@@ -1090,6 +1126,12 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         if (stopped) return WholeTrack(null)
         if (structural.decodedShort) return WholeTrack(null, decodedShort = true)
         val features = structural.features ?: return WholeTrack(empty(trackId, effectiveDuration))
+        TrackLog.d(
+            TAG,
+            "Automix structural DSP for $trackId took ${dspTook}ms: bpm=${features.bpm.roundToInt()} " +
+                "key=${features.key} mixOut=${"%.1f".format(Locale.ROOT, features.contentEndTime)}s",
+            trackId,
+        )
 
         // Pass 2 (Phases 2 and 3, models): the Beat This! grid and the open-unmix vocal mask, over
         // the opening and the ending only. A transition only ever reads the tail of the outgoing
@@ -1110,7 +1152,17 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // standing in. A result assembled out of a half-finished analysis
             // is worse than none.
             if (stopped) return WholeTrack(null)
-            region(openSource, from, to, features)?.let(regions::add)
+            val winStart = SystemClock.elapsedRealtime()
+            val reg = region(openSource, from, to, features)
+            if (reg != null) {
+                regions.add(reg)
+                val winTook = SystemClock.elapsedRealtime() - winStart
+                TrackLog.d(
+                    TAG,
+                    "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                    trackId,
+                )
+            }
         }
         if (stopped) return WholeTrack(null)
 
@@ -1219,7 +1271,8 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         val spans = if (tailStart <= headEnd) {
             listOf(0.0 to duration)
         } else {
-            listOf(0.0 to headEnd, tailStart to duration)
+            // Process the tail span first so the outgoing track's mix-out grid is ready immediately
+            listOf(tailStart to duration, 0.0 to headEnd)
         }
         val windows = ArrayList<Pair<Double, Double>>()
         for ((from, to) in spans) {

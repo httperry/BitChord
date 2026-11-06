@@ -1303,6 +1303,18 @@ class PlaybackService : MediaLibraryService() {
         localBitrateCache.clear()
         measuredBitrateCache.clear()
         QualityUpgrade.forgetLastSession()
+        TrackLog.automixLine = { videoId ->
+            val analysis = trackAnalyzer.analysisFor(videoId)
+            if (analysis.isUsable) {
+                val grid = if (analysis.tailBeats != null || analysis.headBeats != null) "model grid" else "dsp grid"
+                val key = analysis.key.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty()
+                "automix: analysed (${analysis.bpm.roundToInt()} BPM$key, $grid ${"%.2f".format(java.util.Locale.ROOT, analysis.beatConfidence)}, mixOut=${"%.1f".format(java.util.Locale.ROOT, analysis.contentEndTime)}s)"
+            } else if (trackAnalyzer.isAnalysing(videoId)) {
+                "automix: analysing in progress"
+            } else {
+                null
+            }
+        }
 
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)

@@ -19,6 +19,7 @@ import com.music.bitchord.data.settings.SmartAnalysis
 import com.music.bitchord.data.settings.TrackAnalysisState
 import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.data.lyrics.LyricLine
+import com.music.bitchord.data.TrackLog
 import com.music.bitchord.playback.loopmix.LoopMixPort
 import com.music.bitchord.playback.loopmix.LoopMixRenderer
 import com.music.bitchord.playback.loopmix.LoopMixSession
@@ -1119,6 +1120,9 @@ class CrossfadeController(
             )
         }
 
+        if (plan != lastSmartPlan && !plan.blocked) {
+            TrackLog.d(TAG, "Automix plan for ${currentItem.mediaId} -> ${nextItem.mediaId}: style=${plan.transitionStyle} fade=${"%.1f".format(Locale.ROOT, plan.fadeSeconds)}s", currentItem.mediaId)
+        }
         lastSmartPlan = plan
         lastSmartPlanStartMs = (plan.transitionStart * 1000).roundToLong()
 
@@ -1673,6 +1677,7 @@ class CrossfadeController(
         incomingAnalysis = into.currentMediaItem?.let(analysisFor) ?: TrackAnalysis()
 
         Log.d(TAG, "blend start at cue=${into.currentPosition}ms out=${out.currentPosition}ms")
+        TrackLog.d(TAG, "Automix blend started at cue=${into.currentPosition}ms out=${out.currentPosition}ms style=${currentTransitionStyle} fade=${"%.1f".format(Locale.ROOT, transitionDuration)}s", out.currentMediaItem?.mediaId)
 
         // Published before the mix flag, in the same tick: the scrubber shows
         // the old sheen for a mix flag with no blend beside it, and would flash
@@ -1709,6 +1714,8 @@ class CrossfadeController(
         listenTo(into)
         handedOff = true
         onHandoff(out, into)
+        Log.d(TAG, "handoff at in=${into.currentPosition}ms out=${out.currentPosition}ms")
+        TrackLog.d(TAG, "Automix handoff at in=${into.currentPosition}ms out=${out.currentPosition}ms", into.currentMediaItem?.mediaId)
 
         // The outgoing player holds the whole queue too, and a standard
         // crossfade runs right up to its track's natural end — at which point

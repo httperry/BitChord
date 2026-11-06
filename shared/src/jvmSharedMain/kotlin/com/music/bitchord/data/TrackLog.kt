@@ -67,6 +67,10 @@ object TrackLog {
     @Volatile
     var sourcesLine: () -> String? = { null }
 
+    /** The exported header's line for Automix status, where available. */
+    @Volatile
+    var automixLine: (String) -> String? = { null }
+
     /** The platform's own closing lines for an exported log's header — the build, the device. */
     @Volatile
     var headerLines: () -> List<String> = { emptyList() }
@@ -233,6 +237,7 @@ object TrackLog {
         appendLine("id=${song.videoId} duration=${song.durationText ?: "?"} album=${song.albumName ?: "?"}")
         appendLine("playing: ${stats.describe()}")
         sourcesLine()?.let(::appendLine)
+        automixLine(song.videoId)?.let(::appendLine)
         appendLine(
             "window: ${from?.let { CLOCK.format(Date(it)) } ?: "everything held"} → " +
                 "${CLOCK.format(Date())} ($count lines" +
