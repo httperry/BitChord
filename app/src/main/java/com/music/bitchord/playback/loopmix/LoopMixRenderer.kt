@@ -95,5 +95,6 @@ class LoopMixRenderer(val sampleRate: Int) : AutoCloseable {
         @JvmStatic private external fun nativeRender(handle: Long, frame: Long, interleaved: FloatArray, offset: Int, frames: Int)
         @JvmStatic private external fun nativeSetFadeOut(handle: Long, index: Int, trackSeconds: Double)
         @JvmStatic private external fun nativeHeard(handle: Long, index: Int): Double
+        @JvmStatic external fun nativeSpliceLag(song: FloatArray, deck: FloatArray, length: Int, maxLag: Int): DoubleArray?
     }
 }

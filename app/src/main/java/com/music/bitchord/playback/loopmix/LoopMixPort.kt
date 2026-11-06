@@ -142,6 +142,12 @@ class LoopMixPort {
      */
     fun spliceLag(maxLag: Int = 960): Pair<Int, Double>? {
         if (!spliceCaptured) return null
+        if (LoopMixRenderer.available) {
+            val fast = LoopMixRenderer.nativeSpliceLag(spliceSong, spliceDeck, SPLICE_CAPTURE, maxLag)
+            if (fast != null && fast.size == 2) {
+                return fast[0].toInt() to fast[1]
+            }
+        }
         var best = 0
         var bestScore = Double.NEGATIVE_INFINITY
         var bestNorm = 0.0

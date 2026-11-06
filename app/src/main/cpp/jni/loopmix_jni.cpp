@@ -6,7 +6,12 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <cmath>
 #include <new>
+
+#if defined(__ARM_NEON) || defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 #include "loopmix/loop_mix_renderer.h"
 
@@ -115,6 +120,96 @@ JNIEXPORT jdouble JNICALL
 Java_com_music_bitchord_playback_loopmix_LoopMixRenderer_nativeHeard(JNIEnv*, jclass, jlong handle, jint index) {
   Deck* deck = DeckOf(handle, index);
   return deck != nullptr ? deck->heard.load() : 0.0;
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_music_bitchord_playback_loopmix_LoopMixRenderer_nativeSpliceLag(
+    JNIEnv* env, jclass, jfloatArray songArray, jfloatArray deckArray, jint length, jint maxLag) {
+  if (songArray == nullptr || deckArray == nullptr || length <= 0 || maxLag <= 0) return nullptr;
+
+  auto* song = static_cast<jfloat*>(env->GetPrimitiveArrayCritical(songArray, nullptr));
+  if (song == nullptr) return nullptr;
+  auto* deck = static_cast<jfloat*>(env->GetPrimitiveArrayCritical(deckArray, nullptr));
+  if (deck == nullptr) {
+    env->ReleasePrimitiveArrayCritical(songArray, song, JNI_ABORT);
+    return nullptr;
+  }
+
+  int bestLag = 0;
+  double bestScore = -1e18;
+  double bestNorm = 0.0;
+
+  for (int lag = -maxLag; lag <= maxLag; ++lag) {
+    const int from = std::max(0, -lag);
+    const int to = std::min((int)length, (int)(length - lag));
+    const int count = to - from;
+    if (count <= 0) continue;
+
+    const float* s = song + from;
+    const float* d = deck + from + lag;
+
+    double dot = 0.0;
+    double sSum = 0.0;
+    double dSum = 0.0;
+
+#if defined(__ARM_NEON) || defined(__aarch64__)
+    float32x4_t vDot = vdupq_n_f32(0.0f);
+    float32x4_t vSong = vdupq_n_f32(0.0f);
+    float32x4_t vDeck = vdupq_n_f32(0.0f);
+
+    int i = 0;
+    for (; i + 4 <= count; i += 4) {
+      float32x4_t a = vld1q_f32(s + i);
+      float32x4_t b = vld1q_f32(d + i);
+      vDot = vmlaq_f32(vDot, a, b);
+      vSong = vmlaq_f32(vSong, a, a);
+      vDeck = vmlaq_f32(vDeck, b, b);
+    }
+
+    float fDot[4], fSong[4], fDeck[4];
+    vst1q_f32(fDot, vDot);
+    vst1q_f32(fSong, vSong);
+    vst1q_f32(fDeck, vDeck);
+
+    dot = (double)fDot[0] + fDot[1] + fDot[2] + fDot[3];
+    sSum = (double)fSong[0] + fSong[1] + fSong[2] + fSong[3];
+    dSum = (double)fDeck[0] + fDeck[1] + fDeck[2] + fDeck[3];
+
+    for (; i < count; ++i) {
+      const double a = s[i];
+      const double b = d[i];
+      dot += a * b;
+      sSum += a * a;
+      dSum += b * b;
+    }
+#else
+    for (int i = 0; i < count; ++i) {
+      const double a = s[i];
+      const double b = d[i];
+      dot += a * b;
+      sSum += a * a;
+      dSum += b * b;
+    }
+#endif
+
+    const double norm = std::sqrt(sSum * dSum);
+    if (norm > 0.0 && (dot / norm) > bestScore) {
+      bestScore = dot / norm;
+      bestLag = lag;
+      bestNorm = norm;
+    }
+  }
+
+  env->ReleasePrimitiveArrayCritical(deckArray, deck, JNI_ABORT);
+  env->ReleasePrimitiveArrayCritical(songArray, song, JNI_ABORT);
+
+  if (bestNorm <= 0.0) return nullptr;
+
+  jdoubleArray result = env->NewDoubleArray(2);
+  if (result == nullptr) return nullptr;
+  jdouble out[2] = {static_cast<double>(bestLag), bestScore};
+  env->SetDoubleArrayRegion(result, 0, 2, out);
+  return result;
 }
 
 }  // extern "C"
