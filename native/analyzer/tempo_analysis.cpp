@@ -40,7 +40,7 @@
 #include <numeric>
 #include <vector>
 
-#if defined(__ARM_NEON) || defined(__aarch64__)
+#if defined(__aarch64__)
 #include <arm_neon.h>
 #endif
 
@@ -195,7 +195,7 @@ double CorrelationWithPrefix(
   const double* p_right = values.data();
   const size_t count = length - lag;
 
-#if defined(__ARM_NEON) || defined(__aarch64__)
+#if defined(__aarch64__)
   float64x2_t vcross0 = vdupq_n_f64(0.0);
   float64x2_t vcross1 = vdupq_n_f64(0.0);
   size_t i = 0;
