@@ -49,6 +49,8 @@ import kotlinx.coroutines.launch
 import com.music.bitchord.data.TrackLog
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
@@ -254,6 +256,13 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
 
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "bitchord-smart-analysis").apply {
+            isDaemon = true
+            priority = Thread.NORM_PRIORITY
+        }
+    }
+
+    private val decodeExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "bitchord-audio-decoder").apply {
             isDaemon = true
             priority = Thread.NORM_PRIORITY
         }
@@ -1156,23 +1165,90 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         val headEnd = minOf(effectiveDuration, HEAD_MODEL_WINDOWS * span - (HEAD_MODEL_WINDOWS - 1) * WINDOW_OVERLAP_SECONDS)
         val tailStart = max(0.0, effectiveDuration - (TAIL_MODEL_WINDOWS * span - (TAIL_MODEL_WINDOWS - 1) * WINDOW_OVERLAP_SECONDS))
         val regions = ArrayList<Region>()
-        for ((from, to) in modelWindows(headEnd, tailStart, effectiveDuration, span)) {
-            // Checked between windows: an abort leaves a window missing, which
-            // is indistinguishable from one the models found nothing in — and
-            // that would be published, and persisted, with the DSP estimate
-            // standing in. A result assembled out of a half-finished analysis
-            // is worse than none.
+
+        if (tailStart <= headEnd) {
+            // Short track: single span covering entire track
+            val spanWindows = windowsForSpan(0.0, effectiveDuration, span)
+            val decoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, effectiveDuration) { stopped } }
+            if (decoded != null) {
+                val (stereo, actualStart) = decoded
+                for ((from, to) in spanWindows) {
+                    if (stopped) return WholeTrack(null)
+                    val winStart = SystemClock.elapsedRealtime()
+                    val sliced = sliceStereoPcm(stereo, actualStart, from, to)
+                    val reg = sliced?.let { (sStereo, sStart) -> analyzeStereoRegion(sStereo, sStart, features) }
+                    if (reg != null) {
+                        regions.add(reg)
+                        val winTook = SystemClock.elapsedRealtime() - winStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                            trackId,
+                        )
+                    }
+                }
+            }
+        } else {
+            // Standard track: 2-span chunked decode with asynchronous pipeline overlap
+            val tailWindows = windowsForSpan(tailStart, effectiveDuration, span)
+            val headWindows = windowsForSpan(0.0, headEnd, span)
+
+            // Step 1: Decode Tail Span on current thread
+            val tailDecoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, tailStart, effectiveDuration) { stopped } }
             if (stopped) return WholeTrack(null)
-            val winStart = SystemClock.elapsedRealtime()
-            val reg = region(openSource, from, to, features)
-            if (reg != null) {
-                regions.add(reg)
-                val winTook = SystemClock.elapsedRealtime() - winStart
-                TrackLog.d(
-                    TAG,
-                    "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
-                    trackId,
-                )
+
+            // Step 2: Asynchronously kick off Head Span decode while GPU executes Tail windows
+            val headFuture = CompletableFuture.supplyAsync({
+                if (stopped) null
+                else openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+            }, decodeExecutor)
+
+            // Step 3: Run Tail windows on GPU from the decoded Tail buffer
+            if (tailDecoded != null) {
+                val (tailStereo, tailActualStart) = tailDecoded
+                for ((from, to) in tailWindows) {
+                    if (stopped) {
+                        headFuture.cancel(true)
+                        return WholeTrack(null)
+                    }
+                    val winStart = SystemClock.elapsedRealtime()
+                    val sliced = sliceStereoPcm(tailStereo, tailActualStart, from, to)
+                    val reg = sliced?.let { (sStereo, sStart) -> analyzeStereoRegion(sStereo, sStart, features) }
+                    if (reg != null) {
+                        regions.add(reg)
+                        val winTook = SystemClock.elapsedRealtime() - winStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                            trackId,
+                        )
+                    }
+                }
+            }
+
+            // Step 4: Retrieve pre-decoded Head Span (typically completed while GPU was running)
+            val headDecoded = runCatching { headFuture.get(15, TimeUnit.SECONDS) }.getOrNull()
+                ?: openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+            if (stopped) return WholeTrack(null)
+
+            // Step 5: Run Head windows on GPU from the decoded Head buffer
+            if (headDecoded != null) {
+                val (headStereo, headActualStart) = headDecoded
+                for ((from, to) in headWindows) {
+                    if (stopped) return WholeTrack(null)
+                    val winStart = SystemClock.elapsedRealtime()
+                    val sliced = sliceStereoPcm(headStereo, headActualStart, from, to)
+                    val reg = sliced?.let { (sStereo, sStart) -> analyzeStereoRegion(sStereo, sStart, features) }
+                    if (reg != null) {
+                        regions.add(reg)
+                        val winTook = SystemClock.elapsedRealtime() - winStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                            trackId,
+                        )
+                    }
+                }
             }
         }
         if (stopped) return WholeTrack(null)
@@ -1278,6 +1354,22 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
      * neighbour by [WINDOW_OVERLAP_SECONDS] so the beat at a seam is seen from
      * both sides. A short track, where the two spans meet, is covered once.
      */
+    private fun windowsForSpan(from: Double, to: Double, span: Double): List<Pair<Double, Double>> {
+        val length = to - from
+        if (length < 1.0) return emptyList()
+        if (length <= span) return listOf(from to to)
+        // As few windows as cover the span with at least the overlap between
+        // neighbours, spread evenly from its start to its end.
+        val count = ceil((length - WINDOW_OVERLAP_SECONDS) / (span - WINDOW_OVERLAP_SECONDS) - 1e-6).toInt()
+        val stride = (length - span) / (count - 1)
+        val windows = ArrayList<Pair<Double, Double>>(count)
+        for (index in 0 until count) {
+            val start = from + index * stride
+            windows += start to minOf(to, start + span)
+        }
+        return windows
+    }
+
     private fun modelWindows(headEnd: Double, tailStart: Double, duration: Double, span: Double): List<Pair<Double, Double>> {
         val spans = if (tailStart <= headEnd) {
             listOf(0.0 to duration)
@@ -1285,24 +1377,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // Process the tail span first so the outgoing track's mix-out grid is ready immediately
             listOf(tailStart to duration, 0.0 to headEnd)
         }
-        val windows = ArrayList<Pair<Double, Double>>()
-        for ((from, to) in spans) {
-            val length = to - from
-            if (length < 1.0) continue
-            if (length <= span) {
-                windows += from to to
-                continue
-            }
-            // As few windows as cover the span with at least the overlap between
-            // neighbours, spread evenly from its start to its end.
-            val count = ceil((length - WINDOW_OVERLAP_SECONDS) / (span - WINDOW_OVERLAP_SECONDS) - 1e-6).toInt()
-            val stride = (length - span) / (count - 1)
-            for (index in 0 until count) {
-                val start = from + index * stride
-                windows += start to minOf(to, start + span)
-            }
-        }
-        return windows
+        return spans.flatMap { (from, to) -> windowsForSpan(from, to, span) }
     }
 
     /** One beat list across the windows: at each overlap, the earlier window's beats before its midpoint, the later's after. */
@@ -1368,40 +1443,41 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
      * The extractor seeks to a sync sample at or before what was asked for, so the region's real
      * start (not [startSeconds]) is what its beat times must be stated against.
      */
-    private fun region(
-        openSource: () -> MediaDataSource?,
-        startSeconds: Double,
-        endSeconds: Double,
+    private fun sliceStereoPcm(
+        spanStereo: AudioDecoder.StereoPcm,
+        spanActualStart: Double,
+        from: Double,
+        to: Double,
+    ): Pair<AudioDecoder.StereoPcm, Double>? {
+        val sampleRate = spanStereo.sampleRate
+        if (sampleRate <= 0.0 || spanStereo.left.isEmpty()) return null
+        val offsetSeconds = max(0.0, from - spanActualStart)
+        val startIndex = (offsetSeconds * sampleRate).toInt().coerceIn(0, spanStereo.left.size)
+        val endOffsetSeconds = max(offsetSeconds, to - spanActualStart)
+        val endIndex = (endOffsetSeconds * sampleRate).toInt().coerceIn(startIndex, spanStereo.left.size)
+        if (endIndex - startIndex < sampleRate) return null
+        val actualStart = spanActualStart + (startIndex.toDouble() / sampleRate)
+        val sliced = AudioDecoder.StereoPcm(
+            left = spanStereo.left.copyOfRange(startIndex, endIndex),
+            right = spanStereo.right.copyOfRange(startIndex, endIndex),
+            sampleRate = sampleRate,
+        )
+        return sliced to actualStart
+    }
+
+    private fun analyzeStereoRegion(
+        stereo: AudioDecoder.StereoPcm,
+        actualStart: Double,
         features: TrackFeatures.Features?,
         deriveFeatures: Boolean = false,
     ): Region? {
-        val decoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, startSeconds, endSeconds) { stopped } }
-            ?: run {
-                // The two ways this comes back empty mean opposite things and
-                // were reported identically, which cost a round of guessing:
-                // this one is the extractor refusing the container outright, so
-                // the bytes are wrong or not enough of them are there to parse.
-                Log.d(TAG, "Region [$startSeconds, $endSeconds) would not open")
-                return null
-            }
-        val (stereo, actualStart) = decoded
         if (stereo.left.size < stereo.sampleRate) {
-            // And this one is a container that parsed fine and yielded under a
-            // second of audio — a decode that started and ran out, not one that
-            // never started.
-            Log.d(TAG, "Region [$startSeconds, $endSeconds) decoded ${stereo.left.size} frames; too few")
+            Log.d(TAG, "Region decoded ${stereo.left.size} frames; too few")
             return null
         }
 
         val seconds = stereo.left.size / stereo.sampleRate
-        // In a frame of its own so the full-rate mono downmix is released before either model runs.
-        // It is 23 MB for this window at 48 kHz — the same size as each of the two channels it
-        // averages — and it is read exactly twice, to make the resampled model input and the DSP
-        // one. As a local it would nonetheless stay reachable through `tracker.track` and
-        // `vocalMask` below, which is where the analysis allocates most heavily and where the
-        // process was dying. Same reasoning [derived] already had, one level further out.
         val inputs = regionInputs(stereo, seconds, deriveFeatures)
-
         val vocalValues = if (features != null) vocalValues(stereo) else null
         return Region(
             grid = inputs.forModel?.let { tracker.track(it, offsetSeconds = actualStart) },
@@ -1412,6 +1488,22 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             vocalWindow = vocalValues?.let { CurveWindow(actualStart, VocalSpectrogram.frameRate, it) },
             levelWindow = if (features != null) levelCurve(stereo, actualStart) else null,
         )
+    }
+
+    private fun region(
+        openSource: () -> MediaDataSource?,
+        startSeconds: Double,
+        endSeconds: Double,
+        features: TrackFeatures.Features?,
+        deriveFeatures: Boolean = false,
+    ): Region? {
+        val decoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, startSeconds, endSeconds) { stopped } }
+            ?: run {
+                Log.d(TAG, "Region [$startSeconds, $endSeconds) would not open")
+                return null
+            }
+        val (stereo, actualStart) = decoded
+        return analyzeStereoRegion(stereo, actualStart, features, deriveFeatures)
     }
 
     /**
@@ -1625,6 +1717,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
 
     fun release() {
         executor.shutdownNow()
+        decodeExecutor.shutdownNow()
         sourceResolutionScope.cancel()
         sourceAnalysisUris.clear()
         sourceResolutions.clear()

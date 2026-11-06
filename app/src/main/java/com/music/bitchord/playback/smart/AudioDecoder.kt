@@ -49,6 +49,7 @@ object AudioDecoder {
 
     private const val TAG = "BitChordAudioDecoder"
     private const val TIMEOUT_US = 10_000L
+    private const val PIPELINE_TIMEOUT_US = 1_000L
 
     /** Decoded mono PCM at the container's own sample rate; the caller resamples. */
     data class Pcm(val samples: FloatArray, val sampleRate: Double)
@@ -244,7 +245,7 @@ object AudioDecoder {
                     }
                 }
 
-                var timeout = if (progressed) 0L else TIMEOUT_US
+                var timeout = if (progressed) PIPELINE_TIMEOUT_US else TIMEOUT_US
                 while (!outputDone) {
                     val outputIndex = codec.dequeueOutputBuffer(bufferInfo, timeout)
                     if (outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) break
