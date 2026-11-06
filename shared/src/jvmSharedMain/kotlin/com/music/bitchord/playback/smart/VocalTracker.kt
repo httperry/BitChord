@@ -176,14 +176,19 @@ class VocalTracker(
         val resampledRight = MelSpectrogram.resample(right, rate, VocalSpectrogram.sampleRate) ?: return null
 
         val started = System.currentTimeMillis()
+        val stftStart = System.currentTimeMillis()
         val spectrogram = VocalSpectrogram.compute(resampledLeft, resampledRight) ?: return null
+        val stftMs = System.currentTimeMillis() - stftStart
         if (spectrogram.frames > FIXED_FRAMES) {
             AnalysisLog.warn("Window of ${spectrogram.frames} frames exceeds the model's $FIXED_FRAMES")
             return null
         }
+        val sessionStart = System.currentTimeMillis()
         val active = session() ?: return null
+        val sessionMs = System.currentTimeMillis() - sessionStart
 
         return runCatching {
+            val inferStart = System.currentTimeMillis()
             val bins = spectrogram.bins
             // Direct, and sized for the model rather than for the input, so the
             // ~16MB of mix never lands on the Java heap and ORT reads it where it
@@ -212,8 +217,10 @@ class VocalTracker(
                     // average.
                     val target = (outputs.get(0) as OnnxTensor).floatBuffer
                     val curve = reduceToBandCurve(backing.asFloatBuffer(), target, bins, spectrogram.frames)
-                    AnalysisLog.warn("vocal mask ${spectrogram.frames} frames in " +
-                            "${System.currentTimeMillis() - started}ms",
+                    val inferMs = System.currentTimeMillis() - inferStart
+                    AnalysisLog.warn("vocal mask ${spectrogram.frames} frames: " +
+                            "stft=${stftMs}ms session=${sessionMs}ms infer=${inferMs}ms " +
+                            "total=${System.currentTimeMillis() - started}ms",
                     )
                     curve
                 }

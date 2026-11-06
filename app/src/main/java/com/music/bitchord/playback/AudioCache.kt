@@ -1860,7 +1860,7 @@ object AudioCache {
         )
     }
 
-    fun requestAnalysisHead(uri: Uri) {
+    fun requestAnalysisHead(uri: Uri, force: Boolean = false) {
         // Each of these gates used to stop a head dead with nothing in the
         // log to show for it: an unwired cache or upstream looked from the
         // outside exactly like a network that refuses everything.
@@ -1873,6 +1873,10 @@ object AudioCache {
             return
         }
         val videoId = uri.getQueryParameter("v") ?: return
+        if (force) {
+            analysisHeads.remove(videoId)
+            analysisHeadsInFlight.remove(videoId)
+        }
         // One round per track per session, and it is sized correctly up front
         // rather than grown into. See [analysisHeadSize] for why growing it was
         // the wrong shape.

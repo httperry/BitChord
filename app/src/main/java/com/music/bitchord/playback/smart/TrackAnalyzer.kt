@@ -333,6 +333,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         // A track measured in an earlier session costs nothing to restore, so
         // only the work below waits for the phone to cool.
         if (overheated) {
+            TrackLog.w(TAG, "Analysis skipped for $trackId: thermal status $thermalStatus >= SEVERE (waiting for device to cool)", trackId)
             restoreOnce(trackId)
             return
         }
@@ -411,7 +412,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // mask, which is most of what the outgoing half of a blend reads.
             if (isCurrentTrack && trackId in provisional && !usableComplete) {
                 TrackLog.d(TAG, "Automix waiting for cache to complete on $trackId to run whole-track pass", trackId)
-                cache.requestAnalysisHead(analysisUri)
+                cache.requestAnalysisHead(analysisUri, force = true)
             }
             return
         }
@@ -423,12 +424,8 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         val shouldAnalyzeWhole = isCurrentTrack && usableComplete
         val headRendition = if (shouldAnalyzeWhole) null else (headWorthTrying(trackId, analysisUri, durationSeconds) ?: complete.firstOrNull())
         if (!shouldAnalyzeWhole && headRendition == null) {
-            // Nothing on disk worth decoding, so ask for something. Every other
-            // writer either fetches this track's opening too late to matter or
-            // never fetches it at all — see [AudioCache.requestAnalysisHead],
-            // which is a no-op after the first call and for anything that isn't
-            // a YouTube-backed track.
-            cache.requestAnalysisHead(analysisUri)
+            // Nothing on disk worth decoding, so ask for something.
+            cache.requestAnalysisHead(analysisUri, force = isCurrentTrack)
             return
         }
         if (!running.add(trackId)) return
@@ -440,8 +437,6 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 Process.setThreadPriority(
                     if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.EFFICIENT) {
                         Process.THREAD_PRIORITY_BACKGROUND
-                    } else if (isCurrentTrack) {
-                        Process.THREAD_PRIORITY_FOREGROUND
                     } else {
                         Process.THREAD_PRIORITY_DEFAULT
                     },
@@ -1002,8 +997,10 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         effectiveDuration: Double,
     ): Structural {
         val structRate = TrackFeatures.sampleRate
+        val t0 = SystemClock.elapsedRealtime()
         val decoded = copy.open()?.use { AudioDecoder.decodeRegion(it, 0.0, effectiveDuration) { stopped } }
             ?: return Structural(null)
+        val t1 = SystemClock.elapsedRealtime()
         val (pcm, _) = decoded
 
         // A decode that stops early is indistinguishable, downstream, from a
@@ -1069,13 +1066,23 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             return Structural(null, decodedShort = true)
         }
 
+        val t2 = SystemClock.elapsedRealtime()
         val samples = if (abs(pcm.sampleRate - structRate) > 1.0) {
             TrackFeatures.resample(pcm.samples, pcm.sampleRate, structRate) ?: return Structural(null)
         } else {
             pcm.samples
         }
+        val t3 = SystemClock.elapsedRealtime()
 
-        return Structural(TrackFeatures.analyze(samples, effectiveDuration))
+        val analysis = TrackFeatures.analyze(samples, effectiveDuration)
+        val t4 = SystemClock.elapsedRealtime()
+        TrackLog.d(
+            TAG,
+            "Pass1 breakdown for $trackId: decode=${t1 - t0}ms, resample=${t3 - t2}ms, dsp=${t4 - t3}ms, total=${t4 - t0}ms",
+            trackId,
+        )
+
+        return Structural(analysis)
     }
 
     /**

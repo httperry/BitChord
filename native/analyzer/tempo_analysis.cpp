@@ -40,6 +40,10 @@
 #include <numeric>
 #include <vector>
 
+#if defined(__ARM_NEON) || defined(__aarch64__)
+#include <arm_neon.h>
+#endif
+
 namespace bitchord::smart {
 namespace {
 
@@ -171,20 +175,60 @@ OnsetEnvelopes OnsetEnvelope(
 
 // Energy-normalized autocorrelation: sum(x[n]x[n-lag]) divided by the geometric
 // mean of both lagged energies. The epsilon keeps silent input finite.
+// Uses precomputed prefix sum of squared values so energy terms are O(1),
+// and vectorizes the cross-product accumulation on ARM NEON.
+double CorrelationWithPrefix(
+    const std::vector<double>& values,
+    const std::vector<double>& sq_prefix,
+    int lag,
+    size_t limit) {
+  const size_t length = std::min(limit, values.size());
+  if (lag <= 0 || static_cast<size_t>(lag) >= length) return 0;
+
+  const double left_energy = sq_prefix[length] - sq_prefix[lag];
+  const double right_energy = sq_prefix[length - lag] - sq_prefix[0];
+  const double denom = std::sqrt(std::max(1e-12, left_energy * right_energy));
+  if (denom <= 1e-12) return 0;
+
+  double cross = 0;
+  const double* p_left = values.data() + lag;
+  const double* p_right = values.data();
+  const size_t count = length - lag;
+
+#if defined(__ARM_NEON) || defined(__aarch64__)
+  float64x2_t vcross0 = vdupq_n_f64(0.0);
+  float64x2_t vcross1 = vdupq_n_f64(0.0);
+  size_t i = 0;
+  for (; i + 4 <= count; i += 4) {
+    float64x2_t l0 = vld1q_f64(p_left + i);
+    float64x2_t r0 = vld1q_f64(p_right + i);
+    float64x2_t l1 = vld1q_f64(p_left + i + 2);
+    float64x2_t r1 = vld1q_f64(p_right + i + 2);
+    vcross0 = vfmaq_f64(vcross0, l0, r0);
+    vcross1 = vfmaq_f64(vcross1, l1, r1);
+  }
+  float64x2_t vsum = vaddq_f64(vcross0, vcross1);
+  cross = vgetq_lane_f64(vsum, 0) + vgetq_lane_f64(vsum, 1);
+  for (; i < count; ++i) {
+    cross += p_left[i] * p_right[i];
+  }
+#else
+  for (size_t i = 0; i < count; ++i) {
+    cross += p_left[i] * p_right[i];
+  }
+#endif
+
+  return cross / denom;
+}
+
 double Correlation(const std::vector<double>& values, int lag, size_t limit) {
   const size_t length = std::min(limit, values.size());
   if (lag <= 0 || static_cast<size_t>(lag) >= length) return 0;
-  double cross = 0;
-  double left_energy = 0;
-  double right_energy = 0;
-  for (size_t index = lag; index < length; ++index) {
-    const double left = values[index];
-    const double right = values[index - lag];
-    cross += left * right;
-    left_energy += left * left;
-    right_energy += right * right;
+  std::vector<double> sq_prefix(length + 1, 0.0);
+  for (size_t i = 0; i < length; ++i) {
+    sq_prefix[i + 1] = sq_prefix[i] + values[i] * values[i];
   }
-  return cross / std::sqrt(std::max(1e-12, left_energy * right_energy));
+  return CorrelationWithPrefix(values, sq_prefix, lag, limit);
 }
 
 // Linear interpolation lets sub-frame lag refinement participate in phase
@@ -240,6 +284,13 @@ TempoResult AnalyzeTempo(
     envelope.size(),
     static_cast<size_t>(frames_per_second * kMaxTempoSearchSeconds)
   );
+
+  // Precompute cumulative squared energy prefix array for O(1) autocorrelation normalization.
+  std::vector<double> sq_prefix(search_limit + 1, 0.0);
+  for (size_t i = 0; i < search_limit; ++i) {
+    sq_prefix[i + 1] = sq_prefix[i] + envelope[i] * envelope[i];
+  }
+
   const int minimum_lag = std::max(2, static_cast<int>(std::floor(frames_per_second * 60.0 / 200.0)));
   const int maximum_lag = static_cast<int>(std::ceil(frames_per_second * 60.0 / 70.0));
   std::vector<double> scores(maximum_lag + 1, 0);
@@ -247,8 +298,8 @@ TempoResult AnalyzeTempo(
   for (int lag = minimum_lag; lag <= maximum_lag; ++lag) {
     const double bpm = frames_per_second * 60.0 / lag;
     const double tempo_prior = std::exp(-std::pow((bpm - 118.0) / 75.0, 2.0));
-    scores[lag] = Correlation(envelope, lag, search_limit) +
-      0.42 * Correlation(envelope, lag * 2, search_limit) +
+    scores[lag] = CorrelationWithPrefix(envelope, sq_prefix, lag, search_limit) +
+      0.42 * CorrelationWithPrefix(envelope, sq_prefix, lag * 2, search_limit) +
       0.08 * tempo_prior;
     if (scores[lag] > scores[best_lag]) best_lag = lag;
   }
@@ -272,7 +323,7 @@ TempoResult AnalyzeTempo(
       if (candidate < minimum_lag || candidate > maximum_lag) continue;
       const double bpm = frames_per_second * 60.0 / candidate;
       const double score =
-        Correlation(envelope, candidate, search_limit) * MetricalPrior(bpm);
+        CorrelationWithPrefix(envelope, sq_prefix, candidate, search_limit) * MetricalPrior(bpm);
       if (score > best_metrical) {
         best_metrical = score;
         metrical_lag = candidate;
@@ -286,9 +337,9 @@ TempoResult AnalyzeTempo(
     // Refined against raw correlation rather than `scores`, because the octave
     // decision above may have moved the winner to a lag whose combined score
     // was never the local maximum the parabola assumes.
-    const double left = Correlation(envelope, best_lag - 1, search_limit);
-    const double center = Correlation(envelope, best_lag, search_limit);
-    const double right = Correlation(envelope, best_lag + 1, search_limit);
+    const double left = CorrelationWithPrefix(envelope, sq_prefix, best_lag - 1, search_limit);
+    const double center = CorrelationWithPrefix(envelope, sq_prefix, best_lag, search_limit);
+    const double right = CorrelationWithPrefix(envelope, sq_prefix, best_lag + 1, search_limit);
     const double denominator = left - 2.0 * center + right;
     if (std::abs(denominator) > 1e-9) {
       refined_lag += Clamp(0.5 * (left - right) / denominator, -0.5, 0.5);

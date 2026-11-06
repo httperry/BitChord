@@ -24,12 +24,15 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <numeric>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <android/log.h>
 
 // Offline DSP implementation: reusable vectors and percentile copies favor
 // readable whole-track analysis over real-time allocation constraints.
@@ -294,6 +297,16 @@ double VocalProbabilityFrom(double low, double vocal, double high, double flatne
 }
 
 // `vocal_frames` receives one probability per accepted frame, which is what
+// Precomputed 4096-element Hann window table once for zero-trig frame windowing.
+static const auto kHannWindow4096 = []() {
+  std::array<double, 4096> w{};
+  for (size_t i = 0; i < 4096; ++i) {
+    w[i] = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / (4096.0 - 1.0));
+  }
+  return w;
+}();
+
+// `vocal_frames` receives one probability per accepted frame, which is what
 // makes vocal activity a curve rather than a single number for the whole
 // track. A transition needs to know whether a voice is present *at the
 // overlap*, not whether the track has singing in it somewhere.
@@ -319,12 +332,44 @@ void AnalyzeKeyAndTimbre(
   double flatness_total = 0;
   size_t accepted_frames = 0;
 
+  // Precompute bin profile table once per call for this sample_rate, replacing
+  // repeated log2/division/trig calls across thousands of frames with instant lookups.
+  struct BinProfile {
+    bool active;
+    int band; // 0 = low (<250), 1 = vocal (250..4000), 2 = high (>4000)
+    int pitch_class; // 0..11, or -1 if > 5000
+  };
+
+  std::vector<BinProfile> bin_profiles(frame_size / 2);
+  const double max_freq = std::min(5000.0, sample_rate * 0.48);
+  for (size_t bin = 1; bin < frame_size / 2; ++bin) {
+    const double frequency = bin * sample_rate / static_cast<double>(frame_size);
+    if (frequency < 45.0 || frequency > max_freq) {
+      bin_profiles[bin].active = false;
+      continue;
+    }
+    bin_profiles[bin].active = true;
+    if (frequency < 250.0) {
+      bin_profiles[bin].band = 0;
+    } else if (frequency <= 4000.0) {
+      bin_profiles[bin].band = 1;
+    } else {
+      bin_profiles[bin].band = 2;
+    }
+    if (frequency <= 5000.0) {
+      const int midi = static_cast<int>(std::round(69.0 + 12.0 * std::log2(frequency / 440.0)));
+      bin_profiles[bin].pitch_class = (midi % 12 + 12) % 12;
+    } else {
+      bin_profiles[bin].pitch_class = -1;
+    }
+  }
+
   for (size_t start = first_sample; start + frame_size <= final_sample; start += hop_size) {
     double square_sum = 0;
     for (size_t index = 0; index < frame_size; ++index) {
       const double value = samples[start + index];
       square_sum += value * value;
-      const double window = 0.5 - 0.5 * std::cos(2.0 * kPi * index / (frame_size - 1));
+      const double window = kHannWindow4096[index];
       spectrum[index] = std::complex<double>(value * window, 0);
     }
     const double rms = std::sqrt(square_sum / frame_size);
@@ -339,23 +384,24 @@ void AnalyzeKeyAndTimbre(
     double frame_vocal = 0;
     double frame_high = 0;
     for (size_t bin = 1; bin < frame_size / 2; ++bin) {
-      const double frequency = bin * sample_rate / frame_size;
-      if (frequency < 45 || frequency > std::min(5000.0, sample_rate * 0.48)) continue;
+      const auto& prof = bin_profiles[bin];
+      if (!prof.active) continue;
       const double power = std::norm(spectrum[bin]);
       const double perceptual_power = std::log1p(power);
-      if (frequency < 250) frame_low += perceptual_power;
-      else if (frequency <= 4000) {
+      if (prof.band == 0) {
+        frame_low += perceptual_power;
+      } else if (prof.band == 1) {
         frame_vocal += perceptual_power;
         log_sum += std::log(std::max(1e-12, power));
         arithmetic_sum += power;
         ++flatness_bins;
-      } else frame_high += perceptual_power;
-      if (frequency > 5000) continue;
-      const int midi = static_cast<int>(std::round(69.0 + 12.0 * std::log2(frequency / 440.0)));
-      const int pitch_class = (midi % 12 + 12) % 12;
-      const double weight = std::log1p(power);
-      chroma[pitch_class] += weight * rms;
-      frame_chroma += weight;
+      } else {
+        frame_high += perceptual_power;
+      }
+      if (prof.pitch_class >= 0) {
+        chroma[prof.pitch_class] += perceptual_power * rms;
+        frame_chroma += perceptual_power;
+      }
     }
     const double frame_flatness = flatness_bins && arithmetic_sum > 0
       ? std::exp(log_sum / flatness_bins) / (arithmetic_sum / flatness_bins)
@@ -570,12 +616,15 @@ AnalysisResult AnalyzeAudio(
   AnalysisResult result;
   result.duration = supplied_duration > 0 ? supplied_duration : samples.size() / sample_rate;
   if (samples.empty() || sample_rate < 1000 || result.duration <= 0) return result;
+
+  const auto t0 = std::chrono::steady_clock::now();
   const auto envelope = AnalyzeEnvelope(samples, sample_rate, result.duration);
   result.audible_start_time = envelope.audible_start;
   result.pickup_time = envelope.audible_start;
   result.pickup_confidence = envelope.pickup_confidence;
   result.content_end_time = envelope.content_end;
   result.mix_out_time = FindMixOutTime(samples, sample_rate, result.duration, envelope);
+  const auto t1 = std::chrono::steady_clock::now();
 
   const auto tempo = AnalyzeTempo(samples, sample_rate, result.duration, envelope.audible_start);
   result.bpm = tempo.bpm;
@@ -584,6 +633,7 @@ AnalysisResult AnalyzeAudio(
   result.beat_confidence = tempo.confidence;
   result.beats = tempo.beats;
   result.downbeats = tempo.downbeats;
+  const auto t2 = std::chrono::steady_clock::now();
 
   // This level estimate is RMS dBFS minus the conventional 0.691 offset. It is
   // intentionally not advertised as a gated, K-weighted loudness measurement;
@@ -626,6 +676,8 @@ AnalysisResult AnalyzeAudio(
     low_frames,
     vocal_frames
   );
+  const auto t3 = std::chrono::steady_clock::now();
+
   // Low-band frames come from actual FFT energy below 250 Hz. Resample them onto the compact
   // envelope grid so the mobile planner can compare the same track-relative timestamps without
   // storing another high-resolution curve. Silence remains zero rather than borrowing the nearest
@@ -666,7 +718,20 @@ AnalysisResult AnalyzeAudio(
     );
   }
   BuildStructure(envelope, result);
+  const auto t4 = std::chrono::steady_clock::now();
+
+  const double ms_env = std::chrono::duration<double, std::milli>(t1 - t0).count();
+  const double ms_tempo = std::chrono::duration<double, std::milli>(t2 - t1).count();
+  const double ms_key = std::chrono::duration<double, std::milli>(t3 - t2).count();
+  const double ms_struct = std::chrono::duration<double, std::milli>(t4 - t3).count();
+  const double ms_total = std::chrono::duration<double, std::milli>(t4 - t0).count();
+
+  __android_log_print(ANDROID_LOG_DEBUG, "BitChordDSP",
+      "AnalyzeAudio timings (duration=%.1fs): env=%.2fms, tempo=%.2fms, key_timbre=%.2fms, struct=%.2fms, total=%.2fms",
+      result.duration, ms_env, ms_tempo, ms_key, ms_struct, ms_total);
+
   return result;
+}
 }
 
 }  // namespace bitchord::smart
