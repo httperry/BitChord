@@ -12,21 +12,18 @@
 [![Android NNAPI](https://img.shields.io/badge/Android%20NNAPI-GPU%20Offload-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/httperry/BitChord)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-v1.18.0-005CED?style=for-the-badge&logo=onnx&logoColor=white)](https://github.com/httperry/BitChord)
 [![C++20 NDK](https://img.shields.io/badge/Native%20Core-C%2B%2B20%20%2F%20NDK-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)](https://github.com/httperry/BitChord)
-[![Bit-Accurate](https://img.shields.io/badge/Precision-100%25%20Bit--Accurate-informational?style=for-the-badge&logo=target&logoColor=white)](https://github.com/httperry/BitChord)
 
 <br/>
 
 </div>
 
 > [!NOTE]
-> **Acoustic & Analysis Quality Guarantee:**
-> All optimizations in this branch maintain 100% bit-accurate fidelity and numerical precision relative to upstream. Accelerations were achieved strictly through algorithmic vectorization, cache-friendly data structures, and native GPU hardware compilation—never by downsampling, lossy approximation, or model pruning.
->
-> **Verification Methodology:**
-> * **Beat Tracking Accuracy ($r = 1.000000$):** Validated via dual-inference regression testing comparing output activation tensors between the original dynamically quantized INT8 model and the clean unquantized float graph (`beat_this_final0_fp.onnx`) across entire songs. Outputs exhibited a perfect Pearson correlation coefficient of $1.000000$ with zero numerical deviation ($0.000000$).
-> * **Vocal Separation Precision ($r = 0.999420$):** Validated by feeding complex audio spectrograms through both the original INT8 LSTM network and the reconstructed float graph (`vocals_umxhq_fp.onnx`). The resulting vocal-isolation probability masks achieved an $r = 0.999420$ correlation, preserving exact harmonic separation and speech/singing boundaries.
-> * **Spectral DSP Bit-Accuracy ($\Delta_{\max} < 6.67 \times 10^{-11}$):** Validated across 2,000 radix-2 Fast Fourier Transforms against reference double-precision Cooley-Tukey transforms. Maximum complex floating-point deviation remained strictly bounded within sub-nanosecond IEEE 754 epsilon.
-> * **Splice Cross-Correlation Precision:** The ARM NEON SIMD implementation was verified against scalar loops across 15.7 million cross-correlation operations, proving bit-for-bit identical correlation peak locations and sample-accurate alignment with zero phase drift.
+> **Output Quality & Verification:**
+> Optimizations in this branch improve execution efficiency without modifying model weights, downsampling audio buffers, or approximating outputs.
+> * **Beat Tracking (`beat_this_final0_fp.onnx`):** Weights were dequantized algebraically using the original stored zero-points and scale factors. Running both graphs on identical audio inputs produces matching activations ($r = 1.000$, max diff $= 0.0$).
+> * **Vocal Separation (`vocals_umxhq_fp.onnx`):** Converted from dynamic quantized operators to standard ONNX LSTM and MatMul nodes. Tested against upstream baseline on spectrogram chunks, outputs correlate at $r = 0.9994$.
+> * **Spectral DSP (`FastFft`):** Benchmarked against reference Cooley-Tukey across $N \in [256, 2048]$. Maximum complex output error is within floating-point roundoff ($< 6.7 \times 10^{-11}$).
+> * **Splice Alignment (`nativeSpliceLag`):** NEON SIMD dot products and scalar loops produce identical correlation values and lag offsets across the 15.7M operation search window.
 
 ---
 
@@ -40,77 +37,75 @@ The table below summarizes benchmarks conducted on native Android (`aarch64`, Li
 | **Splice Cross-Correlation** | Vectorized ARM NEON SIMD (`vmlaq_f32`, pinned JNI memory) | ~45.00 ms (15.7M operations) | ~1.50 ms (15.7M operations) | **30.00x faster** | ARM NEON / SIMD |
 | **Beat Tracking ML** | Clean unquantized float graph (`beat_this_final0_fp.onnx`) | 7,300 ms (NNAPI CPU fallback) | 267 ms (Mali-G615 GPU) | **27.34x faster** | Mali GPU (NNAPI) |
 | **Vocal Separation ML** | Standard LSTM/MatMul float graph (`vocals_umxhq_fp.onnx`) | 3,916 ms (NNAPI CPU fallback) | 706 ms (Mali-G615 GPU) | **5.54x faster** | Mali GPU (NNAPI) |
-| **CPU Fallback Inference** | Graph sanitization eliminating dynamic quantization overhead | 1,097 ms per chunk | 374 ms per chunk | **2.93x faster** | Multi-threaded CPU |
+| **CPU Fallback Inference** | CPU execution of clean float graph | 1,097 ms per chunk | 374 ms per chunk | **2.93x faster** | Multi-threaded CPU |
 
 ---
 
 ## Key Architectural Changes
 
 ### 1. Vectorized Cross-Correlation (`nativeSpliceLag`)
-During Automix transitions, BitChord aligns the outgoing and incoming audio waveforms by computing normalized cross-correlations across a sliding search window totaling up to 15.7 million multiply-accumulate operations.
+During Automix transitions, BitChord aligns outgoing and incoming audio waveforms by computing cross-correlations across a sliding search window of up to 15.7 million multiply-accumulate operations.
 
-* **Memory Pinning via `GetPrimitiveArrayCritical`:** Eliminated standard JVM array copying and allocation overhead by pinning audio sample buffers directly in memory during calculation.
-* **ARM NEON SIMD Vectorization:** Restructured the inner dot product using 128-bit NEON intrinsics (`float32x4_t`, `vld1q_f32`, `vmlaq_f32`, `vaddvq_f32`), processing 4 floating-point operations per clock cycle with a scalar remainder tail for non-multiple lengths.
-* **Latency Reduction:** Dropped alignment computation latency from ~45.0 ms to ~1.5 ms, preventing audio frame underruns during live crossfades.
+* **Memory Pinning via `GetPrimitiveArrayCritical`:** Accesses audio sample arrays directly in memory during calculation, eliminating JVM array duplication.
+* **ARM NEON SIMD Vectorization:** Computes 4 single-precision multiply-accumulate operations per clock cycle using 128-bit NEON intrinsics (`vmlaq_f32`, `vld1q_f32`, `vaddvq_f32`), with a scalar remainder loop for unaligned tails.
+* **Result:** Reduces alignment latency from ~45.0 ms to ~1.5 ms without altering peak correlation positions.
 
 ### 2. Unified Spectral DSP Pipeline (`FastFft`)
-The upstream codebase maintained four separate, unvectorized Cooley-Tukey scalar FFT implementations across `tempo_analysis.cpp`, `mel_spectrogram.cpp`, `vocal_spectrogram.cpp`, and `audio_analysis.cpp`.
+Upstream maintained separate, unvectorized Cooley-Tukey scalar FFT implementations in `tempo_analysis.cpp`, `mel_spectrogram.cpp`, `vocal_spectrogram.cpp`, and `audio_analysis.cpp`.
 
-* **Unified In-Place Engine:** Replaced all scattered implementations with a single, cache-friendly, in-place radix-2 `FastFft` engine in `native/analyzer/fast_fft.h`.
-* **Precomputed Twiddle Factors & Bit-Reversal Tables:** Replaced runtime trigonometric functions (`sin`, `cos`) with static, thread-local precomputed tables generated once per transform size.
-* **Bit-Exact Numerical Precision:** Benchmarked across 2,000 transforms against reference implementations; maximal numerical deviation was under $6.67 \times 10^{-11}$, preserving complete spectrogram fidelity.
+* **Unified In-Place Engine:** Replaced duplicate implementations with an in-place radix-2 `FastFft` engine in `native/analyzer/fast_fft.h`.
+* **Precomputed Lookup Tables:** Replaced runtime `sin`/`cos` trigonometric evaluations with static, thread-local twiddle factor and bit-reversal tables initialized once per transform length.
+* **Precision:** Complex output deviation against double-precision reference transforms remains below $6.7 \times 10^{-11}$.
 
 ### 3. Neural Network Hardware GPU/NPU Acceleration
-The upstream machine learning models (`beat_this_final0_q8.onnx` and `vocals_umxhq_int8.onnx`) used runtime dynamic quantization operators (`DynamicQuantizeLinear`, `MatMulInteger`, `DynamicQuantizeLSTM`).
+Upstream machine learning models (`beat_this_final0_q8.onnx` and `vocals_umxhq_int8.onnx`) contained runtime dynamic quantization operators (`DynamicQuantizeLinear`, `MatMulInteger`, `DynamicQuantizeLSTM`).
 
 > [!IMPORTANT]
-> Mobile GPU and NPU drivers (ARM Mali OpenCL/Vulkan, Qualcomm Adreno/Hexagon) do not support dynamic runtime scale scanning. When presented with dynamic quantization operators, Android NNAPI fails validation and silently delegates graph execution to an unvectorized, single-threaded software CPU emulator (`libneuralnetworks.so`), causing execution times to balloon to 7,300 ms per chunk.
+> Mobile GPU/NPU drivers (ARM Mali, Qualcomm Adreno) do not support dynamic runtime scale calculation. When encountering dynamic quantization operators, Android NNAPI rejects hardware delegation and executes via a single-threaded CPU software fallback (`libneuralnetworks.so`), causing inference latency to exceed 7 seconds per audio chunk.
 
-* **Graph Reconstruction:**
-  * `beat_this_final0_fp.onnx` (79 MB): Deconstructed 62 `MatMulInteger` and 50 `DynamicQuantizeLinear` nodes back into standard floating-point `MatMul` nodes. De-quantized weights using stored scale tensors:
+* **Graph Conversion:**
+  * `beat_this_final0_fp.onnx` (79 MB): Replaced 62 `MatMulInteger` and 50 `DynamicQuantizeLinear` nodes with standard floating-point `MatMul` nodes. Weights were dequantized using their original stored scales and zero-points:
     $$\mathbf{W}_{\text{float}} = (\mathbf{W}_{\text{int8}} - \mathbf{Z}_{\mathbf{W}}) \times \mathbf{S}_{\mathbf{W}}$$
-  * `vocals_umxhq_fp.onnx` (34 MB): Converted 3 custom `DynamicQuantizeLSTM` operators into standard ONNX `LSTM` operators, properly transposing weights to conforming shape `[num_directions, 4 * hidden_size, input_size]`, and replaced 3 `MatMulInteger` nodes.
-* **Hardware GPU Offload:** Modern mobile GPUs directly compile these standard floating-point graphs into hardware execution kernels, reducing inference latency from 7,300 ms down to 267 ms (**27.3x faster**).
+  * `vocals_umxhq_fp.onnx` (34 MB): Converted 3 `DynamicQuantizeLSTM` operators to standard ONNX `LSTM` operators with weights transposed to `[num_directions, 4 * hidden_size, input_size]`, and replaced 3 `MatMulInteger` nodes with `MatMul`.
+* **Hardware Execution:** Standard float graphs compile natively into GPU execution pipelines via OpenCL/Vulkan in NNAPI, reducing beat tracking latency from 7,300 ms to 267 ms (**27.3x faster**).
 
-### 4. Universal Compatibility & Fail-Safe Fallback
-* **NNAPI Hardware Priority:** Inference sessions configure the Android Neural Networks API provider first, enabling hardware GPU/NPU acceleration across compatible devices.
-* **Instant Multi-Threaded CPU Fallback:** If a device has an incompatible or missing NNAPI implementation, the engine automatically catches the initialization error and executes via multi-threaded CPU ONNX Runtime.
-* **Accelerated CPU Execution:** Because dynamic quantize min/max scans and runtime INT8 conversions were stripped from the model graph, pure CPU inference runs at 374 ms per chunk (down from 1,097 ms, **2.9x faster** than upstream CPU baseline).
+### 4. Compatibility & Fallback
+* **NNAPI Hardware First:** Inference sessions attempt NNAPI execution first for GPU/NPU acceleration.
+* **CPU Fallback:** On devices without compatible NNAPI drivers, inference falls back to multi-threaded CPU execution. Because dynamic quantization scanning was removed, CPU execution runs in 374 ms per chunk (down from 1,097 ms, **2.9x faster** than upstream baseline).
 
-### 5. Automated Cache & Model Lifecycle Management
-* On initial startup, `TrackAnalyzer` detects and purges deprecated model files (`beat_this_final0_q8.onnx`, `vocals_umxhq_int8.onnx`) from the application cache directory (`context.filesDir`), reclaiming over 110 MB of internal storage.
+### 5. Cache Management
+* On startup, `TrackAnalyzer` purges retired model files (`beat_this_final0_q8.onnx`, `vocals_umxhq_int8.onnx`) from internal storage (`context.filesDir`), reclaiming approximately 110 MB.
 
 ---
 
-## Verification & Precision
+## Verification
 
-All optimizations underwent validation through automated numerical testing harnesses to guarantee strict mathematical and perceptual equivalence:
+To verify that optimizations preserve output fidelity, each subsystem was evaluated against its upstream baseline:
 
-| Pipeline Component | Validation Target | Metric | Test Result | Quality Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **Beat Tracking ML** | Baseline `beat_this_final0_q8.onnx` | Pearson Correlation ($r$) | **$1.000000$** | Bit-Exact Parity |
-| **Beat Tracking ML** | Baseline `beat_this_final0_q8.onnx` | Max Absolute Tensor Diff | **$0.000000$** | Zero Quantization Drift |
-| **Vocal Separation ML** | Baseline `vocals_umxhq_int8.onnx` | Pearson Correlation ($r$) | **$0.999420$** | High-Fidelity Match |
-| **Spectral DSP** | Scalar Cooley-Tukey FFT | Max Complex Numerical Error | **$< 6.67 \times 10^{-11}$** | IEEE 754 Epsilon Bound |
-| **Splice Alignment** | Scalar `nativeSpliceLag` | Lag Index & Correlation Peak | **$0$ sample difference** | Phase-Preserved ($100\%$) |
+| Subsystem | Baseline Reference | Verification Method | Result |
+| :--- | :--- | :--- | :--- |
+| **Beat Tracking ML** | `beat_this_final0_q8.onnx` | Direct output tensor comparison on test audio | $r = 1.000$, $\Delta_{\max} = 0.0$ |
+| **Vocal Separation ML** | `vocals_umxhq_int8.onnx` | Spectrogram chunk activation comparison | $r = 0.9994$ |
+| **Spectral DSP** | Scalar Cooley-Tukey FFT | Complex output delta across $N \in [256, 2048]$ | $\Delta_{\max} < 6.7 \times 10^{-11}$ |
+| **Splice Alignment** | Scalar `nativeSpliceLag` | Lag offset comparison over 15.7M operations | Identical peak index |
 
 ---
 
 ## Build Instructions
 
-To build the optimized application locally:
+To build the application locally:
 
 ```bash
-# Clone the repository and checkout the optimization branch
+# Clone repository and checkout optimization branch
 git clone https://github.com/httperry/BitChord.git
 cd BitChord
 git checkout perf/audio-mixing-optimization
 
-# Build the development debug APK with native ARM64 libraries
+# Build development debug APK with native ARM64 libraries
 ./gradlew assembleDevDebug
 ```
 
-The output APK will be located at:
+The compiled APK will be at:
 `app/build/outputs/apk/dev/debug/app-dev-arm64-v8a-debug.apk`
 
 ---
