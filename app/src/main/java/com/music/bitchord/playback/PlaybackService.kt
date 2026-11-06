@@ -1934,9 +1934,9 @@ class PlaybackService : MediaLibraryService() {
             standby = { requireNotNull(spare) },
             onHandoff = ::adoptPlayer,
             analysisFor = { item -> trackAnalyzer.analysisFor(item.mediaId) },
-            requestAnalysis = { item, durationMs ->
+            requestAnalysis = { item, durationMs, isCurrent ->
                 item.localConfiguration?.uri?.let { uri ->
-                    trackAnalyzer.request(item.mediaId, uri, durationMs / 1000.0)
+                    trackAnalyzer.request(item.mediaId, uri, durationMs / 1000.0, isCurrent)
                 }
             },
             // "Incoming" and "outgoing" here are session roles, not players:

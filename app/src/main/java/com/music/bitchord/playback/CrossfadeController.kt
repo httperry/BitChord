@@ -153,7 +153,7 @@ class CrossfadeController(
      * recording from a differently-cut one before reusing an analysis across
      * them, and this class is the only place that already knows it.
      */
-    private val requestAnalysis: (MediaItem, Long) -> Unit = { _, _ -> },
+    private val requestAnalysis: (MediaItem, Long, Boolean) -> Unit = { _, _, _ -> },
     /**
      * The low-pass and high-pass riding each side of a transition. This is what
      * makes a plan's
@@ -1282,8 +1282,8 @@ class CrossfadeController(
         if (nextIndex == C.INDEX_UNSET) return
         val nextItem = player.getMediaItemAt(nextIndex)
         if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) return
-        requestAnalysis(currentItem, duration)
-        requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
+        requestAnalysis(currentItem, duration, true)
+        requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem), false)
     }
 
     /**

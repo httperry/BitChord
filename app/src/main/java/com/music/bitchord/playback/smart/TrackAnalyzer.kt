@@ -323,7 +323,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
      * to wait for and nothing to escalate through. See [LocalAudioSource] for
      * why that needed saying at all.
      */
-    fun request(trackId: String, uri: Uri, durationSeconds: Double) {
+    fun request(trackId: String, uri: Uri, durationSeconds: Double, isCurrentTrack: Boolean = true) {
         if (trackId.isBlank()) return
         // Before anything else this would spend: [analysisUriFor] alone can put
         // a catalogue match on the network for a track the party will never
@@ -374,6 +374,12 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         val usableComplete = local || complete.isNotEmpty()
 
         val recorded = results[trackId]
+        // If this is an upcoming queue track (!isCurrentTrack), and we already have ANY valid result
+        // (from cache/head/previous pass), do not queue anything. Upcoming tracks only need intro/mixIn.
+        if (!isCurrentTrack && recorded != null && recorded.isUsable) {
+            return
+        }
+
         // Two things are worth superseding, and nothing else is. A provisional
         // head result, because replacing it with the whole-track pass is the
         // entire point of it — and a recorded failure, but only once a copy of
@@ -391,7 +397,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         }
         val supersedable = when {
             recorded == null -> false
-            trackId in provisional -> usableComplete
+            trackId in provisional -> isCurrentTrack && usableComplete
             else -> !recorded.isUsable && untried
         }
         if (recorded != null && !supersedable) {
@@ -403,7 +409,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // rest, and a queued track reaches its own transition carrying an
             // entry-only estimate: no content end, no mix-out anchor, no vocal
             // mask, which is most of what the outgoing half of a blend reads.
-            if (trackId in provisional && !usableComplete) {
+            if (isCurrentTrack && trackId in provisional && !usableComplete) {
                 TrackLog.d(TAG, "Automix waiting for cache to complete on $trackId to run whole-track pass", trackId)
                 cache.requestAnalysisHead(analysisUri)
             }
@@ -412,14 +418,11 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         // The strike count belongs to the attempt that was given up on, not to
         // the track for the rest of the session; a reopened track starts level.
         if (recorded != null && !recorded.isUsable) shortDecodes.remove(trackId)
-        // One head attempt per track: a partial container that will not parse
-        // now is unlikely to parse ten ticks later, and retrying a decode every
-        // 250ms would cost more than the analysis it is trying to bring
-        // forward. Skipped entirely for a local file, which is `usableComplete`
-        // from the first tick: the head pass exists to get ahead of a download,
-        // and there is no download to get ahead of.
-        val headRendition = if (usableComplete) null else headWorthTrying(trackId, analysisUri, durationSeconds)
-        if (!usableComplete && headRendition == null) {
+        // Only the active playing track (isCurrentTrack) runs the multi-window whole-track pass.
+        // Upcoming tracks only ever run a fast single-window head pass so they never starve the playing track.
+        val shouldAnalyzeWhole = isCurrentTrack && usableComplete
+        val headRendition = if (shouldAnalyzeWhole) null else (headWorthTrying(trackId, analysisUri, durationSeconds) ?: complete.firstOrNull())
+        if (!shouldAnalyzeWhole && headRendition == null) {
             // Nothing on disk worth decoding, so ask for something. Every other
             // writer either fetches this track's opening too late to matter or
             // never fetches it at all — see [AudioCache.requestAnalysisHead],
@@ -449,13 +452,13 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 // seven seconds recomputing the identical numbers. A provisional
                 // result is exempt: superseding one is the whole point of it.
                 val landed = results[trackId]
-                if (landed != null && landed.isUsable && trackId !in provisional) return@execute
+                if (landed != null && landed.isUsable && (!isCurrentTrack || trackId !in provisional)) return@execute
                 // The queue this task sat in is single-threaded, so a party
                 // started while the track ahead of it was being measured. Every
                 // task behind that one turns into this return, which drains the
                 // backlog without needing to reach into the executor's queue.
                 if (stopped) return@execute
-                if (usableComplete) {
+                if (shouldAnalyzeWhole) {
                     val wholeStart = SystemClock.elapsedRealtime()
                     TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
                     val outcome = analyze(trackId, analysisUri, durationSeconds)
@@ -496,13 +499,13 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                             )
                         }
                     }
-                } else {
+                } else if (headRendition != null) {
                     val headStart = SystemClock.elapsedRealtime()
                     TrackLog.d(TAG, "Automix head pass started for $trackId", trackId)
                     // Marked before it is published, so a reader on the playback
                     // thread can never see a provisional result that is not
                     // flagged as one.
-                    analyzeHead(trackId, analysisUri, durationSeconds, headRendition!!)?.let { head ->
+                    analyzeHead(trackId, analysisUri, durationSeconds, headRendition)?.let { head ->
                         val headTook = SystemClock.elapsedRealtime() - headStart
                         TrackLog.d(
                             TAG,

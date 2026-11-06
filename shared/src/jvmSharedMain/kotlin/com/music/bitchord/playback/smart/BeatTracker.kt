@@ -91,15 +91,32 @@ class BeatTracker(
                         setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
                         setCPUArenaAllocator(false)
                         setMemoryPatternOptimization(false)
-                        val addNnapiMethod = javaClass.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
-                        addNnapiMethod?.invoke(this)
+                        val addNnapiMethod = runCatching {
+                            OrtSession.SessionOptions::class.java.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
+                        }.getOrNull() ?: runCatching {
+                            this.javaClass.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
+                        }.getOrNull()
+
+                        if (addNnapiMethod != null) {
+                            runCatching { addNnapiMethod.invoke(this) }
+                                .onSuccess { AnalysisLog.warn("BeatTracker: addNnapi() configured on SessionOptions") }
+                                .onFailure { AnalysisLog.warn("BeatTracker: addNnapi() invocation failed: ${it.message}", it) }
+                        } else {
+                            AnalysisLog.warn("BeatTracker: addNnapi() method not found on SessionOptions")
+                        }
                     }
-                    env.createSession(file.absolutePath, options)
+                    env.createSession(file.absolutePath, options).also {
+                        AnalysisLog.warn("BeatTracker: NNAPI GPU session created successfully")
+                    }
+                }.onFailure { err ->
+                    AnalysisLog.warn("BeatTracker: NNAPI session creation failed (${err.javaClass.simpleName}: ${err.message}); falling back to CPU", err)
                 }.getOrNull()
 
                 (sessionWithNnapi ?: run {
+                    val cpuThreads = maxOf(2, threads)
+                    AnalysisLog.warn("BeatTracker: using CPU fallback with $cpuThreads threads")
                     val options = OrtSession.SessionOptions().apply {
-                        setIntraOpNumThreads(threads)
+                        setIntraOpNumThreads(cpuThreads)
                         setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
                         setCPUArenaAllocator(false)
                         setMemoryPatternOptimization(false)
