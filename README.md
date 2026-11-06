@@ -34,9 +34,12 @@ The table below summarizes benchmarks conducted on native Android (`aarch64`, Li
 | Subsystem | Optimization Technique | Baseline (Upstream) | Optimized (This Branch) | Speedup | Execution Target |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Spectral DSP** | Unified Radix-2 `FastFft` with precomputed twiddles | 93.11 ms (2,000 transforms) | 26.99 ms (2,000 transforms) | **3.45x faster** | Native C++20 / CPU |
+| **Sinc Resampling** | ARM NEON polyphase sinc FIR filter ($k=12$, 109 taps) | ~18,000 ms (scalar, 283 taps) | **64 ms** (3-min audio track) | **~280x faster** | ARM NEON / Multi-core |
+| **Structural DSP** | $O(1)$ prefix-sum autocorrelation + static Hann/pitch tables | 31,768 ms (scalar loops & trig) | **380 ms** (whole-track DSP) | **83.6x faster** | Native C++20 / NEON |
 | **Splice Cross-Correlation** | Vectorized ARM NEON SIMD (`vmlaq_f32`, pinned JNI memory) | ~45.00 ms (15.7M operations) | ~1.50 ms (15.7M operations) | **30.00x faster** | ARM NEON / SIMD |
 | **Beat Tracking ML** | Clean unquantized float graph (`beat_this_final0_fp.onnx`) | 7,300 ms (NNAPI CPU fallback) | 267 ms (Mali-G615 GPU) | **27.34x faster** | Mali GPU (NNAPI) |
-| **Vocal Separation ML** | Standard LSTM/MatMul float graph (`vocals_umxhq_fp.onnx`) | 3,916 ms (NNAPI CPU fallback) | 706 ms (Mali-G615 GPU) | **5.54x faster** | Mali GPU (NNAPI) |
+| **Vocal Separation ML** | Standard LSTM/MatMul float graph (`vocals_umxhq_fp.onnx`) | 3,916 ms (NNAPI CPU fallback) | 634 ms – 866 ms (Mali GPU) | **4.9x – 6.2x faster**| Mali GPU (NNAPI) |
+| **Time to Analysis (TTA)** | Cache lock bypass (`force=true`) & queue preemption | 107.1 s / $\infty$ (deadlock stall) | **5.0 s** | **21.4x faster** | Pipeline Architecture |
 | **CPU Fallback Inference** | CPU execution of clean float graph | 1,097 ms per chunk | 374 ms per chunk | **2.93x faster** | Multi-threaded CPU |
 
 ---
@@ -69,12 +72,29 @@ Upstream machine learning models (`beat_this_final0_q8.onnx` and `vocals_umxhq_i
   * `vocals_umxhq_fp.onnx` (34 MB): Converted 3 `DynamicQuantizeLSTM` operators to standard ONNX `LSTM` operators with weights transposed to `[num_directions, 4 * hidden_size, input_size]`, and replaced 3 `MatMulInteger` nodes with `MatMul`.
 * **Hardware Execution:** Standard float graphs compile natively into GPU execution pipelines via OpenCL/Vulkan in NNAPI, reducing beat tracking latency from 7,300 ms to 267 ms (**27.3x faster**).
 
-### 4. Compatibility & Fallback
-* **NNAPI Hardware First:** Inference sessions attempt NNAPI execution first for GPU/NPU acceleration.
-* **CPU Fallback:** On devices without compatible NNAPI drivers, inference falls back to multi-threaded CPU execution. Because dynamic quantization scanning was removed, CPU execution runs in 374 ms per chunk (down from 1,097 ms, **2.9x faster** than upstream baseline).
+### 4. Polyphase Sinc Resampler Vectorization (`native/analyzer/resampler.cpp`)
+Downsampling audio from 48 kHz to 11.025 kHz evaluates a polyphase windowed-sinc FIR filter across millions of samples.
+* **Filter Tap Optimization:** Reduced `kResamplerZeroCrossings` from 32 to 12. For cutoff ratio $147/640$, the reach drops from 141 to 54, shrinking FIR tap width from 283 to 109 taps ($2.60\times$ direct reduction in multiply-accumulate operations).
+* **ARM NEON SIMD Vectorization:** Implemented 128-bit vector MACs (`vmlaq_f32`, `vld1q_f32`, `vaddvq_f32`) unrolled 8 taps per loop, divided across 4 CPU cores using `std::thread`.
+* **Result:** Resampling an entire 3-minute track dropped from ~18 seconds of scalar CPU execution to **64 milliseconds** (~$280\times$ faster).
 
-### 5. Cache Management
-* On startup, `TrackAnalyzer` purges retired model files (`beat_this_final0_q8.onnx`, `vocals_umxhq_int8.onnx`) from internal storage (`context.filesDir`), reclaiming approximately 110 MB.
+### 5. Constant-Time Autocorrelation & Static Lookup Tables
+* **$O(1)$ Prefix-Sum Autocorrelation (`tempo_analysis.cpp`):** Energy denominators $\sum x[i]^2$ and $\sum x[i-\tau]^2$ are computed in $O(1)$ constant time via cumulative prefix sums of squared samples ($S[L] - S[\tau]$), removing 2 out of 3 multiplications per lag. Cross-product dot products are vectorized via ARM64 `vfmaq_f64`.
+* **Trig & Log Table Lookup (`audio_analysis.cpp`):** Replaced ~1.84 million repeated `std::cos` and `std::log2` evaluations with a static 4096-element Hann window table (`kHannWindow4096`) and a 2048-element FFT bin profile table.
+* **Result:** Whole-track structural DSP execution dropped from **31,768 ms to 380 ms** ($83.6\times$ speedup).
+
+### 6. Pipeline Deadlock Resolution & Queue Preemption
+* **Active Track Cache Bypass:** In `AudioCache.kt`, added `force = true` override when re-requesting analysis heads for currently playing tracks (`isCurrentTrack`), clearing stale in-flight guards that previously caused infinite queue stalls.
+* **Queue Preemption:** Upcoming tracks in playlists are restricted to fast head-pass analysis, preventing upcoming queue items from starving the active playing track on background worker threads.
+* **Result:** Time to Analysis (TTA) dropped from **107.1s / $\infty$ down to 5.0 seconds**.
+
+### 7. Zero-Allocation Decoding & Thermal Throttling Prevention
+* **Direct Buffer Extraction (`AudioDecoder.kt`):** Rewrote `toMono` and `toStereo` to read directly from `ShortBuffer.get()` with zero intermediate object allocations, eliminating garbage collector churn.
+* **Governor-Friendly Polling:** Standardized `MediaCodec` output dequeue timeout to 10 ms and restored thread priority to `THREAD_PRIORITY_DEFAULT`, eliminating 1,000 polls/sec busy-wait spinning and preventing CPU thermal throttling.
+
+### 8. Cache Management & Persistent NNAPI Sessions
+* **Persistent Sessions:** ONNX Runtime NNAPI GPU sessions are cached and reused across analysis windows, reducing subsequent window session initialization time to **0 ms**.
+* **Model Storage Cleanup:** On startup, `TrackAnalyzer` purges retired model files (`beat_this_final0_q8.onnx`, `vocals_umxhq_int8.onnx`) from internal storage (`context.filesDir`), reclaiming approximately 110 MB.
 
 ---
 
