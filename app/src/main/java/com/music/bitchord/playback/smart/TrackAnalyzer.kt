@@ -68,12 +68,16 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
     private val tracker = BeatTracker(
         modelPath = {
             java.io.File(context.filesDir, BeatTracker.RETIRED_MODEL_ASSET).delete()
+            java.io.File(context.filesDir, "beat_this_int8.onnx").delete()
             unpackedAsset(BeatTracker.MODEL_ASSET)
         },
         inferenceThreads = { AppSettings.automixPerformanceMode.value.inferenceThreads },
     )
     private val vocals = VocalTracker(
-        modelPath = { unpackedAsset(VocalTracker.MODEL_ASSET) },
+        modelPath = {
+            java.io.File(context.filesDir, VocalTracker.RETIRED_MODEL_ASSET).delete()
+            unpackedAsset(VocalTracker.MODEL_ASSET)
+        },
         inferenceThreads = { AppSettings.automixPerformanceMode.value.inferenceThreads },
     )
 

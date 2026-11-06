@@ -116,19 +116,31 @@ class VocalTracker(
             session = null
             return runCatching {
                 val file = File(modelPath())
-                val options = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(threads)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                    // Same reasoning as BeatTracker: the arena retains every block it allocates for
-                    // the life of the session, which a backgrounded music player cannot justify.
-                    setCPUArenaAllocator(false)
-                    setMemoryPatternOptimization(false)
-                }
-                OrtEnvironment.getEnvironment().createSession(file.absolutePath, options)
-                    .also {
-                        session = it
-                        sessionThreads = threads
+                val env = OrtEnvironment.getEnvironment()
+                val sessionWithNnapi = runCatching {
+                    val options = OrtSession.SessionOptions().apply {
+                        setIntraOpNumThreads(threads)
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                        val addNnapiMethod = javaClass.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
+                        addNnapiMethod?.invoke(this)
                     }
+                    env.createSession(file.absolutePath, options)
+                }.getOrNull()
+
+                (sessionWithNnapi ?: run {
+                    val options = OrtSession.SessionOptions().apply {
+                        setIntraOpNumThreads(threads)
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                    }
+                    env.createSession(file.absolutePath, options)
+                }).also {
+                    session = it
+                    sessionThreads = threads
+                }
             }.onFailure { AnalysisLog.warn("Vocal model unavailable; no mask will be produced", it) }
                 .getOrNull()
         }
@@ -269,7 +281,9 @@ class VocalTracker(
     companion object {
         private const val TAG = "BitChordVocalTracker"
         /** The weights this tracker needs, named once for every build that ships them. */
-        const val MODEL_ASSET = "vocals_umxhq_int8.onnx"
+        const val MODEL_ASSET = "vocals_umxhq_fp.onnx"
+        /** The earlier dynamic int8 export, deleted on first use. */
+        const val RETIRED_MODEL_ASSET = "vocals_umxhq_int8.onnx"
         /** The model's fixed input width, ~22.8 s, chosen upstream to cover a transition overlap. */
         const val FIXED_FRAMES = 960
 

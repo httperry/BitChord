@@ -84,22 +84,31 @@ class BeatTracker(
             session = null
             return runCatching {
                 val file = File(modelPath())
-                val options = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(threads)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                    // ORT's arena allocator keeps every block it has ever needed, which for this
-                    // graph is tens of megabytes of native heap retained for the life of the
-                    // session, far past the model's own size, on a process that also has to
-                    // survive in the background. Analysis runs a handful of times per track, so
-                    // allocating per run is the right trade.
-                    setCPUArenaAllocator(false)
-                    setMemoryPatternOptimization(false)
-                }
-                OrtEnvironment.getEnvironment().createSession(file.absolutePath, options)
-                    .also {
-                        session = it
-                        sessionThreads = threads
+                val env = OrtEnvironment.getEnvironment()
+                val sessionWithNnapi = runCatching {
+                    val options = OrtSession.SessionOptions().apply {
+                        setIntraOpNumThreads(threads)
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                        val addNnapiMethod = javaClass.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
+                        addNnapiMethod?.invoke(this)
                     }
+                    env.createSession(file.absolutePath, options)
+                }.getOrNull()
+
+                (sessionWithNnapi ?: run {
+                    val options = OrtSession.SessionOptions().apply {
+                        setIntraOpNumThreads(threads)
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                    }
+                    env.createSession(file.absolutePath, options)
+                }).also {
+                    session = it
+                    sessionThreads = threads
+                }
             }.onFailure { AnalysisLog.warn("Beat model unavailable; falling back to no grid", it) }
                 .getOrNull()
         }
@@ -217,17 +226,12 @@ class BeatTracker(
     companion object {
         private const val TAG = "BitChordBeatTracker"
         /**
-         * The weights this tracker needs, named once for every build that ships them.
-         *
-         * The official final0 checkpoint with only its MatMuls quantized (int8, per channel); the
-         * convolutions stay float. The earlier `beat_this_int8.onnx` quantized the convolutions
-         * too and found no beats at all. A new name rather than the old one because the app
-         * unpacks assets once by name and would keep serving the stale copy.
+         * The unquantized clean floating-point final0 checkpoint with full hardware GPU/NPU acceleration.
          */
-        const val MODEL_ASSET = "beat_this_final0_q8.onnx"
+        const val MODEL_ASSET = "beat_this_final0_fp.onnx"
 
-        /** The broken earlier export, whose unpacked copy is deleted on first use of the new one. */
-        const val RETIRED_MODEL_ASSET = "beat_this_int8.onnx"
+        /** The earlier dynamic q8 export, deleted on first use. */
+        const val RETIRED_MODEL_ASSET = "beat_this_final0_q8.onnx"
         /** The window the model was trained on, and the margin discarded from each chunk's edges. */
         const val CHUNK_FRAMES = 1500
         const val BORDER_FRAMES = 6
