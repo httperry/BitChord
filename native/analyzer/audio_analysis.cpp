@@ -732,6 +732,5 @@ AnalysisResult AnalyzeAudio(
 
   return result;
 }
-}
 
 }  // namespace bitchord::smart
