@@ -1677,7 +1677,7 @@ class CrossfadeController(
         incomingAnalysis = into.currentMediaItem?.let(analysisFor) ?: TrackAnalysis()
 
         Log.d(TAG, "blend start at cue=${into.currentPosition}ms out=${out.currentPosition}ms")
-        TrackLog.d(TAG, "Automix blend started at cue=${into.currentPosition}ms out=${out.currentPosition}ms style=${currentTransitionStyle} fade=${"%.1f".format(Locale.ROOT, transitionDuration)}s", out.currentMediaItem?.mediaId)
+        TrackLog.d(TAG, "Automix blend started at cue=${into.currentPosition}ms out=${out.currentPosition}ms", out.currentMediaItem?.mediaId)
 
         // Published before the mix flag, in the same tick: the scrubber shows
         // the old sheen for a mix flag with no blend beside it, and would flash
