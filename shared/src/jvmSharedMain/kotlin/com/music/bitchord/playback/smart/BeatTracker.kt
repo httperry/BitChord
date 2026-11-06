@@ -84,32 +84,22 @@ class BeatTracker(
             session = null
             return runCatching {
                 val file = File(modelPath())
-                val env = OrtEnvironment.getEnvironment()
-                // Try NNAPI first to offload inference to the NPU/GPU with zero CPU heat.
-                val sessionWithNnapi = runCatching {
-                    val options = OrtSession.SessionOptions().apply {
-                        setIntraOpNumThreads(threads)
-                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                        setCPUArenaAllocator(false)
-                        setMemoryPatternOptimization(false)
-                        val addNnapiMethod = javaClass.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
-                        addNnapiMethod?.invoke(this)
-                    }
-                    env.createSession(file.absolutePath, options)
-                }.getOrNull()
-
-                (sessionWithNnapi ?: run {
-                    val options = OrtSession.SessionOptions().apply {
-                        setIntraOpNumThreads(threads)
-                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                        setCPUArenaAllocator(false)
-                        setMemoryPatternOptimization(false)
-                    }
-                    env.createSession(file.absolutePath, options)
-                }).also {
-                    session = it
-                    sessionThreads = threads
+                val options = OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(threads)
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                    // ORT's arena allocator keeps every block it has ever needed, which for this
+                    // graph is tens of megabytes of native heap retained for the life of the
+                    // session, far past the model's own size, on a process that also has to
+                    // survive in the background. Analysis runs a handful of times per track, so
+                    // allocating per run is the right trade.
+                    setCPUArenaAllocator(false)
+                    setMemoryPatternOptimization(false)
                 }
+                OrtEnvironment.getEnvironment().createSession(file.absolutePath, options)
+                    .also {
+                        session = it
+                        sessionThreads = threads
+                    }
             }.onFailure { AnalysisLog.warn("Beat model unavailable; falling back to no grid", it) }
                 .getOrNull()
         }
