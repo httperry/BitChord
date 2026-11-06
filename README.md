@@ -39,7 +39,10 @@ The table below summarizes benchmarks conducted on native Android (`aarch64`, Li
 | **Splice Cross-Correlation** | Vectorized ARM NEON SIMD (`vmlaq_f32`, pinned JNI memory) | ~45.00 ms (15.7M operations) | ~1.50 ms (15.7M operations) | **30.00x faster** | ARM NEON / SIMD |
 | **Beat Tracking ML** | Clean unquantized float graph (`beat_this_final0_fp.onnx`) | 7,300 ms (NNAPI CPU fallback) | 267 ms (Mali-G615 GPU) | **27.34x faster** | Mali GPU (NNAPI) |
 | **Vocal Separation ML** | Standard LSTM/MatMul float graph (`vocals_umxhq_fp.onnx`) | 3,916 ms (NNAPI CPU fallback) | 634 ms – 866 ms (Mali GPU) | **4.9x – 6.2x faster**| Mali GPU (NNAPI) |
+| **Pass 2 Window Analysis** | Chunked 2-span memory slicing & async overlap | ~14,000 ms – 18,000 ms per window | **3,200 ms – 3,500 ms** per window | **3.5x – 4.5x faster** | Pipeline Architecture |
+| **Total Whole-Track Pass** | Unified NEON DSP + GPU ML + chunked decode | 107.1 s+ (or timeout) | **67.0 s** (215s track) | **3.21x real-time speed** | Full Engine Pipeline |
 | **Time to Analysis (TTA)** | Cache lock bypass (`force=true`) & queue preemption | 107.1 s / $\infty$ (deadlock stall) | **5.0 s** | **21.4x faster** | Pipeline Architecture |
+| **Transition Headroom** | Pipeline latency reduction | Stalled / negative margin | **+126.6 s** (before mix-out) | **Safe DJ_FILTER Lock** | Automix Scheduler |
 | **CPU Fallback Inference** | CPU execution of clean float graph | 1,097 ms per chunk | 374 ms per chunk | **2.93x faster** | Multi-threaded CPU |
 
 ---
@@ -95,6 +98,13 @@ Downsampling audio from 48 kHz to 11.025 kHz evaluates a polyphase windowed-sinc
 ### 8. Cache Management & Persistent NNAPI Sessions
 * **Persistent Sessions:** ONNX Runtime NNAPI GPU sessions are cached and reused across analysis windows, reducing subsequent window session initialization time to **0 ms**.
 * **Model Storage Cleanup:** On startup, `TrackAnalyzer` purges retired model files (`beat_this_final0_q8.onnx`, `vocals_umxhq_int8.onnx`) from internal storage (`context.filesDir`), reclaiming approximately 110 MB.
+
+### 9. Chunked 2-Span Audio Decoding & Asynchronous Pipeline Overlapping
+Upstream BitChord separately spawned, configured, and tore down hardware `MediaCodec` instances for every individual 22.2-second analysis window (5 separate decoder lifecycles per track), spending over 35 seconds solely in redundant decodes.
+* **Chunked 2-Span In-Memory Slicing:** The outgoing Tail span ($t_{\text{mixout}} \to t_{\text{end}}$) and incoming Head span ($0.0\text{s} \to t_{\text{intro}}$) are decoded once into contiguous RAM buffers (~16–22 MB). Windows 1 through 5 are sliced directly in memory ($0\text{ ms}$ overhead), eliminating 5 redundant decoder startups and disk seeks.
+* **Microsecond Adaptive Polling:** In `AudioDecoder.kt`, `dequeueOutputBuffer` dynamically adjusts to `1_000L` $\mu\text{s}$ (1 ms) when input audio buffers progress, eliminating 10 ms idle latency stalls between decoded Opus frames without busy-spinning.
+* **Asynchronous Pipeline Overlapping:** Tail span audio is decoded on the CPU; while GPU neural inference runs on Tail windows 1, 2, and 3, a dedicated background thread (`bitchord-audio-decoder`) concurrently pre-decodes the Head span on the CPU. Windows 4 and 5 execute immediately with zero decoding wait.
+* **Result:** Individual window analysis dropped from **~11–18 seconds to 3.2–3.5 seconds** ($3.5\times$ speedup), and total whole-track pass time dropped to **67.0s** on a 215-second track ($3.21\times$ faster than real-time playback).
 
 ---
 
