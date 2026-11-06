@@ -116,19 +116,32 @@ class VocalTracker(
             session = null
             return runCatching {
                 val file = File(modelPath())
-                val options = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(threads)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                    // Same reasoning as BeatTracker: the arena retains every block it allocates for
-                    // the life of the session, which a backgrounded music player cannot justify.
-                    setCPUArenaAllocator(false)
-                    setMemoryPatternOptimization(false)
-                }
-                OrtEnvironment.getEnvironment().createSession(file.absolutePath, options)
-                    .also {
-                        session = it
-                        sessionThreads = threads
+                val env = OrtEnvironment.getEnvironment()
+                // Try NNAPI first to offload vocal inference to the NPU/GPU with zero CPU heat.
+                val sessionWithNnapi = runCatching {
+                    val options = OrtSession.SessionOptions().apply {
+                        setIntraOpNumThreads(threads)
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                        val addNnapiMethod = javaClass.methods.firstOrNull { it.name == "addNnapi" && it.parameterCount == 0 }
+                        addNnapiMethod?.invoke(this)
                     }
+                    env.createSession(file.absolutePath, options)
+                }.getOrNull()
+
+                (sessionWithNnapi ?: run {
+                    val options = OrtSession.SessionOptions().apply {
+                        setIntraOpNumThreads(threads)
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                    }
+                    env.createSession(file.absolutePath, options)
+                }).also {
+                    session = it
+                    sessionThreads = threads
+                }
             }.onFailure { AnalysisLog.warn("Vocal model unavailable; no mask will be produced", it) }
                 .getOrNull()
         }
