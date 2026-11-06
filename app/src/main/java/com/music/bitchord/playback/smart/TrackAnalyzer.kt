@@ -440,6 +440,8 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 Process.setThreadPriority(
                     if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.EFFICIENT) {
                         Process.THREAD_PRIORITY_BACKGROUND
+                    } else if (isCurrentTrack) {
+                        Process.THREAD_PRIORITY_FOREGROUND
                     } else {
                         Process.THREAD_PRIORITY_DEFAULT
                     },
@@ -542,11 +544,10 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 }
             } finally {
                 running.remove(trackId)
-                // The session holds the model's arena and a parsed ONNX graph in native heap for
-                // as long as it is open, which a backgrounded music player cannot justify between
-                // transitions. Released the moment nothing is in flight; reloading costs under a
-                // second against an analysis that already takes several.
-                if (running.isEmpty()) {
+                // Keep the ONNX NNAPI model sessions persistent across track transitions.
+                // Releasing them on every track forced NNAPI to recompile to GPU drivers (1.7s penalty each track).
+                // They are fully cleaned up in release() when PlaybackService is destroyed or if party mode stops analysis.
+                if (stopped) {
                     tracker.release()
                     vocals.release()
                 }

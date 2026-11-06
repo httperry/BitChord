@@ -48,7 +48,7 @@ import kotlin.math.max
 object AudioDecoder {
 
     private const val TAG = "BitChordAudioDecoder"
-    private const val TIMEOUT_US = 10_000L
+    private const val TIMEOUT_US = 1_000L
 
     /** Decoded mono PCM at the container's own sample rate; the caller resamples. */
     data class Pcm(val samples: FloatArray, val sampleRate: Double)
@@ -298,12 +298,27 @@ object AudioDecoder {
         }.asShortBuffer()
         val frames = shorts.remaining() / safeChannels
         val mono = FloatArray(frames)
-        val frame = ShortArray(safeChannels)
-        for (index in 0 until frames) {
-            shorts.get(frame, 0, safeChannels)
-            var sum = 0
-            for (value in frame) sum += value
-            mono[index] = (sum / safeChannels.toFloat()) / 32768f
+        if (safeChannels == 2) {
+            val scale = 0.5f / 32768f
+            for (index in 0 until frames) {
+                val left = shorts.get().toInt()
+                val right = shorts.get().toInt()
+                mono[index] = (left + right) * scale
+            }
+        } else if (safeChannels == 1) {
+            val scale = 1.0f / 32768f
+            for (index in 0 until frames) {
+                mono[index] = shorts.get() * scale
+            }
+        } else {
+            val scale = (1.0f / safeChannels) / 32768f
+            for (index in 0 until frames) {
+                var sum = 0
+                for (c in 0 until safeChannels) {
+                    sum += shorts.get().toInt()
+                }
+                mono[index] = sum * scale
+            }
         }
         return mono
     }
@@ -334,11 +349,20 @@ object AudioDecoder {
         val frames = shorts.remaining() / safeChannels
         val leftChunk = FloatArray(frames)
         val rightChunk = FloatArray(frames)
-        val frame = ShortArray(safeChannels)
-        for (index in 0 until frames) {
-            shorts.get(frame, 0, safeChannels)
-            leftChunk[index] = frame[0] / 32768f
-            rightChunk[index] = (if (safeChannels > 1) frame[1] else frame[0]) / 32768f
+        val scale = 1.0f / 32768f
+        if (safeChannels >= 2) {
+            val skip = safeChannels - 2
+            for (index in 0 until frames) {
+                leftChunk[index] = shorts.get() * scale
+                rightChunk[index] = shorts.get() * scale
+                for (s in 0 until skip) shorts.get()
+            }
+        } else {
+            for (index in 0 until frames) {
+                val sample = shorts.get() * scale
+                leftChunk[index] = sample
+                rightChunk[index] = sample
+            }
         }
         left += leftChunk
         right += rightChunk

@@ -24,6 +24,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <thread>
+
+#if defined(__ARM_NEON) || defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 namespace bitchord::smart {
 namespace {
@@ -145,35 +150,79 @@ bool ResamplePolyphase(
   out->assign(output_count, 0.0f);
   const long size = static_cast<long>(input.size());
   const float* samples = input.data();
-  for (size_t index = 0; index < output_count; ++index) {
-    // 64-bit whatever `long` is: a long track times a 640 step overflows 32.
-    const int64_t position = static_cast<int64_t>(index) * down;
-    const long whole = static_cast<long>(position / up);
-    const long phase = static_cast<long>(position % up);
-    const float* row = weights.data() + phase * taps;
-    const long first = whole - reach;
 
-    if (first >= 0 && first + taps <= size) {
-      const float* run = samples + first;
-      float sum = 0.0f;
-      {
-        // Reassociated so the sum can be split across vector lanes; the
-        // rounding this changes is far below the audio's own.
-#pragma clang fp reassociate(on)
+  auto compute_range = [&](size_t start_idx, size_t end_idx) {
+    for (size_t index = start_idx; index < end_idx; ++index) {
+      const int64_t position = static_cast<int64_t>(index) * down;
+      const long whole = static_cast<long>(position / up);
+      const long phase = static_cast<long>(position % up);
+      const float* row = weights.data() + phase * taps;
+      const long first = whole - reach;
+
+      if (first >= 0 && first + taps <= size) {
+        const float* run = samples + first;
+        float sum = 0.0f;
+#if defined(__ARM_NEON) || defined(__aarch64__)
+        float32x4_t vsum0 = vdupq_n_f32(0.0f);
+        float32x4_t vsum1 = vdupq_n_f32(0.0f);
+        long k = 0;
+        for (; k + 8 <= taps; k += 8) {
+          float32x4_t r0 = vld1q_f32(row + k);
+          float32x4_t s0 = vld1q_f32(run + k);
+          vsum0 = vmlaq_f32(vsum0, r0, s0);
+
+          float32x4_t r1 = vld1q_f32(row + k + 4);
+          float32x4_t s1 = vld1q_f32(run + k + 4);
+          vsum1 = vmlaq_f32(vsum1, r1, s1);
+        }
+        for (; k + 4 <= taps; k += 4) {
+          float32x4_t r = vld1q_f32(row + k);
+          float32x4_t s = vld1q_f32(run + k);
+          vsum0 = vmlaq_f32(vsum0, r, s);
+        }
+        vsum0 = vaddq_f32(vsum0, vsum1);
+#if defined(__aarch64__)
+        sum = vaddvq_f32(vsum0);
+#else
+        float fsum[4];
+        vst1q_f32(fsum, vsum0);
+        sum = fsum[0] + fsum[1] + fsum[2] + fsum[3];
+#endif
+        for (; k < taps; ++k) {
+          sum += row[k] * run[k];
+        }
+#else
         for (long k = 0; k < taps; ++k) sum += row[k] * run[k];
+#endif
+        (*out)[index] = sum;
+      } else {
+        double sum = 0.0;
+        double weight_sum = 0.0;
+        for (long k = 0; k < taps; ++k) {
+          const long tap = std::min(std::max(first + k, 0L), size - 1);
+          sum += static_cast<double>(row[k]) * static_cast<double>(samples[tap]);
+          weight_sum += row[k];
+        }
+        (*out)[index] = static_cast<float>(weight_sum != 0.0 ? sum / weight_sum : 0.0);
       }
-      (*out)[index] = sum;
-    } else {
-      // The edges, clamped as the general path clamps them and normalized
-      // by the weight the taps actually landed on.
-      double sum = 0.0;
-      double weight_sum = 0.0;
-      for (long k = 0; k < taps; ++k) {
-        const long tap = std::min(std::max(first + k, 0L), size - 1);
-        sum += static_cast<double>(row[k]) * static_cast<double>(samples[tap]);
-        weight_sum += row[k];
-      }
-      (*out)[index] = static_cast<float>(weight_sum != 0.0 ? sum / weight_sum : 0.0);
+    }
+  };
+
+  const unsigned int num_threads = std::min(4u, std::max(1u, std::thread::hardware_concurrency()));
+  if (num_threads <= 1 || output_count < 32768) {
+    compute_range(0, output_count);
+  } else {
+    std::vector<std::thread> workers;
+    workers.reserve(num_threads - 1);
+    const size_t chunk_size = output_count / num_threads;
+    for (unsigned int t = 0; t < num_threads - 1; ++t) {
+      const size_t start = t * chunk_size;
+      const size_t end = (t + 1) * chunk_size;
+      workers.emplace_back(compute_range, start, end);
+    }
+    compute_range((num_threads - 1) * chunk_size, output_count);
+    for (auto& w : workers) {
+      if (w.joinable()) w.join();
     }
   }
   return true;
