@@ -32,6 +32,7 @@
 // downbeats to place transitions on the bar.
 
 #include "audio_analysis.h"
+#include "fast_fft.h"
 
 #include <algorithm>
 #include <cmath>
@@ -68,30 +69,9 @@ double Clamp(double value, double minimum, double maximum) {
   return std::max(minimum, std::min(maximum, value));
 }
 
-// Unnormalized in-place radix-2 FFT. The fixed 512-sample caller satisfies the
-// non-empty power-of-two precondition, so no generic padding is performed here.
+// In-place FFT using FastFft with cached twiddles and direct array butterflies.
 void Fft(std::vector<std::complex<double>>& values) {
-  const size_t size = values.size();
-  for (size_t index = 1, swapped = 0; index < size; ++index) {
-    size_t bit = size >> 1;
-    for (; swapped & bit; bit >>= 1) swapped ^= bit;
-    swapped ^= bit;
-    if (index < swapped) std::swap(values[index], values[swapped]);
-  }
-
-  for (size_t length = 2; length <= size; length <<= 1) {
-    const std::complex<double> root = std::polar(1.0, -2.0 * kPi / length);
-    for (size_t start = 0; start < size; start += length) {
-      std::complex<double> weight(1, 0);
-      for (size_t offset = 0; offset < length / 2; ++offset) {
-        const auto even = values[start + offset];
-        const auto odd = values[start + offset + length / 2] * weight;
-        values[start + offset] = even + odd;
-        values[start + offset + length / 2] = even - odd;
-        weight *= root;
-      }
-    }
-  }
+  FastFftTransform(values);
 }
 
 struct OnsetEnvelopes {

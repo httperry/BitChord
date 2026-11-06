@@ -20,6 +20,7 @@
  */
 
 #include "audio_analysis.h"
+#include "fast_fft.h"
 
 #include <algorithm>
 #include <array>
@@ -105,29 +106,9 @@ bool HasQuietThenRecovery(
   return false;
 }
 
-// Unnormalized radix-2 Cooley-Tukey FFT. Internal callers must provide a
-// non-empty power-of-two frame; the transform intentionally works in place.
+// In-place FFT using FastFft with cached twiddles and direct array butterflies.
 void Fft(std::vector<std::complex<double>>& values) {
-  const size_t size = values.size();
-  for (size_t index = 1, swapped = 0; index < size; ++index) {
-    size_t bit = size >> 1;
-    for (; swapped & bit; bit >>= 1) swapped ^= bit;
-    swapped ^= bit;
-    if (index < swapped) std::swap(values[index], values[swapped]);
-  }
-  for (size_t length = 2; length <= size; length <<= 1) {
-    const auto root = std::polar(1.0, -2.0 * kPi / length);
-    for (size_t start = 0; start < size; start += length) {
-      std::complex<double> weight(1, 0);
-      for (size_t offset = 0; offset < length / 2; ++offset) {
-        const auto even = values[start + offset];
-        const auto odd = values[start + offset + length / 2] * weight;
-        values[start + offset] = even + odd;
-        values[start + offset + length / 2] = even - odd;
-        weight *= root;
-      }
-    }
-  }
+  FastFftTransform(values);
 }
 
 // Builds nominal 250 ms RMS windows. Percentile-derived reference/noise levels
