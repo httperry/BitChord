@@ -222,9 +222,12 @@ fun SettingsScreen(
     onOpenSection: (SettingsCategory) -> Unit = {},
     /** Opens a choice with more options than its row can show, as a page. */
     onOpenChoice: (SettingsChoiceKind) -> Unit = {},
+    /** Opens the real-time Process & Thread Profiler dev tool screen. */
+    onOpenProcessProfiler: () -> Unit = {},
 ) {
     val context = LocalContext.current
 
+    val floatingProfilerHud by AppSettings.floatingProfilerHud.collectAsStateWithLifecycle()
     val wifiQuality by AppSettings.audioQualityWifi.collectAsStateWithLifecycle()
     val cellularQuality by AppSettings.audioQualityCellular.collectAsStateWithLifecycle()
     val metered by AppSettings.meteredConnection.collectAsStateWithLifecycle()
@@ -1224,6 +1227,24 @@ fun SettingsScreen(
                         ),
                     )
                 }
+            }
+
+            row("Process & Thread Profiler", "cpu", "thermal", "heat", "battery", "profiler", "developer", "threads") {
+                SettingsRow(
+                    icon = SfIcons.Performance,
+                    title = "Process & Thread Profiler",
+                    subtitle = "Real-time thread CPU breakdown, thermal status, battery drain, and activity trace",
+                    onClick = onOpenProcessProfiler,
+                )
+            }
+
+            row("Floating Profiler HUD", "overlay", "hud", "cpu", "current", divided = false) {
+                SettingsSubRow(
+                    title = "Floating Profiler HUD",
+                    subtitle = "Pin live CPU %, battery drain (mA), and temperature on-screen",
+                    checked = floatingProfilerHud,
+                    onCheckedChange = AppSettings::setFloatingProfilerHud,
+                )
             }
         }
 

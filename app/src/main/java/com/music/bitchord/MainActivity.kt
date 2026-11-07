@@ -258,6 +258,9 @@ import com.music.bitchord.ui.components.FloatingBottomBar
 import com.music.bitchord.ui.components.GlassNavBar
 import com.music.bitchord.ui.components.floatingtabbar.rememberFloatingTabBarScrollConnection
 import com.music.bitchord.ui.components.FrostedTopBar
+import com.music.bitchord.profiler.FloatingProfilerHud
+import com.music.bitchord.profiler.ProcessProfiler
+import com.music.bitchord.profiler.ProcessProfilerScreen
 import com.music.bitchord.ui.components.LastfmLoginAlert
 import com.music.bitchord.ui.components.LocalAppBackdrop
 import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
@@ -389,6 +392,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        ProcessProfiler.attachWindow(window)
         // Before the composition, so a cold launch from a widget's artwork has
         // the request already standing by the time BitChordApp first reads it.
         PlayerDeepLink.consume(intent)
@@ -503,6 +507,11 @@ class MainActivity : AppCompatActivity() {
         JamInviteLink.consume(intent)
         MusicLink.consume(intent)
     }
+
+    override fun onDestroy() {
+        ProcessProfiler.detachWindow()
+        super.onDestroy()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -537,7 +546,16 @@ private fun BitChordApp(
     // below goes with them, which is the part that costs a draw pass.
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val progressiveBlur by AppSettings.progressiveBlur.collectAsStateWithLifecycle()
-    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur
+    /**
+     * Whether the player's sheet is up. The player is always a full-screen
+     * take-over raised over the page, on every window size — the library
+     * stays full-screen behind a mini player rather than losing a lane to a
+     * permanent pane.
+     */
+    var showNowPlaying by remember { mutableStateOf(false) }
+    LaunchedEffect(showNowPlaying) {
+        ProcessProfiler.logEvent("UI", if (showNowPlaying) "Opened PlayerSheet (NowPlaying)" else "Dismissed PlayerSheet (NowPlaying)")
+    }
     // What folds [GlassNavBar] between its expanded and inline shapes. Held here
     // rather than inside the bar because the page's scroll is what drives it,
     // and the page is a sibling of the bar rather than a child.
@@ -547,13 +565,6 @@ private fun BitChordApp(
     LaunchedEffect(selectedTab) {
         if (selectedTab == TAB_EXPLORE) viewModel.onExploreShown()
     }
-    /**
-     * Whether the player's sheet is up. The player is always a full-screen
-     * take-over raised over the page, on every window size — the library
-     * stays full-screen behind a mini player rather than losing a lane to a
-     * permanent pane.
-     */
-    var showNowPlaying by remember { mutableStateOf(false) }
     // The DAC's own volume while direct USB output owns it; the full player
     // has its own bar for that, so the HUD stays out of its way.
     androidx.compose.runtime.SideEffect { VolumeHud.suppressed = showNowPlaying }
@@ -590,6 +601,9 @@ private fun BitChordApp(
     val coveredByPlayer by remember {
         derivedStateOf { showNowPlaying && playerDock.attached && playerDock.openFraction() >= 1f }
     }
+    // Only pause backdrop recording when the player sheet is fully resting and covers the screen.
+    // During drag, open animation, or sheet gestures, the page remains active so translucent surfaces never freeze.
+    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur && !coveredByPlayer
     // "Reduce animation" keeps the player as it always was: M3's own slide up
     // and down, its own scrim and window animations, no pull from the mini
     // player and no artwork flying between the two. Everything below that
@@ -817,6 +831,12 @@ private fun BitChordApp(
     // route — Back, a tab, another page over it — puts the list away with it.
     LaunchedEffect(detail?.browseId) {
         if (reorderTarget?.browseId != detail?.browseId) reorderTarget = null
+    }
+    LaunchedEffect(route) {
+        val r = route
+        if (r != null) {
+            ProcessProfiler.logEvent("Nav", "Route: ${r::class.simpleName ?: r.toString()}")
+        }
     }
 
     SystemBarIcons(
@@ -1055,6 +1075,15 @@ private fun BitChordApp(
     }
     val controller = rememberMediaController()
     val player = rememberPlayerState(controller)
+    LaunchedEffect(player.song?.videoId) {
+        val s = player.song
+        if (s != null) {
+            ProcessProfiler.logEvent("Playback", "Track: ${s.title} (${s.artist})")
+        }
+    }
+    LaunchedEffect(player.isPlaying) {
+        ProcessProfiler.logEvent("Playback", if (player.isPlaying) "Playing" else "Paused")
+    }
     // A music video's picture follows this controller's clock — see [MusicVideoEngine].
     DisposableEffect(controller) {
         MusicVideoEngine.attach(controller)
@@ -3058,6 +3087,11 @@ private fun BitChordApp(
                                 onConfirmBitPerfect = { confirmBitPerfect = it },
                                 contentPadding = listPadding,
                             )
+                        } else if (pageRoute == AppRoute.ProcessProfiler) {
+                            ProcessProfilerScreen(
+                                onBack = { navigator.pop() },
+                                contentPadding = listPadding,
+                            )
                         } else if (pageRoute == AppRoute.Settings || pageRoute is AppRoute.SettingsSection) {
                             // The main page and every category's page are the
                             // one screen, each showing its own share of the rows.
@@ -3065,6 +3099,7 @@ private fun BitChordApp(
                                 section = (pageRoute as? AppRoute.SettingsSection)?.category,
                                 onOpenSection = { navigator.push(AppRoute.SettingsSection(it)) },
                                 onOpenChoice = { navigator.push(AppRoute.SettingsChoice(it)) },
+                                onOpenProcessProfiler = { navigator.push(AppRoute.ProcessProfiler) },
                                 windowWidth = windowWidth,
                                 signedIn = signedIn,
                                 account = account,
@@ -3748,6 +3783,7 @@ private fun BitChordApp(
                         is AppRoute.SettingsChoice -> stringResource(route.choice.title)
                         AppRoute.EqualizerPresets -> stringResource(R.string.equalizer_preset)
                         AppRoute.Replay -> stringResource(R.string.replay)
+                        AppRoute.ProcessProfiler -> "Process & Thread Profiler"
                         null -> when {
                             detail != null && detailActiveShelf != null -> detailActiveShelf?.title.orEmpty()
                             detail != null -> detail.title
@@ -5825,6 +5861,11 @@ private fun BitChordApp(
 
         // Over the page and its frosted bars, under nothing but the alerts.
         DacVolumeHud(hazeState)
+
+        FloatingProfilerHud(
+            onOpenProfiler = { navigator.push(AppRoute.ProcessProfiler) },
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
 
         blockedAddonSong?.let { song ->
             AddonBlockedAlert(
