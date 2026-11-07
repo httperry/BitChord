@@ -556,7 +556,6 @@ private fun BitChordApp(
     LaunchedEffect(showNowPlaying) {
         ProcessProfiler.logEvent("UI", if (showNowPlaying) "Opened PlayerSheet (NowPlaying)" else "Dismissed PlayerSheet (NowPlaying)")
     }
-    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur && !showNowPlaying
     // What folds [GlassNavBar] between its expanded and inline shapes. Held here
     // rather than inside the bar because the page's scroll is what drives it,
     // and the page is a sibling of the bar rather than a child.
@@ -602,6 +601,9 @@ private fun BitChordApp(
     val coveredByPlayer by remember {
         derivedStateOf { showNowPlaying && playerDock.attached && playerDock.openFraction() >= 1f }
     }
+    // Only pause backdrop recording when the player sheet is fully resting and covers the screen.
+    // During drag, open animation, or sheet gestures, the page remains active so translucent surfaces never freeze.
+    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur && !coveredByPlayer
     // "Reduce animation" keeps the player as it always was: M3's own slide up
     // and down, its own scrim and window animations, no pull from the mini
     // player and no artwork flying between the two. Everything below that
