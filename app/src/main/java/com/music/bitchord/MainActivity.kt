@@ -1073,7 +1073,7 @@ private fun BitChordApp(
     }
     val controller = rememberMediaController()
     val player = rememberPlayerState(controller)
-    LaunchedEffect(player.song?.id) {
+    LaunchedEffect(player.song?.videoId) {
         val s = player.song
         if (s != null) {
             ProcessProfiler.logEvent("Playback", "Track: ${s.title} (${s.artist})")
