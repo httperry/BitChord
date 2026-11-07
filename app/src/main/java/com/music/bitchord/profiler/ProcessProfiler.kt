@@ -51,15 +51,15 @@ enum class Subsystem(val label: String, val color: Color) {
             val myPid = Process.myPid()
             val name = threadName.lowercase()
             return when {
-                tid == myPid || name.contains("bitchord") || name == "main" -> UI_MAIN
                 name.contains("renderthread") || name.contains("hwui") || name.startsWith("mali-") || 
                     name.contains("ged-") || name.contains("gpu") -> RENDER_GPU
                 name.contains("exoplayer") || name.contains("audio") || name.contains("mediacodec") || 
                     name.contains("superpowered") || name.contains("automix") || name.contains("decoder") || 
-                    name.contains("track") -> AUDIO_ENGINE
+                    name.contains("track") || name.contains("smart-") || name.contains("onnx") -> AUDIO_ENGINE
                 name.contains("okhttp") || name.contains("cronet") || name.contains("download") || name.contains("http") -> NETWORK
                 name.contains("defaultdispatch") || name.contains("commonpool") || name.contains("coroutine") -> COROUTINES
                 name.contains("room") || name.contains("sqlite") || name.contains("disk") || name.contains("db") -> DATABASE
+                tid == myPid || name == "main" || name == "om.dev.bitchord" || name == "com.music.bitchord" -> UI_MAIN
                 else -> OTHER
             }
         }
@@ -274,6 +274,7 @@ object ProcessProfiler {
                                 }
                                 _history.value = ArrayList(historyBuffer)
                             }
+                            _recentEvents.value = eventQueue.toList()
                         } catch (_: Throwable) {}
                         delay(1000L)
                     }
@@ -297,10 +298,11 @@ object ProcessProfiler {
     fun logEvent(tag: String, message: String) {
         val event = ProfilerLogEvent(tag = tag, message = message)
         eventQueue.addFirst(event)
-        while (eventQueue.size > 120) {
+        while (eventQueue.size > 150) {
             eventQueue.pollLast()
         }
-        _recentEvents.value = eventQueue.toList()
+        // State update _recentEvents is synced once per second inside sampleJob
+        // to prevent jank logging from triggering cascading UI recompositions.
     }
 
     private fun sampleProcess(
