@@ -546,16 +546,6 @@ private fun BitChordApp(
     // below goes with them, which is the part that costs a draw pass.
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val progressiveBlur by AppSettings.progressiveBlur.collectAsStateWithLifecycle()
-    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur
-    // What folds [GlassNavBar] between its expanded and inline shapes. Held here
-    // rather than inside the bar because the page's scroll is what drives it,
-    // and the page is a sibling of the bar rather than a child.
-    val navBarScroll = rememberFloatingTabBarScrollConnection()
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    // Explore loads the first time it's shown, not at launch beside Home.
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == TAB_EXPLORE) viewModel.onExploreShown()
-    }
     /**
      * Whether the player's sheet is up. The player is always a full-screen
      * take-over raised over the page, on every window size — the library
@@ -565,6 +555,16 @@ private fun BitChordApp(
     var showNowPlaying by remember { mutableStateOf(false) }
     LaunchedEffect(showNowPlaying) {
         ProcessProfiler.logEvent("UI", if (showNowPlaying) "Opened PlayerSheet (NowPlaying)" else "Dismissed PlayerSheet (NowPlaying)")
+    }
+    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur && !showNowPlaying
+    // What folds [GlassNavBar] between its expanded and inline shapes. Held here
+    // rather than inside the bar because the page's scroll is what drives it,
+    // and the page is a sibling of the bar rather than a child.
+    val navBarScroll = rememberFloatingTabBarScrollConnection()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // Explore loads the first time it's shown, not at launch beside Home.
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == TAB_EXPLORE) viewModel.onExploreShown()
     }
     // The DAC's own volume while direct USB output owns it; the full player
     // has its own bar for that, so the HUD stays out of its way.
