@@ -729,6 +729,9 @@ fun Modifier.hangIntoGutter(outset: Dp): Modifier = layout { measurable, constra
  */
 const val MOTION_FRAME_GAP_MS = 25L
 
+/** The frame pacing interval for ambient decorative loops. Defaults to 25ms. */
+val LocalMotionFrameGap = compositionLocalOf { MOTION_FRAME_GAP_MS }
+
 /**
  * Whether the playing bars may move. Off while the row they sit in isn't
  * really being looked at — Now Playing pulled up over the page, the app in
@@ -765,7 +768,8 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
     // re-lays out the row it sits in.
     val elapsedNanos = remember { mutableLongStateOf(0L) }
     val running = LocalPlayingBarsMotion.current
-    LaunchedEffect(running) {
+    val frameGap = LocalMotionFrameGap.current
+    LaunchedEffect(running, frameGap) {
         if (!running) return@LaunchedEffect
         var last = Long.MIN_VALUE
         while (true) {
@@ -773,7 +777,7 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
                 if (last != Long.MIN_VALUE) elapsedNanos.longValue += now - last
                 last = now
             }
-            delay(MOTION_FRAME_GAP_MS)
+            delay(frameGap)
         }
     }
     // The plate is a fixed square so only the bars move, never the box around them.

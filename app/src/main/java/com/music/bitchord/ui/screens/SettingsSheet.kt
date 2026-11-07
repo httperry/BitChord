@@ -246,6 +246,11 @@ fun SettingsScreen(
     val liquidGlass by AppSettings.liquidGlass.collectAsStateWithLifecycle()
     val progressiveBlur by AppSettings.progressiveBlur.collectAsStateWithLifecycle()
     val liquidGlassSupported = isGlassSupported()
+    val glassDownscale by AppSettings.glassDownscale.collectAsStateWithLifecycle()
+    val glassDirectHighlight by AppSettings.glassDirectHighlight.collectAsStateWithLifecycle()
+    val glassSimdMath by AppSettings.glassSimdMath.collectAsStateWithLifecycle()
+    val glassAmbientPacing by AppSettings.glassAmbientPacing.collectAsStateWithLifecycle()
+    val glassPerformanceHud by AppSettings.glassPerformanceHud.collectAsStateWithLifecycle()
     val lyricsBlur by AppSettings.lyricsBlur.collectAsStateWithLifecycle()
     val animatedCanvas by AppSettings.animatedCanvas.collectAsStateWithLifecycle()
     val canvasOverCellular by AppSettings.canvasOverCellular.collectAsStateWithLifecycle()
@@ -972,6 +977,51 @@ fun SettingsScreen(
                         title = progressiveBlurTitle,
                         checked = progressiveBlur,
                         onCheckedChange = AppSettings::setProgressiveBlur,
+                    )
+                }
+
+                row("Performance HUD", "hud", "fps", "latency", "render", divided = false) {
+                    SettingsSubRow(
+                        title = "Real-Time Performance HUD",
+                        subtitle = "Overlay showing frame latency (ms), FPS, and current (mA)",
+                        checked = glassPerformanceHud,
+                        onCheckedChange = AppSettings::setGlassPerformanceHud,
+                    )
+                }
+
+                row("Filtered 0.25x Downscale", "downscale", "resolution", "scale", divided = false) {
+                    SettingsSubRow(
+                        title = "Filtered 0.25x Downscaling",
+                        subtitle = "Reduces fragment fill-rate by 43% under blur",
+                        checked = glassDownscale,
+                        onCheckedChange = AppSettings::setGlassDownscale,
+                    )
+                }
+
+                row("Direct Specular Highlight", "highlight", "specular", "layer", divided = false) {
+                    SettingsSubRow(
+                        title = "Direct Specular Highlight",
+                        subtitle = "Draws rim in main pass, removing 1 offscreen FBO per surface",
+                        checked = glassDirectHighlight,
+                        onCheckedChange = AppSettings::setGlassDirectHighlight,
+                    )
+                }
+
+                row("SIMD Vector Shading Math", "simd", "shader", "agsl", divided = false) {
+                    SettingsSubRow(
+                        title = "SIMD Vector Shading Math",
+                        subtitle = "1-cycle vector FMAs across all 7 dispersion taps",
+                        checked = glassSimdMath,
+                        onCheckedChange = AppSettings::setGlassSimdMath,
+                    )
+                }
+
+                row("Ambient Loop Motion Pacing", "pacing", "loop", "idle", divided = false) {
+                    SettingsSubRow(
+                        title = "Ambient Loop Motion Pacing",
+                        subtitle = "Paces 9s ambient loops to 45ms (~22 FPS), cuts idle churn",
+                        checked = glassAmbientPacing,
+                        onCheckedChange = AppSettings::setGlassAmbientPacing,
                     )
                 }
             }

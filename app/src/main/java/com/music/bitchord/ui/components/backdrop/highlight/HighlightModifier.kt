@@ -101,6 +101,26 @@ internal class HighlightNode(
 
         drawContent()
 
+        val outline = shapeProvider.shape.createOutline(size, layoutDirection, this)
+        val clipPath =
+            if (outline is Outline.Rounded) {
+                clipPath ?: Path().also { clipPath = it }
+            } else {
+                null
+            }
+
+        configurePaint(highlight)
+
+        val direct = com.music.bitchord.data.settings.AppSettings.glassDirectHighlight.value
+        if (direct) {
+            val canvas = drawContext.canvas
+            canvas.save()
+            canvas.clipOutline(outline, clipPath)
+            canvas.drawOutline(outline, paint)
+            canvas.restore()
+            return
+        }
+
         val highlightLayer = highlightLayer
         if (highlightLayer != null) {
             val size = size
@@ -112,16 +132,6 @@ internal class HighlightNode(
                     ceil(size.width).toInt() + 2,
                     ceil(size.height).toInt() + 2
                 )
-
-            val outline = shapeProvider.shape.createOutline(size, layoutDirection, density)
-            val clipPath =
-                if (outline is Outline.Rounded) {
-                    clipPath ?: Path().also { clipPath = it }
-                } else {
-                    null
-                }
-
-            configurePaint(highlight)
 
             highlightLayer.alpha = highlight.alpha
             highlightLayer.blendMode = highlight.style.blendMode

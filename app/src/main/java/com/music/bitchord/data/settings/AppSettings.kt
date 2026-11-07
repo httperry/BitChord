@@ -479,6 +479,21 @@ object AppSettings {
      */
     val progressiveBlur = MutableStateFlow(false)
 
+    /** Downscales backdrop capture to 0.25x (filtered) rather than 0.33x, cutting fill-rate 43%. */
+    val glassDownscale = MutableStateFlow(true)
+
+    /** Draws the specular rim highlight directly without an extra offscreen GraphicsLayer FBO. */
+    val glassDirectHighlight = MutableStateFlow(true)
+
+    /** Uses single-cycle SIMD vector multiply-add in the 7-tap AGSL chromatic dispersion shader. */
+    val glassSimdMath = MutableStateFlow(true)
+
+    /** Paces 9-second ambient cover art loops to 45ms (~22 FPS) rather than 25ms (40 FPS) idle churn. */
+    val glassAmbientPacing = MutableStateFlow(true)
+
+    /** Displays an on-screen real-time rendering diagnostics HUD (frame time ms, FPS, discharge mA). */
+    val glassPerformanceHud = MutableStateFlow(false)
+
     /** Blurs unfocused lyric lines, keeping the active line sharp. */
     val lyricsBlur = MutableStateFlow(true)
 
@@ -984,6 +999,11 @@ object AppSettings {
         reduceDynamicBlur.value = prefs.getBoolean(KEY_REDUCE_BLUR, false)
         liquidGlass.value = prefs.getBoolean(KEY_LIQUID_GLASS, false)
         progressiveBlur.value = prefs.getBoolean(KEY_PROGRESSIVE_BLUR, false)
+        glassDownscale.value = prefs.getBoolean(KEY_GLASS_DOWNSCALE, true)
+        glassDirectHighlight.value = prefs.getBoolean(KEY_GLASS_DIRECT_HIGHLIGHT, true)
+        glassSimdMath.value = prefs.getBoolean(KEY_GLASS_SIMD_MATH, true)
+        glassAmbientPacing.value = prefs.getBoolean(KEY_GLASS_AMBIENT_PACING, true)
+        glassPerformanceHud.value = prefs.getBoolean(KEY_GLASS_PERFORMANCE_HUD, false)
         lyricsBlur.value = prefs.getBoolean(KEY_LYRICS_BLUR, true)
         lyricsOffsetMs.value = prefs.getInt(KEY_LYRICS_OFFSET_MS, 0)
             .coerceIn(MIN_LYRICS_OFFSET_MS, MAX_LYRICS_OFFSET_MS)
@@ -1412,6 +1432,31 @@ object AppSettings {
     fun setProgressiveBlur(value: Boolean) {
         progressiveBlur.value = value
         prefs.edit().putBoolean(KEY_PROGRESSIVE_BLUR, value).apply()
+    }
+
+    fun setGlassDownscale(value: Boolean) {
+        glassDownscale.value = value
+        prefs.edit().putBoolean(KEY_GLASS_DOWNSCALE, value).apply()
+    }
+
+    fun setGlassDirectHighlight(value: Boolean) {
+        glassDirectHighlight.value = value
+        prefs.edit().putBoolean(KEY_GLASS_DIRECT_HIGHLIGHT, value).apply()
+    }
+
+    fun setGlassSimdMath(value: Boolean) {
+        glassSimdMath.value = value
+        prefs.edit().putBoolean(KEY_GLASS_SIMD_MATH, value).apply()
+    }
+
+    fun setGlassAmbientPacing(value: Boolean) {
+        glassAmbientPacing.value = value
+        prefs.edit().putBoolean(KEY_GLASS_AMBIENT_PACING, value).apply()
+    }
+
+    fun setGlassPerformanceHud(value: Boolean) {
+        glassPerformanceHud.value = value
+        prefs.edit().putBoolean(KEY_GLASS_PERFORMANCE_HUD, value).apply()
     }
 
     fun setHighPerformanceMode(value: Boolean) {
@@ -2181,6 +2226,11 @@ object AppSettings {
     private const val KEY_REDUCE_BLUR = "reduce_dynamic_blur"
     private const val KEY_LIQUID_GLASS = "liquid_glass"
     private const val KEY_PROGRESSIVE_BLUR = "progressive_blur"
+    private const val KEY_GLASS_DOWNSCALE = "glass_downscale"
+    private const val KEY_GLASS_DIRECT_HIGHLIGHT = "glass_direct_highlight"
+    private const val KEY_GLASS_SIMD_MATH = "glass_simd_math"
+    private const val KEY_GLASS_AMBIENT_PACING = "glass_ambient_pacing"
+    private const val KEY_GLASS_PERFORMANCE_HUD = "glass_performance_hud"
     private const val KEY_LYRICS_BLUR = "lyrics_blur"
     private const val KEY_LYRICS_OFFSET_MS = "lyrics_offset_ms"
     private const val KEY_TRANSLATION_LANGUAGE = "translation_language"

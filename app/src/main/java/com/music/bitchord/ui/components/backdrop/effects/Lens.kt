@@ -18,6 +18,7 @@ import androidx.compose.ui.util.fastCoerceAtMost
 import com.music.bitchord.ui.components.backdrop.BackdropEffectScope
 import com.music.bitchord.ui.components.backdrop.internal.RoundedRectRefractionShaderString
 import com.music.bitchord.ui.components.backdrop.internal.RoundedRectRefractionWithDispersionShaderString
+import com.music.bitchord.ui.components.backdrop.internal.RoundedRectRefractionWithDispersionFastShaderString
 import com.music.bitchord.ui.components.backdrop.internal.RuntimeShaderEffect
 import com.music.bitchord.ui.components.backdrop.isRuntimeShaderSupported
 
@@ -25,7 +26,8 @@ fun BackdropEffectScope.lens(
     @FloatRange(from = 0.0) refractionHeight: Float,
     @FloatRange(from = 0.0) refractionAmount: Float,
     depthEffect: Boolean = false,
-    chromaticAberration: Boolean = false
+    chromaticAberration: Boolean = false,
+    fastMath: Boolean = false
 ) {
     if (!isRuntimeShaderSupported()) return
     if (refractionHeight <= 0f || refractionAmount <= 0f) return
@@ -42,6 +44,11 @@ fun BackdropEffectScope.lens(
                     obtainRuntimeShader(
                         "Refraction",
                         RoundedRectRefractionShaderString
+                    )
+                } else if (fastMath) {
+                    obtainRuntimeShader(
+                        "RefractionWithDispersionFast",
+                        RoundedRectRefractionWithDispersionFastShaderString
                     )
                 } else {
                     obtainRuntimeShader(

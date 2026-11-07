@@ -167,6 +167,74 @@ half4 main(float2 coord) {
 }"""
 
 @Language("AGSL")
+internal val RoundedRectRefractionWithDispersionFastShaderString = """
+uniform shader content;
+
+uniform float2 size;
+uniform float2 offset;
+uniform float4 cornerRadii;
+uniform float refractionHeight;
+uniform float refractionAmount;
+uniform float depthEffect;
+uniform float chromaticAberration;
+
+$RoundedRectSDF
+
+float circleMap(float x) {
+    return 1.0 - sqrt(1.0 - x * x);
+}
+
+half4 main(float2 coord) {
+    float2 halfSize = size * 0.5;
+    float2 centeredCoord = (coord + offset) - halfSize;
+    float radius = radiusAt(coord, cornerRadii);
+    
+    float sd = sdRoundedRect(centeredCoord, halfSize, radius);
+    if (-sd >= refractionHeight) {
+        return content.eval(coord);
+    }
+    sd = min(sd, 0.0);
+    
+    float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
+    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+    float2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius) + depthEffect * normalize(centeredCoord));
+    
+    float2 refractedCoord = coord + d * grad;
+    float dispersionIntensity = chromaticAberration * ((centeredCoord.x * centeredCoord.y) / (halfSize.x * halfSize.y));
+    float2 dispersedCoord = d * grad * dispersionIntensity;
+    
+    // Constant reciprocal weights preserving all 7 exact color bands with SIMD vector FMA
+    const half W_SEV = 0.14285714;
+    const half W_T35 = 0.28571429;
+    const half W_THR = 0.33333333;
+    
+    half4 color = half4(0.0);
+    
+    half4 red = content.eval(refractedCoord + dispersedCoord);
+    color += red * half4(W_T35, 0.0, 0.0, W_SEV);
+    
+    half4 orange = content.eval(refractedCoord + dispersedCoord * (2.0 / 3.0));
+    color += orange * half4(W_T35, W_SEV, 0.0, W_SEV);
+    
+    half4 yellow = content.eval(refractedCoord + dispersedCoord * (1.0 / 3.0));
+    color += yellow * half4(W_T35, W_T35, 0.0, W_SEV);
+    
+    half4 green = content.eval(refractedCoord);
+    color += green * half4(0.0, W_T35, 0.0, W_SEV);
+    
+    half4 cyan = content.eval(refractedCoord - dispersedCoord * (1.0 / 3.0));
+    color += cyan * half4(0.0, W_T35, W_THR, W_SEV);
+    
+    half4 blue = content.eval(refractedCoord - dispersedCoord * (2.0 / 3.0));
+    color += blue * half4(0.0, 0.0, W_THR, W_SEV);
+    
+    half4 purple = content.eval(refractedCoord - dispersedCoord);
+    color += purple * half4(W_SEV, 0.0, W_THR, W_SEV);
+    
+    return color;
+}"""
+
+@Language("AGSL")
 internal const val DefaultHighlightShaderString = """
 uniform float2 size;
 uniform float4 cornerRadii;

@@ -210,12 +210,16 @@ fun Modifier.liquidGlass(
         return background(MaterialTheme.colorScheme.surface, shape)
             .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
     }
+    val glassDownscale by AppSettings.glassDownscale.collectAsStateWithLifecycle()
+    val glassSimdMath by AppSettings.glassSimdMath.collectAsStateWithLifecycle()
+    val currentScale = if (glassDownscale) 0.25f else GLASS_RESOLUTION_SCALE
+
     val backdrop = LocalAppBackdrop.current
     val exportedBackdrop = LocalGlassExport.current
     val density = LocalDensity.current
-    val blurPx = with(density) { BLUR_RADIUS_DP.dp.toPx() } * GLASS_RESOLUTION_SCALE
-    val lensHeightPx = with(density) { (LENS_HEIGHT * LENS_MAX_DP).dp.toPx() } * GLASS_RESOLUTION_SCALE
-    val lensAmountPx = with(density) { (LENS_AMOUNT * LENS_MAX_DP).dp.toPx() } * GLASS_RESOLUTION_SCALE
+    val blurPx = with(density) { BLUR_RADIUS_DP.dp.toPx() } * currentScale
+    val lensHeightPx = with(density) { (LENS_HEIGHT * LENS_MAX_DP).dp.toPx() } * currentScale
+    val lensAmountPx = with(density) { (LENS_AMOUNT * LENS_MAX_DP).dp.toPx() } * currentScale
     val themeTint = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
         Color(0xFFFAFAFA)
     } else {
@@ -235,6 +239,7 @@ fun Modifier.liquidGlass(
                     refractionAmount = lensAmountPx,
                     depthEffect = true,
                     chromaticAberration = true,
+                    fastMath = glassSimdMath,
                 )
             }
         },
@@ -244,6 +249,6 @@ fun Modifier.liquidGlass(
             drawRect(color = surfaceTintColor, size = size)
         },
         exportedBackdrop = exportedBackdrop,
-        backdropScale = GLASS_RESOLUTION_SCALE,
+        backdropScale = currentScale,
     )
 }

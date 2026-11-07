@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
 import com.music.bitchord.ui.components.libraryGrid
 import com.music.bitchord.ui.components.MOTION_FRAME_GAP_MS
+import com.music.bitchord.ui.components.LocalMotionFrameGap
 import com.music.bitchord.ui.components.LIBRARY_GRID_SPACING
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -660,7 +661,8 @@ private fun loopPhase(periodMs: Int): State<Float> {
     val phase = remember { mutableFloatStateOf(0f) }
     val running = LocalArtworkMotion.current
     val scrolling = LocalArtworkScrolling.current
-    LaunchedEffect(running, periodMs, scrolling) {
+    val frameGap = LocalMotionFrameGap.current
+    LaunchedEffect(running, periodMs, scrolling, frameGap) {
         if (!running) return@LaunchedEffect
         var last = Long.MIN_VALUE
         while (true) {
@@ -677,8 +679,8 @@ private fun loopPhase(periodMs: Int): State<Float> {
                 last = now
             }
             // A nine-second breath doesn't need every vsync, and each frame of
-            // it redraws the page under the glass — see MOTION_FRAME_GAP_MS.
-            delay(MOTION_FRAME_GAP_MS)
+            // it redraws the page under the glass — see LocalMotionFrameGap.
+            delay(frameGap)
         }
     }
     return phase
