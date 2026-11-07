@@ -259,6 +259,7 @@ import com.music.bitchord.ui.components.GlassNavBar
 import com.music.bitchord.ui.components.floatingtabbar.rememberFloatingTabBarScrollConnection
 import com.music.bitchord.ui.components.FrostedTopBar
 import com.music.bitchord.profiler.FloatingProfilerHud
+import com.music.bitchord.profiler.ProcessProfiler
 import com.music.bitchord.profiler.ProcessProfilerScreen
 import com.music.bitchord.ui.components.LastfmLoginAlert
 import com.music.bitchord.ui.components.LocalAppBackdrop
@@ -391,6 +392,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        ProcessProfiler.attachWindow(window)
         // Before the composition, so a cold launch from a widget's artwork has
         // the request already standing by the time BitChordApp first reads it.
         PlayerDeepLink.consume(intent)
@@ -505,6 +507,11 @@ class MainActivity : AppCompatActivity() {
         JamInviteLink.consume(intent)
         MusicLink.consume(intent)
     }
+
+    override fun onDestroy() {
+        ProcessProfiler.detachWindow()
+        super.onDestroy()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -556,6 +563,9 @@ private fun BitChordApp(
      * permanent pane.
      */
     var showNowPlaying by remember { mutableStateOf(false) }
+    LaunchedEffect(showNowPlaying) {
+        ProcessProfiler.logEvent("UI", if (showNowPlaying) "Opened PlayerSheet (NowPlaying)" else "Dismissed PlayerSheet (NowPlaying)")
+    }
     // The DAC's own volume while direct USB output owns it; the full player
     // has its own bar for that, so the HUD stays out of its way.
     androidx.compose.runtime.SideEffect { VolumeHud.suppressed = showNowPlaying }
@@ -820,6 +830,12 @@ private fun BitChordApp(
     LaunchedEffect(detail?.browseId) {
         if (reorderTarget?.browseId != detail?.browseId) reorderTarget = null
     }
+    LaunchedEffect(route) {
+        val r = route
+        if (r != null) {
+            ProcessProfiler.logEvent("Nav", "Route: ${r::class.simpleName ?: r.toString()}")
+        }
+    }
 
     SystemBarIcons(
         dark = !darkTheme && !showNowPlaying && route != AppRoute.Replay && replayStory == null && !onboardingVisible,
@@ -1057,6 +1073,15 @@ private fun BitChordApp(
     }
     val controller = rememberMediaController()
     val player = rememberPlayerState(controller)
+    LaunchedEffect(player.song?.id) {
+        val s = player.song
+        if (s != null) {
+            ProcessProfiler.logEvent("Playback", "Track: ${s.title} (${s.artist})")
+        }
+    }
+    LaunchedEffect(player.isPlaying) {
+        ProcessProfiler.logEvent("Playback", if (player.isPlaying) "Playing" else "Paused")
+    }
     // A music video's picture follows this controller's clock — see [MusicVideoEngine].
     DisposableEffect(controller) {
         MusicVideoEngine.attach(controller)

@@ -1,15 +1,21 @@
 package com.music.bitchord.profiler
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Debug
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
+import android.os.Process
 import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +39,7 @@ import kotlin.math.max
  */
 enum class Subsystem(val label: String, val color: Color) {
     UI_MAIN("UI & Main Thread", Color(0xFF4CAF50)),
-    RENDER_GPU("RenderThread & Shaders", Color(0xFFFF9800)),
+    RENDER_GPU("RenderThread & GPU", Color(0xFFFF9800)),
     AUDIO_ENGINE("Audio Engine & Automix", Color(0xFF2196F3)),
     NETWORK("Network & Streaming", Color(0xFF9C27B0)),
     COROUTINES("Background Coroutines", Color(0xFF00BCD4)),
@@ -41,13 +47,16 @@ enum class Subsystem(val label: String, val color: Color) {
     OTHER("System & JVM Runtime", Color(0xFF9E9E9E));
 
     companion object {
-        fun classify(threadName: String): Subsystem {
+        fun classify(tid: Int, threadName: String): Subsystem {
+            val myPid = Process.myPid()
             val name = threadName.lowercase()
             return when {
-                name == "main" -> UI_MAIN
-                name.contains("renderthread") || name.contains("hwui") || name.contains("gpu") -> RENDER_GPU
-                name.contains("exoplayer") || name.contains("audio") || name.contains("superpowered") || 
-                    name.contains("automix") || name.contains("decoder") || name.contains("track") -> AUDIO_ENGINE
+                tid == myPid || name.contains("bitchord") || name == "main" -> UI_MAIN
+                name.contains("renderthread") || name.contains("hwui") || name.startsWith("mali-") || 
+                    name.contains("ged-") || name.contains("gpu") -> RENDER_GPU
+                name.contains("exoplayer") || name.contains("audio") || name.contains("mediacodec") || 
+                    name.contains("superpowered") || name.contains("automix") || name.contains("decoder") || 
+                    name.contains("track") -> AUDIO_ENGINE
                 name.contains("okhttp") || name.contains("cronet") || name.contains("download") || name.contains("http") -> NETWORK
                 name.contains("defaultdispatch") || name.contains("commonpool") || name.contains("coroutine") -> COROUTINES
                 name.contains("room") || name.contains("sqlite") || name.contains("disk") || name.contains("db") -> DATABASE
@@ -73,6 +82,9 @@ data class ThreadCpuSample(
  */
 data class ProcessSnapshot(
     val totalProcessCpuPercent: Float,
+    val mainThreadCpuPercent: Float,
+    val renderThreadCpuPercent: Float,
+    val audioCpuPercent: Float,
     val coreCount: Int,
     val thermalStatus: String,
     val thermalHeadroom: Float,
@@ -82,7 +94,26 @@ data class ProcessSnapshot(
     val nativeHeapMb: Float,
     val subsystemCpu: Map<Subsystem, Float>,
     val topThreads: List<ThreadCpuSample>,
+    // Hardware FrameMetrics
+    val avgFrameDurationMs: Float,
+    val avgGpuDurationMs: Float,
+    val avgDrawDurationMs: Float,
+    val jankPercentage: Float,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
+ * Historical time-series sample point for trend graphing.
+ */
+data class HistoryPoint(
+    val timestamp: Long,
+    val totalCpu: Float,
+    val mainThreadCpu: Float,
+    val renderThreadCpu: Float,
+    val audioCpu: Float,
+    val gpuDurationMs: Float,
+    val batteryMa: Int,
+    val tempC: Float
 )
 
 /**
@@ -95,28 +126,30 @@ data class ProfilerLogEvent(
 )
 
 /**
- * In-app high-precision Linux userspace thread profiler and hardware telemetry engine.
- *
- * Reads `/proc/self/task/<tid>/stat` to compute exact CPU tick delta per thread
- * with zero root requirements, low CPU overhead (<0.1%), and real-time attribution.
+ * In-app high-precision Linux userspace thread profiler, hardware GPU frame monitor,
+ * and continuous diagnostic telemetry engine.
  */
 object ProcessProfiler {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var sampleJob: kotlinx.coroutines.Job? = null
 
-    // Reference counts for active viewers (Screen or HUD)
     private var activeSubscribers = 0
     private val subscriberLock = Any()
 
     private val _snapshot = MutableStateFlow(createEmptySnapshot())
     val snapshot: StateFlow<ProcessSnapshot> = _snapshot.asStateFlow()
 
+    // 60-second rolling history buffer
+    private val historyBuffer = ArrayList<HistoryPoint>(65)
+    private val _history = MutableStateFlow<List<HistoryPoint>>(emptyList())
+    val history: StateFlow<List<HistoryPoint>> = _history.asStateFlow()
+
+    // Activity trace event queue
     private val eventQueue = ConcurrentLinkedDeque<ProfilerLogEvent>()
     private val _recentEvents = MutableStateFlow<List<ProfilerLogEvent>>(emptyList())
     val recentEvents: StateFlow<List<ProfilerLogEvent>> = _recentEvents.asStateFlow()
 
-    // Clock ticks per second (usually 100 on Linux / Android)
     private val clockTicksPerSec: Long = try {
         Os.sysconf(OsConstants._SC_CLK_TCK).coerceAtLeast(100L)
     } catch (_: Throwable) {
@@ -125,9 +158,88 @@ object ProcessProfiler {
 
     private val coreCount: Int = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
 
-    // Previous sampling state per thread: tid -> (totalJiffies, timestampMs)
     private val previousThreadJiffies = HashMap<Int, Long>()
     private var previousSampleTimeMs = 0L
+
+    // Hardware FrameMetrics telemetry
+    private var activeWindow: Window? = null
+    private var frameMetricsListener: Window.OnFrameMetricsAvailableListener? = null
+    private val frameMetricsThread = android.os.HandlerThread("profiler-framemetrics").apply { start() }
+    private val frameMetricsHandler = Handler(frameMetricsThread.looper)
+    private val frameMetricsLock = Any()
+
+    @Volatile private var frameAccTotalMs = 0.0
+    @Volatile private var frameAccGpuMs = 0.0
+    @Volatile private var frameAccDrawMs = 0.0
+    @Volatile private var frameCountInWindow = 0
+    @Volatile private var jankCountInWindow = 0
+
+    init {
+        logEvent("System", "ProcessProfiler engine initialized on ${coreCount}-core ARM64")
+    }
+
+    fun attachWindow(window: Window) {
+        if (activeWindow == window) return
+        detachWindow()
+        activeWindow = window
+
+        frameMetricsListener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
+            val totalNs = frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION)
+            val drawNs = frameMetrics.getMetric(FrameMetrics.DRAW_DURATION)
+            val gpuNs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                frameMetrics.getMetric(FrameMetrics.GPU_DURATION)
+            } else 0L
+
+            val totalMs = totalNs / 1_000_000.0
+            val drawMs = drawNs / 1_000_000.0
+            val gpuMs = gpuNs / 1_000_000.0
+
+            synchronized(frameMetricsLock) {
+                frameAccTotalMs += totalMs
+                frameAccGpuMs += gpuMs
+                frameAccDrawMs += drawMs
+                frameCountInWindow++
+
+                if (totalMs > 16.6) { // Drop below 60fps
+                    jankCountInWindow++
+                }
+
+                if (frameCountInWindow > 1200) {
+                    frameAccTotalMs /= 2
+                    frameAccGpuMs /= 2
+                    frameAccDrawMs /= 2
+                    frameCountInWindow /= 2
+                    jankCountInWindow /= 2
+                }
+            }
+
+            if (totalMs > 35.0) {
+                logEvent(
+                    "Jank",
+                    "Frame spike: %.1fms (GPU: %.1fms, Draw: %.1fms)".format(totalMs, gpuMs, drawMs)
+                )
+            }
+        }
+
+        try {
+            window.addOnFrameMetricsAvailableListener(frameMetricsListener!!, frameMetricsHandler)
+            logEvent("HWUI", "Attached hardware FrameMetrics listener (Mali GPU duration enabled)")
+        } catch (t: Throwable) {
+            logEvent("HWUI", "Failed to attach FrameMetrics: ${t.message}")
+        }
+    }
+
+    fun detachWindow() {
+        val w = activeWindow
+        val l = frameMetricsListener
+        if (w != null && l != null) {
+            try {
+                w.removeOnFrameMetricsAvailableListener(l)
+            } catch (_: Throwable) {}
+        }
+        activeWindow = null
+        frameMetricsListener = null
+    }
 
     fun startProfiling(context: Context) {
         synchronized(subscriberLock) {
@@ -142,9 +254,27 @@ object ProcessProfiler {
                         try {
                             val snap = sampleProcess(appContext, powerManager, batteryManager)
                             _snapshot.value = snap
-                        } catch (t: Throwable) {
-                            // Defensive: prevent sampler crash
-                        }
+
+                            // Append to rolling history
+                            synchronized(historyBuffer) {
+                                historyBuffer.add(
+                                    HistoryPoint(
+                                        timestamp = snap.timestamp,
+                                        totalCpu = snap.totalProcessCpuPercent,
+                                        mainThreadCpu = snap.mainThreadCpuPercent,
+                                        renderThreadCpu = snap.renderThreadCpuPercent,
+                                        audioCpu = snap.audioCpuPercent,
+                                        gpuDurationMs = snap.avgGpuDurationMs,
+                                        batteryMa = snap.batteryDischargeCurrentMa,
+                                        tempC = snap.batteryTemperatureC
+                                    )
+                                )
+                                while (historyBuffer.size > 60) {
+                                    historyBuffer.removeAt(0)
+                                }
+                                _history.value = ArrayList(historyBuffer)
+                            }
+                        } catch (_: Throwable) {}
                         delay(1000L)
                     }
                 }
@@ -167,7 +297,7 @@ object ProcessProfiler {
     fun logEvent(tag: String, message: String) {
         val event = ProfilerLogEvent(tag = tag, message = message)
         eventQueue.addFirst(event)
-        while (eventQueue.size > 80) {
+        while (eventQueue.size > 120) {
             eventQueue.pollLast()
         }
         _recentEvents.value = eventQueue.toList()
@@ -193,6 +323,11 @@ object ProcessProfiler {
         val threadSamples = ArrayList<ThreadCpuSample>()
         val subsystemTotals = HashMap<Subsystem, Float>()
 
+        val myPid = Process.myPid()
+        var mainThreadCpu = 0f
+        var renderThreadCpu = 0f
+        var audioCpu = 0f
+
         for (taskFile in taskFiles) {
             val tid = taskFile.name.toIntOrNull() ?: continue
             val statFile = File(taskFile, "stat")
@@ -204,7 +339,7 @@ object ProcessProfiler {
                 val closeParen = line.lastIndexOf(')')
                 if (openParen == -1 || closeParen == -1) continue
 
-                val threadName = line.substring(openParen + 1, closeParen)
+                val rawThreadName = line.substring(openParen + 1, closeParen)
                 val remaining = line.substring(closeParen + 2).split(" ")
                 if (remaining.size < 13) continue
 
@@ -220,23 +355,31 @@ object ProcessProfiler {
                     val deltaJiffies = totalJiffies - prevJiffies
                     // CPU % of a single core (0% - 100%)
                     val singleCorePercent = ((deltaJiffies.toDouble() / clockTicksPerSec) / timeDeltaSec * 100.0).toFloat()
-                    if (singleCorePercent > 0.05f) {
-                        val subsystem = Subsystem.classify(threadName)
+                    if (singleCorePercent > 0.05f || tid == myPid) {
+                        val subsystem = Subsystem.classify(tid, rawThreadName)
+                        val displayName = if (tid == myPid) {
+                            "Main UI Thread ($rawThreadName)"
+                        } else {
+                            rawThreadName
+                        }
+
                         threadSamples.add(
                             ThreadCpuSample(
                                 tid = tid,
-                                name = threadName,
+                                name = displayName,
                                 state = state,
                                 cpuPercent = singleCorePercent,
                                 subsystem = subsystem
                             )
                         )
                         subsystemTotals[subsystem] = (subsystemTotals[subsystem] ?: 0f) + singleCorePercent
+
+                        if (tid == myPid) mainThreadCpu = singleCorePercent
+                        if (rawThreadName.contains("renderthread", ignoreCase = true)) renderThreadCpu = singleCorePercent
+                        if (subsystem == Subsystem.AUDIO_ENGINE) audioCpu += singleCorePercent
                     }
                 }
-            } catch (_: Throwable) {
-                // Thread may have terminated during read
-            }
+            } catch (_: Throwable) {}
         }
 
         previousThreadJiffies.clear()
@@ -288,8 +431,31 @@ object ProcessProfiler {
         val javaHeapMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024f * 1024f)
         val nativeHeapMb = Debug.getNativeHeapAllocatedSize() / (1024f * 1024f)
 
+        // Consume frame metrics accumulator under lock
+        val avgTotal: Float
+        val avgGpu: Float
+        val avgDraw: Float
+        val jankPct: Float
+        synchronized(frameMetricsLock) {
+            val frames = frameCountInWindow.coerceAtLeast(1)
+            avgTotal = (frameAccTotalMs / frames).toFloat()
+            avgGpu = (frameAccGpuMs / frames).toFloat()
+            avgDraw = (frameAccDrawMs / frames).toFloat()
+            jankPct = (jankCountInWindow.toFloat() / frames.toFloat()) * 100f
+
+            // Reset frame accumulators for next window
+            frameAccTotalMs = 0.0
+            frameAccGpuMs = 0.0
+            frameAccDrawMs = 0.0
+            frameCountInWindow = 0
+            jankCountInWindow = 0
+        }
+
         return ProcessSnapshot(
             totalProcessCpuPercent = totalProcessCpuPercent,
+            mainThreadCpuPercent = mainThreadCpu,
+            renderThreadCpuPercent = renderThreadCpu,
+            audioCpuPercent = audioCpu,
             coreCount = coreCount,
             thermalStatus = thermalStatusStr,
             thermalHeadroom = thermalHeadroom,
@@ -298,12 +464,19 @@ object ProcessProfiler {
             javaHeapMb = javaHeapMb,
             nativeHeapMb = nativeHeapMb,
             subsystemCpu = subsystemTotals,
-            topThreads = threadSamples
+            topThreads = threadSamples,
+            avgFrameDurationMs = avgTotal,
+            avgGpuDurationMs = avgGpu,
+            avgDrawDurationMs = avgDraw,
+            jankPercentage = jankPct
         )
     }
 
     private fun createEmptySnapshot() = ProcessSnapshot(
         totalProcessCpuPercent = 0f,
+        mainThreadCpuPercent = 0f,
+        renderThreadCpuPercent = 0f,
+        audioCpuPercent = 0f,
         coreCount = coreCount,
         thermalStatus = "Sampling...",
         thermalHeadroom = 0f,
@@ -312,48 +485,74 @@ object ProcessProfiler {
         javaHeapMb = 0f,
         nativeHeapMb = 0f,
         subsystemCpu = emptyMap(),
-        topThreads = emptyList()
+        topThreads = emptyList(),
+        avgFrameDurationMs = 0f,
+        avgGpuDurationMs = 0f,
+        avgDrawDurationMs = 0f,
+        jankPercentage = 0f
     )
 
     /**
-     * Exports a comprehensive snapshot markdown report to /storage/emulated/0/Download/
+     * Exports a comprehensive multi-point diagnostic markdown report to /storage/emulated/0/Download/
      */
     fun exportReport(context: Context): File? {
         val snap = snapshot.value
+        val historyList = history.value
         val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-        val fileName = "BitChord_Profiler_${dateFormat.format(Date())}.md"
+        val fileName = "BitChord_DeepProfile_${dateFormat.format(Date())}.md"
         val downloadDir = File("/storage/emulated/0/Download")
         if (!downloadDir.exists()) downloadDir.mkdirs()
 
         val file = File(downloadDir, fileName)
         val sb = StringBuilder()
-        sb.appendLine("# BitChord Process & Hardware Profile Report")
+        sb.appendLine("# BitChord In-Depth Process & Hardware Diagnostics Report")
         sb.appendLine("Generated: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\n")
 
-        sb.appendLine("## System & Hardware Telemetry")
-        sb.appendLine("- Total Process CPU: ${"%.1f".format(snap.totalProcessCpuPercent)}% (across ${snap.coreCount} cores)")
-        sb.appendLine("- Thermal Status: ${snap.thermalStatus}")
-        sb.appendLine("- Thermal Headroom: ${"%.2f".format(snap.thermalHeadroom)} / 1.0 (>= 1.0 = hardware throttling)")
-        sb.appendLine("- Battery Discharge Current: -${snap.batteryDischargeCurrentMa} mA")
-        sb.appendLine("- Battery Temperature: ${"%.1f".format(snap.batteryTemperatureC)} °C")
-        sb.appendLine("- Java Heap: ${"%.1f".format(snap.javaHeapMb)} MB | Native Heap: ${"%.1f".format(snap.nativeHeapMb)} MB\n")
+        sb.appendLine("## 1. System & Hardware Telemetry")
+        sb.appendLine("- **Process Total CPU:** ${"%.1f".format(snap.totalProcessCpuPercent)}% (across ${snap.coreCount} physical cores)")
+        sb.appendLine("- **Thermal State:** ${snap.thermalStatus}")
+        sb.appendLine("- **Thermal Headroom:** ${"%.2f".format(snap.thermalHeadroom)} / 1.0 (>= 1.0 means active kernel throttling)")
+        sb.appendLine("- **Battery Discharge Current:** -${snap.batteryDischargeCurrentMa} mA")
+        sb.appendLine("- **Battery Temperature:** ${"%.1f".format(snap.batteryTemperatureC)} °C")
+        sb.appendLine("- **Memory:** Java Heap: ${"%.1f".format(snap.javaHeapMb)} MB | Native Heap: ${"%.1f".format(snap.nativeHeapMb)} MB\n")
 
-        sb.appendLine("## CPU Utilization by Subsystem")
+        sb.appendLine("## 2. Hardware FrameMetrics & GPU Duration (Direct OS Compositor)")
+        sb.appendLine("- **Mali GPU Work Time:** ${"%.2f".format(snap.avgGpuDurationMs)} ms/frame")
+        sb.appendLine("- **Main Thread Draw Pass:** ${"%.2f".format(snap.avgDrawDurationMs)} ms/frame")
+        sb.appendLine("- **Total Frame Duration:** ${"%.2f".format(snap.avgFrameDurationMs)} ms/frame")
+        sb.appendLine("- **Janky Frame Ratio:** ${"%.1f".format(snap.jankPercentage)}% dropped\n")
+
+        sb.appendLine("## 3. Subsystem CPU Breakdown")
         for ((subsystem, cpu) in snap.subsystemCpu.entries.sortedByDescending { it.value }) {
             sb.appendLine("- **${subsystem.label}**: ${"%.2f".format(cpu)}% CPU")
         }
         sb.appendLine()
 
-        sb.appendLine("## Top Active Threads")
+        sb.appendLine("## 4. Top Active Threads (with True Identity)")
         sb.appendLine("| TID | Thread Name | Subsystem | State | CPU % |")
         sb.appendLine("| :--- | :--- | :--- | :--- | :--- |")
-        for (t in snap.topThreads.take(25)) {
+        for (t in snap.topThreads.take(30)) {
             sb.appendLine("| ${t.tid} | `${t.name}` | ${t.subsystem.label} | ${t.state} | ${"%.2f".format(t.cpuPercent)}% |")
         }
         sb.appendLine()
 
-        sb.appendLine("## Recent Activity Trace Events")
-        for (e in recentEvents.value.take(40)) {
+        if (historyList.isNotEmpty()) {
+            val avgCpu = historyList.map { it.totalCpu }.average()
+            val peakCpu = historyList.maxOfOrNull { it.totalCpu } ?: 0f
+            val minCpu = historyList.minOfOrNull { it.totalCpu } ?: 0f
+            sb.appendLine("## 5. Session Timeline History (Last ${historyList.size} Samples)")
+            sb.appendLine("- Peak CPU: ${"%.1f".format(peakCpu)}% | Average CPU: ${"%.1f".format(avgCpu)}% | Min CPU: ${"%.1f".format(minCpu)}%")
+            sb.appendLine("| Timestamp | Total CPU | UI Main | RenderThread | Audio Engine | GPU Duration | Battery mA |")
+            sb.appendLine("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+            for (p in historyList.takeLast(20)) {
+                val tStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(p.timestamp))
+                sb.appendLine("| $tStr | ${"%.1f".format(p.totalCpu)}% | ${"%.1f".format(p.mainThreadCpu)}% | ${"%.1f".format(p.renderThreadCpu)}% | ${"%.1f".format(p.audioCpu)}% | ${"%.2f".format(p.gpuDurationMs)}ms | -${p.batteryMa}mA |")
+            }
+            sb.appendLine()
+        }
+
+        sb.appendLine("## 6. Continuous Activity Trace Log (${recentEvents.value.size} Events)")
+        for (e in recentEvents.value.take(80)) {
             val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(e.timestamp))
             sb.appendLine("- `[$timeStr]` **[${e.tag}]** ${e.message}")
         }

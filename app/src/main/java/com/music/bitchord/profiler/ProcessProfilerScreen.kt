@@ -1,6 +1,7 @@
 package com.music.bitchord.profiler
 
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +37,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -50,10 +54,11 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Developer Diagnostics & Process Analyzer Screen.
- *
- * Provides real-time breakdown of thread CPU usage, subsystem attribution,
- * hardware thermal throttling status, battery discharge current, and trace events.
+ * High-precision developer diagnostics suite:
+ * - Real-time thread CPU breakdown
+ * - Hardware Mali GPU duration & frame metrics
+ * - Rolling 60-second time series trend graph
+ * - Continuous activity trace logging
  */
 @Composable
 fun ProcessProfilerScreen(
@@ -70,6 +75,7 @@ fun ProcessProfilerScreen(
     }
 
     val snapshot by ProcessProfiler.snapshot.collectAsStateWithLifecycle()
+    val history by ProcessProfiler.history.collectAsStateWithLifecycle()
     val events by ProcessProfiler.recentEvents.collectAsStateWithLifecycle()
     val floatingHud by AppSettings.floatingProfilerHud.collectAsStateWithLifecycle()
 
@@ -78,7 +84,7 @@ fun ProcessProfilerScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Top App Bar
+        // App Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -94,7 +100,7 @@ fun ProcessProfilerScreen(
                 )
             }
             Text(
-                text = "Process Analyzer & Dev Tool",
+                text = "Process & Hardware Profiler",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
@@ -107,7 +113,7 @@ fun ProcessProfilerScreen(
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section 1: Hardware & System Cards
+            // Section 1: Hardware Summary
             item {
                 Column(
                     modifier = Modifier
@@ -127,20 +133,20 @@ fun ProcessProfilerScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         MetricCard(
-                            title = "Process CPU",
+                            title = "Process Total CPU",
                             value = "%.1f%%".format(snapshot.totalProcessCpuPercent),
-                            subtitle = "${snapshot.coreCount} Cores",
+                            subtitle = "${snapshot.coreCount} Cores (UI: %.1f%%)".format(snapshot.mainThreadCpuPercent),
                             modifier = Modifier.weight(1f),
                             valueColor = when {
-                                snapshot.totalProcessCpuPercent < 15f -> Color(0xFF4CAF50)
-                                snapshot.totalProcessCpuPercent < 35f -> Color(0xFFFFC107)
+                                snapshot.totalProcessCpuPercent < 25f -> Color(0xFF4CAF50)
+                                snapshot.totalProcessCpuPercent < 60f -> Color(0xFFFFC107)
                                 else -> Color(0xFFFF5252)
                             }
                         )
                         MetricCard(
                             title = "Battery Drain",
                             value = if (snapshot.batteryDischargeCurrentMa > 0) "-${snapshot.batteryDischargeCurrentMa} mA" else "N/A",
-                            subtitle = "Temp: %.1f°C".format(snapshot.batteryTemperatureC),
+                            subtitle = "Temp: %.1f °C".format(snapshot.batteryTemperatureC),
                             modifier = Modifier.weight(1f),
                             valueColor = Color(0xFF64B5F6)
                         )
@@ -151,24 +157,68 @@ fun ProcessProfilerScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         MetricCard(
+                            title = "Mali GPU Work",
+                            value = "%.2f ms".format(snapshot.avgGpuDurationMs),
+                            subtitle = "Frame: %.1fms · Jank: %.1f%%".format(snapshot.avgFrameDurationMs, snapshot.jankPercentage),
+                            modifier = Modifier.weight(1f),
+                            valueColor = if (snapshot.avgGpuDurationMs > 8.0f) Color(0xFFFF9800) else Color(0xFF4CAF50)
+                        )
+                        MetricCard(
                             title = "Thermal Status",
                             value = snapshot.thermalStatus,
                             subtitle = "Headroom: %.2f / 1.0".format(snapshot.thermalHeadroom),
                             modifier = Modifier.weight(1f),
                             valueColor = if (snapshot.thermalHeadroom >= 0.85f) Color(0xFFFF7043) else Color(0xFF81C784)
                         )
-                        MetricCard(
-                            title = "Memory",
-                            value = "%.0f MB".format(snapshot.javaHeapMb + snapshot.nativeHeapMb),
-                            subtitle = "JVM: %.0fM · Nat: %.0fM".format(snapshot.javaHeapMb, snapshot.nativeHeapMb),
-                            modifier = Modifier.weight(1f),
-                            valueColor = MaterialTheme.colorScheme.onSurface
+                    }
+                }
+            }
+
+            // Section 2: 60-Second Real-Time Timeline Trend
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "60-SECOND ROLLING TIMELINE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Green: Total CPU · Orange: RenderThread",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 9.sp
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.Black.copy(alpha = 0.82f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                    ) {
+                        CpuTimelineGraph(
+                            history = history,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
                 }
             }
 
-            // Section 2: Subsystem CPU Breakdown
+            // Section 3: Subsystem CPU Attribution
             item {
                 Column(
                     modifier = Modifier
@@ -201,7 +251,7 @@ fun ProcessProfilerScreen(
                 }
             }
 
-            // Section 3: Dev Controls (HUD & Report Export)
+            // Section 4: Dev Controls
             item {
                 Column(
                     modifier = Modifier
@@ -210,7 +260,7 @@ fun ProcessProfilerScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "DEV CONTROLS",
+                        text = "DEV CONTROLS & EXPORT",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
@@ -222,7 +272,7 @@ fun ProcessProfilerScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Row(
@@ -237,7 +287,7 @@ fun ProcessProfilerScreen(
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
-                                        text = "Keep live CPU and battery telemetry pinned on-screen anywhere in the app",
+                                        text = "Pin live CPU %, GPU work, and mA on-screen while using the app",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -251,7 +301,7 @@ fun ProcessProfilerScreen(
                             Button(
                                 onClick = {
                                     val file = ProcessProfiler.exportReport(context)
-                                    val msg = if (file != null) "Saved snapshot to Download/${file.name}" else "Failed to write report"
+                                    val msg = if (file != null) "Saved multi-point profile to Download/${file.name}" else "Failed to write report"
                                     Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -259,14 +309,14 @@ fun ProcessProfilerScreen(
                             ) {
                                 Icon(Icons.Rounded.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.size(8.dp))
-                                Text("Export Diagnostic Snapshot to Downloads")
+                                Text("Export In-Depth Diagnostic Report to Downloads")
                             }
                         }
                     }
                 }
             }
 
-            // Section 4: Live Active Threads
+            // Section 5: Top Active Threads
             item {
                 Column(
                     modifier = Modifier
@@ -280,15 +330,16 @@ fun ProcessProfilerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "ACTIVE THREADS (${snapshot.topThreads.size})",
+                            text = "TOP ACTIVE THREADS (${snapshot.topThreads.size})",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Live 1s interval",
+                            text = "Live Linux /proc/self/task/ sampling",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -309,7 +360,7 @@ fun ProcessProfilerScreen(
                 }
             }
 
-            // Section 5: Activity Log Events
+            // Section 6: Continuous Activity Trace Log
             item {
                 Column(
                     modifier = Modifier
@@ -318,7 +369,7 @@ fun ProcessProfilerScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "TRACE ACTIVITY LOG (${events.size})",
+                        text = "CONTINUOUS ACTIVITY TRACE LOG (${events.size} Events)",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
@@ -326,7 +377,7 @@ fun ProcessProfilerScreen(
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color.Black.copy(alpha = 0.85f),
+                        color = Color.Black.copy(alpha = 0.88f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -335,26 +386,55 @@ fun ProcessProfilerScreen(
                         ) {
                             if (events.isEmpty()) {
                                 Text(
-                                    text = "No trace events recorded yet. Play a song or trigger Automix.",
+                                    text = "Monitoring activity (playback, navigation, frame spikes)...",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.Gray,
                                     fontFamily = FontFamily.Monospace
                                 )
                             } else {
                                 val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-                                events.take(15).forEach { ev ->
+                                events.take(25).forEach { ev ->
                                     val time = timeFormat.format(Date(ev.timestamp))
-                                    Text(
-                                        text = "[$time] [${ev.tag}] ${ev.message}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = when (ev.tag) {
-                                            "Audio", "Automix" -> Color(0xFF64B5F6)
-                                            "Backdrop", "UI" -> Color(0xFFFFB74D)
-                                            else -> Color.White.copy(alpha = 0.85f)
-                                        },
-                                        fontSize = 10.5.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            text = "[$time]",
+                                            color = Color.Gray,
+                                            fontSize = 9.5.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(
+                                                    when (ev.tag) {
+                                                        "Playback" -> Color(0xFF1976D2)
+                                                        "Automix" -> Color(0xFF00796B)
+                                                        "Jank" -> Color(0xFFD32F2F)
+                                                        "UI", "Nav" -> Color(0xFFE64A19)
+                                                        else -> Color(0xFF455A64)
+                                                    }
+                                                )
+                                                .padding(horizontal = 4.dp, vertical = 0.5.dp)
+                                        ) {
+                                            Text(
+                                                text = ev.tag,
+                                                color = Color.White,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                        Text(
+                                            text = ev.message,
+                                            color = Color.White.copy(alpha = 0.9f),
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -362,6 +442,60 @@ fun ProcessProfilerScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CpuTimelineGraph(
+    history: List<HistoryPoint>,
+    modifier: Modifier = Modifier
+) {
+    if (history.size < 2) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(
+                text = "Building timeline history (samples every 1s)...",
+                color = Color.Gray,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        return
+    }
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val maxPoints = 60
+        val points = history.takeLast(maxPoints)
+
+        val maxVal = maxOf(100f, points.maxOf { it.totalCpu } * 1.15f)
+
+        // Draw grid lines
+        drawLine(Color.White.copy(alpha = 0.08f), Offset(0f, h * 0.5f), Offset(w, h * 0.5f))
+        drawLine(Color.White.copy(alpha = 0.08f), Offset(0f, h * 0.25f), Offset(w, h * 0.25f))
+
+        val stepX = w / (maxPoints - 1).coerceAtLeast(1).toFloat()
+        val totalPath = Path()
+        val renderPath = Path()
+
+        points.forEachIndexed { i, p ->
+            val x = i * stepX
+            val yTotal = h - ((p.totalCpu / maxVal) * h).coerceIn(0f, h)
+            val yRender = h - ((p.renderThreadCpu / maxVal) * h).coerceIn(0f, h)
+
+            if (i == 0) {
+                totalPath.moveTo(x, yTotal)
+                renderPath.moveTo(x, yRender)
+            } else {
+                totalPath.lineTo(x, yTotal)
+                renderPath.lineTo(x, yRender)
+            }
+        }
+
+        // Draw RenderThread line (Orange)
+        drawPath(renderPath, Color(0xFFFF9800), style = Stroke(width = 1.5.dp.toPx()))
+        // Draw Total CPU line (Green)
+        drawPath(totalPath, Color(0xFF4CAF50), style = Stroke(width = 2.dp.toPx()))
     }
 }
 
