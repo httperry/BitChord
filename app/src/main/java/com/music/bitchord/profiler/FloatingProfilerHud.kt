@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import android.widget.Toast
+import com.music.bitchord.data.settings.AppSettings
 
 /**
  * Lightweight real-time floating status overlay showing live CPU, thermal, and battery telemetry.
