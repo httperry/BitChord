@@ -164,16 +164,32 @@ def main():
     if args.stalls:
         stalls = fetch_json("/stalls", args.url)
         if not stalls:
-            print("Could not fetch stalls from", args.url)
+            # Fallback to local disk file
+            stalls_file = "/storage/emulated/0/Documents/BitChord/telemetry/telemetry_stalls.jsonl"
+            if os.path.exists(stalls_file):
+                stalls = []
+                with open(stalls_file, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                stalls.append(json.loads(line))
+                            except Exception:
+                                pass
+        if not stalls:
+            print("Could not fetch stalls from endpoint or disk file.")
             return
-        print(f"Recorded {len(stalls)} Main Thread Stalls:")
-        for idx, s in enumerate(stalls, 1):
-            print(f"\n--- [Stall #{idx}] {s.get('durationMs')}ms at {s.get('timestampMs')} ---")
+        print(f"Recorded {len(stalls)} Main Thread Stalls (showing slowest 10):")
+        sorted_stalls = sorted(stalls, key=lambda x: x.get("durationMs", 0), reverse=True)[:10]
+        for idx, s in enumerate(sorted_stalls, 1):
+            dur = s.get("durationMs", 0)
+            cause = s.get("rootCause", "unknown")
+            print(f"\n--- [Stall #{idx}] {dur:,.1f}ms ---")
+            print("Root cause:", cause)
             print("Message:", s.get("message"))
-            print("Root cause:", s.get("rootCause"))
-            print("Stack Trace:")
+            print("Sample Call Stack:")
             for frame in s.get("stackTrace", [])[:8]:
-                print("  ", frame)
+                print("   ", frame)
         return
 
     if args.export:

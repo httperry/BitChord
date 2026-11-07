@@ -119,10 +119,18 @@ private fun newUint8Array(contents: ByteArray): String {
  * Decodes a base64 string encoded in the specific base64 representation used by YouTube.
  */
 private fun base64ToByteString(base64: String): ByteArray {
-    val base64Mod = base64
-        .replace('-', '+')
-        .replace('_', '/')
-        .replace('.', '=')
+    val len = base64.length
+    val chars = CharArray(len)
+    for (i in 0 until len) {
+        val c = base64[i]
+        chars[i] = when (c) {
+            '-' -> '+'
+            '_' -> '/'
+            '.' -> '='
+            else -> c
+        }
+    }
+    val base64Mod = String(chars)
 
     return (base64Mod.decodeBase64() ?: throw PoTokenException("Cannot base64 decode"))
         .toByteArray()
