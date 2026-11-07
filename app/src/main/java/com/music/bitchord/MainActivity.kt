@@ -258,6 +258,8 @@ import com.music.bitchord.ui.components.FloatingBottomBar
 import com.music.bitchord.ui.components.GlassNavBar
 import com.music.bitchord.ui.components.floatingtabbar.rememberFloatingTabBarScrollConnection
 import com.music.bitchord.ui.components.FrostedTopBar
+import com.music.bitchord.profiler.FloatingProfilerHud
+import com.music.bitchord.profiler.ProcessProfilerScreen
 import com.music.bitchord.ui.components.LastfmLoginAlert
 import com.music.bitchord.ui.components.LocalAppBackdrop
 import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
@@ -3058,6 +3060,11 @@ private fun BitChordApp(
                                 onConfirmBitPerfect = { confirmBitPerfect = it },
                                 contentPadding = listPadding,
                             )
+                        } else if (pageRoute == AppRoute.ProcessProfiler) {
+                            ProcessProfilerScreen(
+                                onBack = { navigator.pop() },
+                                contentPadding = listPadding,
+                            )
                         } else if (pageRoute == AppRoute.Settings || pageRoute is AppRoute.SettingsSection) {
                             // The main page and every category's page are the
                             // one screen, each showing its own share of the rows.
@@ -3065,6 +3072,7 @@ private fun BitChordApp(
                                 section = (pageRoute as? AppRoute.SettingsSection)?.category,
                                 onOpenSection = { navigator.push(AppRoute.SettingsSection(it)) },
                                 onOpenChoice = { navigator.push(AppRoute.SettingsChoice(it)) },
+                                onOpenProcessProfiler = { navigator.push(AppRoute.ProcessProfiler) },
                                 windowWidth = windowWidth,
                                 signedIn = signedIn,
                                 account = account,
@@ -5825,6 +5833,11 @@ private fun BitChordApp(
 
         // Over the page and its frosted bars, under nothing but the alerts.
         DacVolumeHud(hazeState)
+
+        FloatingProfilerHud(
+            onOpenProfiler = { navigator.push(AppRoute.ProcessProfiler) },
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
 
         blockedAddonSong?.let { song ->
             AddonBlockedAlert(
