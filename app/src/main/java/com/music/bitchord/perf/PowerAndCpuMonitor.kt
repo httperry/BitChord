@@ -117,8 +117,9 @@ class PowerAndCpuMonitor(private val context: Context) {
         val powerMw = (voltageMv * currentMa) / 1000.0
 
         // Thermal status
-        val thermalStatusStr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
-            when (powerManager.currentThermalStatus) {
+        val pm = powerManager
+        val thermalStatusStr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && pm != null) {
+            when (pm.currentThermalStatus) {
                 PowerManager.THERMAL_STATUS_NONE -> "NONE (Normal)"
                 PowerManager.THERMAL_STATUS_LIGHT -> "LIGHT (Minor Throttling)"
                 PowerManager.THERMAL_STATUS_MODERATE -> "MODERATE (Throttling active)"
@@ -132,8 +133,8 @@ class PowerAndCpuMonitor(private val context: Context) {
             "UNAVAILABLE (< API 29)"
         }
 
-        val thermalHeadroom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && powerManager != null) {
-            runCatching { powerManager.getThermalHeadroom(10).toDouble() }.getOrDefault(1.0)
+        val thermalHeadroom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pm != null) {
+            runCatching { pm.getThermalHeadroom(10).toDouble() }.getOrDefault(1.0)
         } else {
             1.0
         }
