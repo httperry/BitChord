@@ -639,7 +639,13 @@ class PlaybackService : MediaLibraryService() {
         if (activeFilter === transitionFilterA) loudnessB else loudnessA
 
     /** Automix's DSP analyzer — see [com.music.bitchord.playback.smart.TrackAnalyzer]. */
-    private val trackAnalyzer = com.music.bitchord.playback.smart.TrackAnalyzer(this, AudioCache)
+    private val trackAnalyzer = com.music.bitchord.playback.smart.TrackAnalyzer(
+        this,
+        AudioCache,
+        currentPlaybackPositionMs = {
+            runCatching { player?.currentPosition }.getOrNull() ?: (lastPositionSeconds * 1000L)
+        },
+    )
 
     /** Shared with the crossfade's tail player, so both read the same disk cache. */
     private var mediaSourceFactory: DefaultMediaSourceFactory? = null

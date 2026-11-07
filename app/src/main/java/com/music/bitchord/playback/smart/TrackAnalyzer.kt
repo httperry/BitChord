@@ -67,7 +67,11 @@ import java.util.Locale
  * plain fade.
  */
 @UnstableApi
-class TrackAnalyzer(private val context: Context, private val cache: AudioCache) {
+class TrackAnalyzer(
+    private val context: Context,
+    private val cache: AudioCache,
+    private val currentPlaybackPositionMs: () -> Long = { -1L },
+) {
 
     private val tracker = BeatTracker(
         modelPath = {
@@ -265,6 +269,83 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         Thread(runnable, "bitchord-audio-decoder").apply {
             isDaemon = true
             priority = Thread.NORM_PRIORITY
+        }
+    }
+
+    private enum class PacingStage {
+        POST_DSP,
+        BETWEEN_WINDOWS,
+    }
+
+    private fun getPlaybackPositionSeconds(trackStartTimeMs: Long): Double {
+        val reportedMs = runCatching { currentPlaybackPositionMs() }.getOrNull() ?: -1L
+        if (reportedMs >= 0) {
+            return reportedMs / 1000.0
+        }
+        val elapsedMs = SystemClock.elapsedRealtime() - trackStartTimeMs
+        return maxOf(0.0, elapsedMs / 1000.0)
+    }
+
+    private fun getHeadroomSeconds(mixOutSeconds: Double, trackStartTimeMs: Long): Double {
+        val posSec = getPlaybackPositionSeconds(trackStartTimeMs)
+        return maxOf(0.0, mixOutSeconds - posSec)
+    }
+
+    /**
+     * Dynamically paces analysis to reduce SoC thermal heating when headroom is abundant,
+     * while guaranteeing full-throttle priority if the transition deadline is near.
+     */
+    private fun paceForHeadroom(
+        trackId: String,
+        mixOutSeconds: Double,
+        trackStartTimeMs: Long,
+        stage: PacingStage,
+    ) {
+        val mode = AppSettings.automixPerformanceMode.value
+        if (mode == AutomixPerformanceMode.PERFORMANCE) return
+
+        val headroom = getHeadroomSeconds(mixOutSeconds, trackStartTimeMs)
+
+        // Hard Deadline Protection:
+        // If headroom is under 45 seconds (or if the track is short), NEVER sleep:
+        // engage full-throttle mode so the transition is 100% locked in on time.
+        if (headroom < 45.0) {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
+            TrackLog.d(
+                TAG,
+                "Automix deadline tight (${"%.1f".format(Locale.ROOT, headroom)}s remaining): full-throttle mode engaged",
+                trackId,
+            )
+            return
+        }
+
+        val sleepMs = when (mode) {
+            AutomixPerformanceMode.PERFORMANCE -> 0L
+            AutomixPerformanceMode.BALANCED -> when (stage) {
+                PacingStage.POST_DSP -> if (headroom > 75.0) 600L else 200L
+                PacingStage.BETWEEN_WINDOWS -> if (headroom > 75.0) 250L else 100L
+            }
+            AutomixPerformanceMode.EFFICIENT -> when (stage) {
+                PacingStage.POST_DSP -> if (headroom > 60.0) 1200L else 400L
+                PacingStage.BETWEEN_WINDOWS -> if (headroom > 60.0) 500L else 200L
+            }
+        }
+
+        if (sleepMs > 0) {
+            TrackLog.d(
+                TAG,
+                "Automix thermal pacing (${mode.name}): headroom=${"%.1f".format(Locale.ROOT, headroom)}s, yielding ${sleepMs}ms",
+                trackId,
+            )
+            safeSleep(sleepMs)
+        }
+    }
+
+    private fun safeSleep(ms: Long) {
+        val start = SystemClock.elapsedRealtime()
+        while (!stopped && SystemClock.elapsedRealtime() - start < ms) {
+            val chunk = minOf(50L, ms - (SystemClock.elapsedRealtime() - start))
+            if (chunk > 0) Thread.sleep(chunk)
         }
     }
 
@@ -467,7 +548,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 if (shouldAnalyzeWhole) {
                     val wholeStart = SystemClock.elapsedRealtime()
                     TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
-                    val outcome = analyze(trackId, analysisUri, durationSeconds)
+                    val outcome = analyze(trackId, analysisUri, durationSeconds, wholeStart)
                     val whole = outcome.analysis
                     if (whole != null) {
                         val wholeTook = SystemClock.elapsedRealtime() - wholeStart
@@ -1100,7 +1181,12 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
      * produces a confident-looking analysis that is wrong by minutes rather than
      * merely absent, and the only one that counts as a strike.
      */
-    private fun analyze(trackId: String, uri: Uri, durationSeconds: Double): WholeTrack {
+    private fun analyze(
+        trackId: String,
+        uri: Uri,
+        durationSeconds: Double,
+        wholeStart: Long = SystemClock.elapsedRealtime(),
+    ): WholeTrack {
         val copy = copyToRead(trackId, uri, durationSeconds) ?: return WholeTrack(null)
         // Recorded before the outcome is known, because what this gates is
         // whether a *written-off* track is worth reopening, and the answer is
@@ -1146,12 +1232,18 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         if (stopped) return WholeTrack(null)
         if (structural.decodedShort) return WholeTrack(null, decodedShort = true)
         val features = structural.features ?: return WholeTrack(empty(trackId, effectiveDuration))
+        val mixOut = if (features.contentEndTime > 0) features.contentEndTime else effectiveDuration
         TrackLog.d(
             TAG,
             "Automix structural DSP for $trackId took ${dspTook}ms: bpm=${features.bpm.roundToInt()} " +
-                "key=${features.key} mixOut=${"%.1f".format(Locale.ROOT, features.contentEndTime)}s",
+                "key=${features.key} mixOut=${"%.1f".format(Locale.ROOT, mixOut)}s",
             trackId,
         )
+
+        // Adaptive Thermal Pacing: allow the CPU to cool down from Pass 1 whole-track decode
+        // if headroom is abundant.
+        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.POST_DSP)
+        if (stopped) return WholeTrack(null)
 
         // Pass 2 (Phases 2 and 3, models): the Beat This! grid and the open-unmix vocal mask, over
         // the opening and the ending only. A transition only ever reads the tail of the outgoing
@@ -1185,6 +1277,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                             "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
                             trackId,
                         )
+                        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.BETWEEN_WINDOWS)
                     }
                 }
             }
@@ -1200,7 +1293,16 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // Step 2: Asynchronously kick off Head Span decode while GPU executes Tail windows
             val headFuture = CompletableFuture.supplyAsync({
                 if (stopped) null
-                else openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+                else {
+                    Process.setThreadPriority(
+                        if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.EFFICIENT) {
+                            Process.THREAD_PRIORITY_BACKGROUND
+                        } else {
+                            Process.THREAD_PRIORITY_DEFAULT
+                        },
+                    )
+                    openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+                }
             }, decodeExecutor)
 
             // Step 3: Run Tail windows on GPU from the decoded Tail buffer
@@ -1222,6 +1324,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                             "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
                             trackId,
                         )
+                        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.BETWEEN_WINDOWS)
                     }
                 }
             }
@@ -1247,6 +1350,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                             "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
                             trackId,
                         )
+                        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.BETWEEN_WINDOWS)
                     }
                 }
             }
