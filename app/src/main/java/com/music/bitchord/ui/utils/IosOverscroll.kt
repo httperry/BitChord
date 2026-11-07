@@ -11,7 +11,6 @@ import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.OverscrollFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableFloatState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -163,14 +162,9 @@ private class IosOverscrollEffect : OverscrollEffect {
         }
     }
 
-    private val isOverscrolling = derivedStateOf {
-        rawPullX.floatValue != 0f || rawPullY.floatValue != 0f
-    }
-
     override val node: DelegatableNode = IosOverscrollNode(
         offsetX = { rubberBand(rawPullX.floatValue, containerWidthPx) },
         offsetY = { rubberBand(rawPullY.floatValue, containerHeightPx) },
-        isOverscrolling = { isOverscrolling.value },
         onMeasured = { width, height ->
             containerWidthPx = width
             containerHeightPx = height
@@ -181,32 +175,21 @@ private class IosOverscrollEffect : OverscrollEffect {
 private class IosOverscrollNode(
     private val offsetX: () -> Float,
     private val offsetY: () -> Float,
-    private val isOverscrolling: () -> Boolean,
     private val onMeasured: (Float, Float) -> Unit,
 ) : Modifier.Node(), LayoutModifierNode {
-    private var lastW = -1f
-    private var lastH = -1f
-
     override fun MeasureScope.measure(
         measurable: Measurable,
         constraints: Constraints,
     ): MeasureResult {
         val placeable = measurable.measure(constraints)
-        val w = (if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width).toFloat()
-        val h = (if (constraints.hasBoundedHeight) constraints.maxHeight else placeable.height).toFloat()
-        if (w != lastW || h != lastH) {
-            lastW = w
-            lastH = h
-            onMeasured(w, h)
-        }
+        onMeasured(
+            (if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width).toFloat(),
+            (if (constraints.hasBoundedHeight) constraints.maxHeight else placeable.height).toFloat(),
+        )
         return layout(placeable.width, placeable.height) {
-            if (isOverscrolling()) {
-                placeable.placeWithLayer(0, 0) {
-                    translationX = offsetX()
-                    translationY = offsetY()
-                }
-            } else {
-                placeable.place(0, 0)
+            placeable.placeWithLayer(0, 0) {
+                translationX = offsetX()
+                translationY = offsetY()
             }
         }
     }

@@ -52,7 +52,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -125,13 +124,6 @@ import kotlin.math.roundToInt
 
 /** Hoisted so the default is one stable lambda rather than a new one per call. */
 private val DefaultTabBarContentModifier: @Composable () -> Modifier = { Modifier }
-
-private fun Modifier.optionalShadow(shape: Shape, elevation: Dp): Modifier =
-    if (elevation > 0.dp) this.shadow(shape = shape, elevation = elevation) else this
-
-private fun Modifier.optionalBackground(color: Color, shape: Shape): Modifier =
-    if (color != Color.Transparent && color != Color.Unspecified) this.background(color = color, shape = shape) else this
-
 
 /**
  * A floating tab bar that can transition between inline and expanded states.
@@ -229,9 +221,7 @@ fun FloatingTabBar(
     SharedTransitionLayout(modifier = modifier) {
         AnimatedContent(
             targetState = scrollConnection.isInline,
-            transitionSpec = {
-                fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(100))
-            },
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
             contentAlignment = Alignment.BottomCenter
         ) { isInline ->
             if (isInline) {
@@ -356,7 +346,7 @@ class FloatingTabBarScrollConnection(
 @Composable
 fun rememberFloatingTabBarScrollConnection(
     initialIsInline: Boolean = false,
-    scrollThreshold: Dp = 64.dp,
+    scrollThreshold: Dp = 50.dp,
     inlineBehavior: FloatingTabBarInlineBehavior = FloatingTabBarInlineBehavior.OnScrollDown
 ): FloatingTabBarScrollConnection = with(LocalDensity.current) {
     val scrollThresholdPx = scrollThreshold.toPx()
@@ -507,11 +497,11 @@ private fun SharedTransitionScope.InlineTab(
                 animatedVisibilityScope = animatedVisibilityScope,
                 zIndexInOverlay = 1f
             )
-            .optionalShadow(
+            .shadow(
                 shape = shapes.tabBarShape,
                 elevation = elevations.inlineElevation
             )
-            .optionalBackground(
+            .background(
                 color = colors.backgroundColor,
                 shape = shapes.tabBarShape
             )
@@ -528,7 +518,17 @@ private fun SharedTransitionScope.InlineTab(
             .padding(sizes.tabInlineContentPadding)
     ) {
         Tab(
-            icon = inlineTab.icon,
+            icon = {
+                Box(
+                    Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState("tab#${inlineTab.key}-icon"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        zIndexInOverlay = 1f
+                    )
+                ) {
+                    inlineTab.icon()
+                }
+            },
             title = { inlineTab.title() },
             isInline = true
         )
@@ -556,11 +556,11 @@ private fun SharedTransitionScope.InlineStandaloneTab(
                 animatedVisibilityScope = animatedVisibilityScope,
                 zIndexInOverlay = 1f
             )
-            .optionalShadow(
+            .shadow(
                 shape = shapes.standaloneTabShape,
                 elevation = elevations.inlineElevation
             )
-            .optionalBackground(
+            .background(
                 color = colors.backgroundColor,
                 shape = shapes.standaloneTabShape
             )
@@ -604,11 +604,11 @@ private fun SharedTransitionScope.InlineAccessory(
             accessory(
                 Modifier
                     .fillMaxSize()
-                    .optionalShadow(
+                    .shadow(
                         shape = shapes.accessoryShape,
                         elevation = elevations.inlineElevation
                     )
-                    .optionalBackground(color = colors.accessoryBackgroundColor, shapes.accessoryShape)
+                    .background(color = colors.accessoryBackgroundColor, shapes.accessoryShape)
                     .clip(shapes.accessoryShape),
                 animatedVisibilityScope
             )
@@ -722,11 +722,11 @@ private fun SharedTransitionScope.ExpandedAccessory(
     ) {
         accessory(
             Modifier
-                .optionalShadow(
+                .shadow(
                     shape = shapes.accessoryShape,
                     elevation = elevations.expandedElevation
                 )
-                .optionalBackground(color = colors.accessoryBackgroundColor, shapes.accessoryShape)
+                .background(color = colors.accessoryBackgroundColor, shapes.accessoryShape)
                 .clip(shapes.accessoryShape),
             animatedVisibilityScope
         )
@@ -838,17 +838,18 @@ private fun SharedTransitionScope.ExpandedTabs(
         CompositionLocalProvider(LocalGlassExport provides barGlass) {
             Box(
                 modifier = Modifier
-                    .optionalShadow(
+                    .shadow(
                         shape = shapes.tabBarShape,
                         elevation = elevations.expandedElevation
                     )
-                    .optionalBackground(
+                    .background(
                         color = colors.backgroundColor,
                         shape = shapes.tabBarShape
                     )
                     .clip(shapes.tabBarShape)
                     .then(tabBarContentModifier())
                     .padding(contentPadding)
+                    .animateContentSize()
             ) {
                 if (showPill && (!glassPill || pill.isFlat)) {
                     FlatSelectionPill(
@@ -929,13 +930,17 @@ private fun SharedTransitionScope.ExpandedTabs(
                         Tab(
                             icon = {
                                 Box(
-                                    modifier = (if (tab.key != inlineTab?.key) {
+                                    modifier = (if (tab.key == inlineTab?.key) {
+                                        Modifier.sharedElement(
+                                            sharedContentState = rememberSharedContentState("tab#${tab.key}-icon"),
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            zIndexInOverlay = 1f
+                                        )
+                                    } else {
                                         Modifier.animateEnterExitTab(
                                             sharedTransitionScope = this@ExpandedTabs,
                                             animatedVisibilityScope = animatedVisibilityScope
                                         )
-                                    } else {
-                                        Modifier
                                     }).graphicsLayer {
                                         scaleX = iconScale
                                         scaleY = iconScale
@@ -1012,11 +1017,11 @@ private fun SharedTransitionScope.ExpandedStandaloneTab(
                 animatedVisibilityScope = animatedVisibilityScope,
                 zIndexInOverlay = 1f
             )
-            .optionalShadow(
+            .shadow(
                 shape = shapes.standaloneTabShape,
                 elevation = elevations.expandedElevation
             )
-            .optionalBackground(
+            .background(
                 color = colors.backgroundColor,
                 shape = shapes.standaloneTabShape
             )
@@ -1106,8 +1111,40 @@ private fun Modifier.animateEnterExitTab(
             }
         }
 
+        // 12dp, down from the library's 50. A tab glyph is 28dp across, so a 50dp
+        // radius is twice the thing it is blurring — everything past about half
+        // the element's width has already dissolved it to nothing and is spent
+        // on a wider and wider sample of empty space. 12 reaches the same nothing
+        // over a quarter of the area, and there are six of these running at once
+        // in the middle of the fold, over glass that is sampling the screen.
+        val blurRadius = with(LocalDensity.current) { 12.dp.toPx() }
+        val animatedBlur by transition.animateFloat(
+            transitionSpec = {
+                keyframes {
+                    durationMillis = durationMs
+                    if (targetState == EnterExitState.Visible) {
+                        blurRadius atFraction enterStartFraction using FastOutSlowInEasing
+                        0f atFraction enterEndFraction
+                    }
+                }
+            }
+        ) { targetState ->
+            when (targetState) {
+                EnterExitState.Visible -> 0f
+                else -> blurRadius
+            }
+        }
+
         graphicsLayer {
             alpha = animatedAlpha
+            // Null at rest, rather than a zero-radius BlurEffect. A layer holding
+            // any render effect at all is composited offscreen for as long as it
+            // holds one, so the library's unconditional BlurEffect(0, 0) bought
+            // every tab glyph and every tab label a permanent offscreen buffer to
+            // pay for a blur of nothing — on a bar that is on screen the whole
+            // time the app is.
+            renderEffect =
+                if (animatedBlur > 0f) BlurEffect(animatedBlur, animatedBlur) else null
         }
     }
 }

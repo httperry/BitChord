@@ -167,9 +167,7 @@ class PoTokenWebView private constructor(
             "https://www.youtube.com/api/jnn/v1/Create",
             "[ \"$REQUEST_KEY\" ]",
         ) { responseBody ->
-            val parsedChallengeData = withContext(Dispatchers.Default) {
-                parseChallengeData(responseBody)
-            }
+            val parsedChallengeData = parseChallengeData(responseBody)
             webView.evaluateJavascript(
                 """try {
                     data = $parsedChallengeData
@@ -212,9 +210,7 @@ class PoTokenWebView private constructor(
         ) { responseBody ->
             TrackLog.d(TAG, "GenerateIT response received")
             try {
-                val (integrityToken, expirationTimeInSeconds) = withContext(Dispatchers.Default) {
-                    parseIntegrityTokenData(responseBody)
-                }
+                val (integrityToken, expirationTimeInSeconds) = parseIntegrityTokenData(responseBody)
                 TrackLog.d(TAG, "Parsed integrity token; expires in $expirationTimeInSeconds sec")
 
                 // leave 10 minutes of margin just to be sure
@@ -371,7 +367,7 @@ class PoTokenWebView private constructor(
     private fun makeBotguardServiceRequest(
         url: String,
         data: String,
-        handleResponseBody: suspend (String) -> Unit,
+        handleResponseBody: (String) -> Unit,
     ) {
         scope.launch(exceptionHandler) {
             val requestBuilder = okhttp3.Request.Builder()
