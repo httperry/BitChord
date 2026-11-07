@@ -97,25 +97,42 @@ object QueueBuilder {
         return left.isEmpty() || right.isEmpty() || left.any { it in right }
     }
 
+    private val titleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val artistCache = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+
     /**
      * `Kesariya (From "Brahmastra") | Official Video` and `Kesariya` are one
      * recording as far as a queue is concerned. Remix and cover markers are
      * deliberately left in — those really are different tracks.
      */
-    fun normalisedTitle(raw: String): String = raw.lowercase(Locale.ROOT)
-        .substringBefore(" | ")
-        .replace(NOISE, " ")
-        .replace(PUNCTUATION, " ")
-        .replace(SPACES, " ")
-        .trim()
+    fun normalisedTitle(raw: String): String {
+        val cached = titleCache[raw]
+        if (cached != null) return cached
+        if (titleCache.size > 2000) titleCache.clear()
+        val result = raw.lowercase(Locale.ROOT)
+            .substringBefore(" | ")
+            .replace(NOISE, " ")
+            .replace(PUNCTUATION, " ")
+            .replace(SPACES, " ")
+            .trim()
+        titleCache[raw] = result
+        return result
+    }
 
     /** The cast behind a credit, split out so billing order stops mattering. */
-    fun artistSet(raw: String): Set<String> = raw.lowercase(Locale.ROOT)
-        .replace(TOPIC, " ")
-        .split(",", "&", "·", "•", ";", " feat", " ft.", " ft ", " x ", " with ")
-        .map { it.replace(PUNCTUATION, " ").replace(SPACES, " ").trim() }
-        .filter { it.isNotEmpty() }
-        .toSet()
+    fun artistSet(raw: String): Set<String> {
+        val cached = artistCache[raw]
+        if (cached != null) return cached
+        if (artistCache.size > 2000) artistCache.clear()
+        val result = raw.lowercase(Locale.ROOT)
+            .replace(TOPIC, " ")
+            .split(",", "&", "·", "•", ";", " feat", " ft.", " ft ", " x ", " with ")
+            .map { it.replace(PUNCTUATION, " ").replace(SPACES, " ").trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        artistCache[raw] = result
+        return result
+    }
 
     private val NOISE = Regex(
         """\((?:official|lyric|lyrics|lyrical|audio|video|visuali[sz]er|full song|hd|4k)[^)]*\)""" +
