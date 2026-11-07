@@ -35,7 +35,7 @@ object AppPerformanceBank : TelemetryHttpServer.TelemetryDataProvider {
     private var appStartTimeMs: Long = System.currentTimeMillis()
 
     // ── Components ────────────────────────────────────────────────────────────
-    val stallWatcher = MainThreadStallWatcher(stallThresholdMs = 16L) { stall ->
+    val stallWatcher = MainThreadStallWatcher(stallThresholdMs = 48L) { stall ->
         appendStallToDisk(stall)
     }
 

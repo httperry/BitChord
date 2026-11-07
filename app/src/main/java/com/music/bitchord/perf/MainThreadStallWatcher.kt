@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
  *    the watchdog captures the active call stack of the main thread while it is frozen!
  */
 class MainThreadStallWatcher(
-    private val stallThresholdMs: Long = 16L, // >= 16ms causes a dropped frame at 60Hz
+    private val stallThresholdMs: Long = 48L, // True micro-freeze >= 48ms (3+ dropped frames)
     private val onStallRecorded: (MainThreadStall) -> Unit = {},
 ) {
     private val idCounter = AtomicLong(0)
@@ -51,8 +51,9 @@ class MainThreadStallWatcher(
                     if (start > 0) {
                         val duration = (SystemClock.uptimeMillis() - start).toDouble()
                         if (duration >= stallThresholdMs) {
-                            val stack = sampledStack.get().takeIf { it.isNotEmpty() }
-                                ?: mainThread.stackTrace.map { it.toString() }
+                            // Do NOT take synchronous stack trace on the main thread here:
+                            // calling Thread.stackTrace inside Dalvik suspends the thread.
+                            val stack = sampledStack.get().takeIf { it.isNotEmpty() } ?: emptyList()
                             val stall = MainThreadStall(
                                 id = idCounter.incrementAndGet(),
                                 durationMs = duration,
@@ -69,11 +70,15 @@ class MainThreadStallWatcher(
 
         // 2. Watchdog sampler: snapshots stack trace while freeze is ongoing
         watchdogThread = Thread({
+            var lastSampleTime = 0L
             while (isMonitoring.get()) {
                 val start = dispatchStartTime.get()
                 if (start > 0) {
-                    val elapsed = SystemClock.uptimeMillis() - start
-                    if (elapsed >= stallThresholdMs && sampledStack.get().isEmpty()) {
+                    val now = SystemClock.uptimeMillis()
+                    val elapsed = now - start
+                    // Throttle stack captures to max 1 per 250ms to prevent ART thread suspension storms
+                    if (elapsed >= stallThresholdMs && sampledStack.get().isEmpty() && (now - lastSampleTime >= 250L)) {
+                        lastSampleTime = now
                         val trace = mainThread.stackTrace.map { it.toString() }
                         if (trace.isNotEmpty()) {
                             sampledStack.set(trace)
@@ -81,14 +86,14 @@ class MainThreadStallWatcher(
                     }
                 }
                 try {
-                    Thread.sleep(8) // Check every 8ms
+                    Thread.sleep(25) // Check every 25ms, saving CPU cycles
                 } catch (_: InterruptedException) {
                     break
                 }
             }
         }, "perf-main-thread-watchdog").apply {
             isDaemon = true
-            priority = Thread.NORM_PRIORITY + 1
+            priority = Thread.NORM_PRIORITY
             start()
         }
     }
