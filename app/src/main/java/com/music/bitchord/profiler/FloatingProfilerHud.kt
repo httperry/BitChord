@@ -27,11 +27,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.music.bitchord.data.settings.AppSettings
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import android.widget.Toast
 
 /**
  * Lightweight real-time floating status overlay showing live CPU, thermal, and battery telemetry.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FloatingProfilerHud(
     onOpenProfiler: () -> Unit,
@@ -64,7 +67,18 @@ fun FloatingProfilerHud(
                 .clip(shape)
                 .background(Color.Black.copy(alpha = 0.88f))
                 .border(1.dp, Color.White.copy(alpha = 0.20f), shape)
-                .clickable { onOpenProfiler() }
+                .combinedClickable(
+                    onClick = onOpenProfiler,
+                    onLongClick = {
+                        val file = ProcessProfiler.exportReport(context)
+                        if (file != null) {
+                            Toast.makeText(context, "Exported: ${file.name}", Toast.LENGTH_LONG).show()
+                            ProcessProfiler.logEvent("HUD", "Exported report to ${file.name}")
+                        } else {
+                            Toast.makeText(context, "Failed to export report", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {

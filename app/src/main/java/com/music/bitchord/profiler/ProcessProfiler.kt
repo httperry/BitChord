@@ -140,8 +140,8 @@ object ProcessProfiler {
     private val _snapshot = MutableStateFlow(createEmptySnapshot())
     val snapshot: StateFlow<ProcessSnapshot> = _snapshot.asStateFlow()
 
-    // 60-second rolling history buffer
-    private val historyBuffer = ArrayList<HistoryPoint>(65)
+    // 120-second rolling history buffer (2 minutes of 1-second samples)
+    private val historyBuffer = ArrayList<HistoryPoint>(130)
     private val _history = MutableStateFlow<List<HistoryPoint>>(emptyList())
     val history: StateFlow<List<HistoryPoint>> = _history.asStateFlow()
 
@@ -269,7 +269,7 @@ object ProcessProfiler {
                                         tempC = snap.batteryTemperatureC
                                     )
                                 )
-                                while (historyBuffer.size > 60) {
+                                while (historyBuffer.size > 120) {
                                     historyBuffer.removeAt(0)
                                 }
                                 _history.value = ArrayList(historyBuffer)
@@ -415,9 +415,17 @@ object ProcessProfiler {
             0.0f
         }
 
-        val batteryDrainMa = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)?.let {
-            abs(it) / 1000
-        } ?: 0
+        val rawCurrent = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) ?: 0
+        val batteryDrainMa = if (rawCurrent != 0 && rawCurrent != Int.MIN_VALUE) {
+            val absVal = abs(rawCurrent)
+            if (absVal > 10000) absVal / 1000 else absVal
+        } else {
+            val avgCurrent = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE) ?: 0
+            if (avgCurrent != 0 && avgCurrent != Int.MIN_VALUE) {
+                val absAvg = abs(avgCurrent)
+                if (absAvg > 10000) absAvg / 1000 else absAvg
+            } else 0
+        }
 
         val batteryTempC = try {
             val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -537,14 +545,20 @@ object ProcessProfiler {
         sb.appendLine()
 
         if (historyList.isNotEmpty()) {
-            val avgCpu = historyList.map { it.totalCpu }.average()
+            val avgTotal = historyList.map { it.totalCpu }.average()
+            val avgMain = historyList.map { it.mainThreadCpu }.average()
+            val avgRender = historyList.map { it.renderThreadCpu }.average()
+            val avgAudio = historyList.map { it.audioCpu }.average()
+            val avgGpu = historyList.map { it.gpuDurationMs }.average()
             val peakCpu = historyList.maxOfOrNull { it.totalCpu } ?: 0f
             val minCpu = historyList.minOfOrNull { it.totalCpu } ?: 0f
-            sb.appendLine("## 5. Session Timeline History (Last ${historyList.size} Samples)")
-            sb.appendLine("- Peak CPU: ${"%.1f".format(peakCpu)}% | Average CPU: ${"%.1f".format(avgCpu)}% | Min CPU: ${"%.1f".format(minCpu)}%")
+            sb.appendLine("## 5. Session Timeline History (${historyList.size} Continuous 1-Second Samples)")
+            sb.appendLine("- **Averages:** Total CPU: ${"%.1f".format(avgTotal)}% | UI Main: ${"%.1f".format(avgMain)}% | RenderThread: ${"%.1f".format(avgRender)}% | Audio: ${"%.1f".format(avgAudio)}% | GPU Time: ${"%.2f".format(avgGpu)}ms")
+            sb.appendLine("- **Extremes:** Peak Total: ${"%.1f".format(peakCpu)}% | Min Total: ${"%.1f".format(minCpu)}%")
+            sb.appendLine()
             sb.appendLine("| Timestamp | Total CPU | UI Main | RenderThread | Audio Engine | GPU Duration | Battery mA |")
             sb.appendLine("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
-            for (p in historyList.takeLast(20)) {
+            for (p in historyList) {
                 val tStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(p.timestamp))
                 sb.appendLine("| $tStr | ${"%.1f".format(p.totalCpu)}% | ${"%.1f".format(p.mainThreadCpu)}% | ${"%.1f".format(p.renderThreadCpu)}% | ${"%.1f".format(p.audioCpu)}% | ${"%.2f".format(p.gpuDurationMs)}ms | -${p.batteryMa}mA |")
             }
@@ -552,7 +566,7 @@ object ProcessProfiler {
         }
 
         sb.appendLine("## 6. Continuous Activity Trace Log (${recentEvents.value.size} Events)")
-        for (e in recentEvents.value.take(80)) {
+        for (e in recentEvents.value.take(150)) {
             val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(e.timestamp))
             sb.appendLine("- `[$timeStr]` **[${e.tag}]** ${e.message}")
         }
