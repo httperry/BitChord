@@ -1898,6 +1898,7 @@ fun NowPlayingScreen(
     val onClipResumed: () -> Unit = { CanvasStills.fresh = false }
     // The sleeve, drawn over the faded player while it docks — see the sleeve.
     val sleeveLayer = rememberGraphicsLayer()
+    val sleeveRecordTracker = remember { object { var lastKey: Any? = null } }
 
     // The player's own end of the docking, for whichever shape it takes: where
     // it sits on screen, the fade, and the artwork drawn over that fade.
@@ -2125,7 +2126,11 @@ fun NowPlayingScreen(
                                         dockFrame.portalLeft = pose.left
                                         dockFrame.portalTop = pose.top
                                         dockFrame.portalScale = pose.scale
-                                        sleeveLayer.record { this@drawWithContent.drawContent() }
+                                        val recordKey = Triple(song.videoId, size, art.loaded)
+                                        if (sleeveRecordTracker.lastKey != recordKey) {
+                                            sleeveLayer.record { this@drawWithContent.drawContent() }
+                                            sleeveRecordTracker.lastKey = recordKey
+                                        }
                                     } else {
                                         if (docking()) {
                                             // Nowhere to fly to this frame: the
@@ -2133,6 +2138,7 @@ fun NowPlayingScreen(
                                             // stale copy.
                                             dockFrame.portalScale = 0f
                                         }
+                                        sleeveRecordTracker.lastKey = null
                                         drawContent()
                                     }
                                 }
@@ -3212,8 +3218,13 @@ fun NowPlayingScreen(
                                 // where its pixels land changes.
                                 .drawWithContent {
                                     if (docking()) {
-                                        sleeveLayer.record { this@drawWithContent.drawContent() }
+                                        val recordKey = Triple(song.videoId, size, art.loaded)
+                                        if (sleeveRecordTracker.lastKey != recordKey) {
+                                            sleeveLayer.record { this@drawWithContent.drawContent() }
+                                            sleeveRecordTracker.lastKey = recordKey
+                                        }
                                     } else {
+                                        sleeveRecordTracker.lastKey = null
                                         drawContent()
                                     }
                                 }

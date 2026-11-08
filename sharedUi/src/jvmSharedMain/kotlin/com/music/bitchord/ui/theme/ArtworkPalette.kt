@@ -22,8 +22,10 @@ import com.music.bitchord.ui.graphics.paletteSwatches
 import com.music.bitchord.ui.graphics.toImageBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.SingletonImageLoader
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.size.Precision
 import com.music.bitchord.data.model.CARD_ART_PX
 import com.music.bitchord.data.model.artworkAt
 import com.music.bitchord.ui.player.PlayerPlatform
@@ -108,21 +110,23 @@ fun rememberArtworkPalette(
     // Always asked, so the composable call is unconditional; handed nothing to
     // read when the colours are already in hand.
     val decoded = rememberArtworkSeed(if (keyColors == null) imageUrl else null, artPx)
-    val seed = keyColors?.toSeed() ?: decoded
+    val seed = remember(keyColors, decoded) { keyColors?.toSeed() ?: decoded }
     // Whether the colours were there from the first frame. If they were, there
     // is nothing to crossfade *from* and animating would only put a delay in
     // front of a surface that could already be right.
     val knownUpFront = remember(imageUrl) { decoded != null }
 
-    val target = seed?.toPalette(dark) ?: ArtworkPalette(
-        background = scheme.background,
-        wash = scheme.background,
-        elevated = scheme.surfaceVariant,
-        accent = scheme.primary,
-        onBackground = scheme.onBackground,
-        onBackgroundVariant = scheme.onSurfaceVariant,
-        divider = scheme.outline,
-    )
+    val target = remember(seed, dark, scheme) {
+        seed?.toPalette(dark) ?: ArtworkPalette(
+            background = scheme.background,
+            wash = scheme.background,
+            elevated = scheme.surfaceVariant,
+            accent = scheme.primary,
+            onBackground = scheme.onBackground,
+            onBackgroundVariant = scheme.onSurfaceVariant,
+            divider = scheme.outline,
+        )
+    }
 
     val spec: AnimationSpec<Color> = if (reduceAnimation || knownUpFront) {
         snap()
@@ -162,11 +166,13 @@ private fun rememberArtworkSeed(imageUrl: String?, artPx: Int): Seed? {
         val request = ImageRequest.Builder(context)
             .data(imageUrl.artworkAt(artPx))
             .size(PALETTE_PX)
+            .precision(Precision.EXACT)
             .forPixelAccess()
+            .memoryCachePolicy(CachePolicy.DISABLED)
             .build()
         val result = SingletonImageLoader.get(context).execute(request)
-        val bitmap = (result as? SuccessResult)?.image?.toImageBitmap() ?: return@LaunchedEffect
-        val found = withContext(Dispatchers.Default) { seedOf(bitmap) } ?: return@LaunchedEffect
+        val image = (result as? SuccessResult)?.image ?: return@LaunchedEffect
+        val found = withContext(Dispatchers.Default) { seedOf(image.toImageBitmap()) } ?: return@LaunchedEffect
         seedCache[imageUrl] = found
         seed = found
     }
@@ -197,12 +203,82 @@ private const val TINT_FADE_MS = 260
  * The raw artwork colours: what the page is mostly made of, its brightest
  * note, and what its bottom edge averages out to.
  */
+@Immutable
 private data class Seed(
     val dominant: Color,
     val vibrant: Color,
     val edge: Color,
     val topBandLuminance: Float,
-)
+) {
+    val darkPalette: ArtworkPalette by lazy(LazyThreadSafetyMode.NONE) { computePalette(dark = true) }
+    val lightPalette: ArtworkPalette by lazy(LazyThreadSafetyMode.NONE) { computePalette(dark = false) }
+
+    fun toPalette(dark: Boolean): ArtworkPalette = if (dark) darkPalette else lightPalette
+
+    private fun computePalette(dark: Boolean): ArtworkPalette = if (dark) {
+        ArtworkPalette(
+            // Deep enough that white body text clears contrast on any sleeve, but
+            // not so deep the hue is gone — the whole point is that the page is
+            // recognisably *this* record's colour.
+            background = dominant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.20f, maximum = 0.62f) },
+                lightness = { 0.13f },
+            ),
+            // Follows the edge's own brightness within a band that stays clear of
+            // white body text at the top and of [background] at the bottom: a
+            // sleeve that ends dark hands over almost invisibly, one that ends
+            // bright leaves a page that is visibly lit from under the artwork.
+            wash = edge.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.18f, maximum = 0.58f) },
+                lightness = { it.coerceIn(0.14f, 0.24f) },
+            ),
+            elevated = dominant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.20f, maximum = 0.62f) },
+                lightness = { 0.22f },
+            ),
+            accent = vibrant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.55f, maximum = 1f) },
+                lightness = { it.coerceIn(0.62f, 0.78f) },
+            ),
+            onBackground = Color.White,
+            // A pale tint of the page's own hue rather than a translucent white —
+            // Apple Music's secondary lines are the sleeve's colour, lifted, so a
+            // blue record's credits read light blue on its blue page. Bright
+            // enough that it still clears contrast on [background].
+            onBackgroundVariant = dominant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.22f, maximum = 0.50f) },
+                lightness = { 0.80f },
+            ),
+            divider = Color.White.copy(alpha = 0.12f),
+        )
+    } else {
+        ArtworkPalette(
+            background = dominant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.14f, maximum = 0.50f) },
+                lightness = { 0.91f },
+            ),
+            wash = edge.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.12f, maximum = 0.46f) },
+                lightness = { it.coerceIn(0.78f, 0.90f) },
+            ),
+            elevated = dominant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.14f, maximum = 0.50f) },
+                lightness = { 0.83f },
+            ),
+            accent = vibrant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.55f, maximum = 1f) },
+                lightness = { it.coerceIn(0.30f, 0.44f) },
+            ),
+            onBackground = Color.Black,
+            // The same hue taken down rather than up, for the pale page.
+            onBackgroundVariant = dominant.withHsl(
+                saturation = { adaptedArtworkSaturation(it, minimum = 0.22f, maximum = 0.55f) },
+                lightness = { 0.34f },
+            ),
+            divider = Color.Black.copy(alpha = 0.10f),
+        )
+    }
+}
 
 private fun seedOf(bitmap: ImageBitmap): Seed? {
     fun swatches(clearFilters: Boolean) =
@@ -223,8 +299,9 @@ private fun seedOf(bitmap: ImageBitmap): Seed? {
     // of reads as arbitrary, and a grey one isn't an accent at all. Scoring on
     // saturation against the *square root* of population is what stops a sleeve
     // that is four-fifths black sky from accenting in black.
+    val hsl = FloatArray(3)
     val vibrant = accentCandidates.maxBy { swatch ->
-        val hsl = FloatArray(3).also { ColorUtils.colorToHSL(swatch.rgb, it) }
+        ColorUtils.colorToHSL(swatch.rgb, hsl)
         hsl[1] * sqrt(swatch.population.toFloat())
     }
     return Seed(
@@ -294,20 +371,27 @@ private fun ImageBitmap.topBandRelativeLuminance(): Float {
     return averageRelativeLuminance(pixels)
 }
 
+/** Precomputed lookup table for exact linear sRGB conversion of 8-bit channels (0..255). */
+private val SRGB_TO_LINEAR_LUT = FloatArray(256) { channel ->
+    val srgb = channel / 255f
+    if (srgb <= 0.04045f) srgb / 12.92f else ((srgb + 0.055f) / 1.055f).toDouble().pow(2.4).toFloat()
+}
+
 /** WCAG relative luminance: average in linear light, never gamma-encoded RGB. */
 internal fun averageRelativeLuminance(pixels: IntArray): Float {
     if (pixels.isEmpty()) return 0f
-    return pixels.sumOf { relativeLuminance(it).toDouble() }.div(pixels.size).toFloat()
+    var sum = 0.0
+    for (pixel in pixels) {
+        sum += relativeLuminance(pixel)
+    }
+    return (sum / pixels.size).toFloat()
 }
 
 internal fun relativeLuminance(argb: Int): Float {
-    fun linear(channel: Int): Float {
-        val srgb = channel / 255f
-        return if (srgb <= 0.04045f) srgb / 12.92f else ((srgb + 0.055f) / 1.055f).toDouble().pow(2.4).toFloat()
-    }
-    return 0.2126f * linear((argb shr 16) and 0xFF) +
-        0.7152f * linear((argb shr 8) and 0xFF) +
-        0.0722f * linear(argb and 0xFF)
+    val r = SRGB_TO_LINEAR_LUT[(argb shr 16) and 0xFF]
+    val g = SRGB_TO_LINEAR_LUT[(argb shr 8) and 0xFF]
+    val b = SRGB_TO_LINEAR_LUT[argb and 0xFF]
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b
 }
 
 /**
@@ -322,70 +406,6 @@ internal fun topBandScrimAlpha(artworkLuminance: Float?): Float {
 
 private const val PLAYER_STATUS_SCRIM_MIN_ALPHA = 0.16f
 private const val PLAYER_STATUS_SCRIM_MAX_ALPHA = 0.65f
-
-private fun Seed.toPalette(dark: Boolean): ArtworkPalette = if (dark) {
-    ArtworkPalette(
-        // Deep enough that white body text clears contrast on any sleeve, but
-        // not so deep the hue is gone — the whole point is that the page is
-        // recognisably *this* record's colour.
-        background = dominant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.20f, maximum = 0.62f) },
-            lightness = { 0.13f },
-        ),
-        // Follows the edge's own brightness within a band that stays clear of
-        // white body text at the top and of [background] at the bottom: a
-        // sleeve that ends dark hands over almost invisibly, one that ends
-        // bright leaves a page that is visibly lit from under the artwork.
-        wash = edge.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.18f, maximum = 0.58f) },
-            lightness = { it.coerceIn(0.14f, 0.24f) },
-        ),
-        elevated = dominant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.20f, maximum = 0.62f) },
-            lightness = { 0.22f },
-        ),
-        accent = vibrant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.55f, maximum = 1f) },
-            lightness = { it.coerceIn(0.62f, 0.78f) },
-        ),
-        onBackground = Color.White,
-        // A pale tint of the page's own hue rather than a translucent white —
-        // Apple Music's secondary lines are the sleeve's colour, lifted, so a
-        // blue record's credits read light blue on its blue page. Bright
-        // enough that it still clears contrast on [background].
-        onBackgroundVariant = dominant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.22f, maximum = 0.50f) },
-            lightness = { 0.80f },
-        ),
-        divider = Color.White.copy(alpha = 0.12f),
-    )
-} else {
-    ArtworkPalette(
-        background = dominant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.14f, maximum = 0.50f) },
-            lightness = { 0.91f },
-        ),
-        wash = edge.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.12f, maximum = 0.46f) },
-            lightness = { it.coerceIn(0.78f, 0.90f) },
-        ),
-        elevated = dominant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.14f, maximum = 0.50f) },
-            lightness = { 0.83f },
-        ),
-        accent = vibrant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.55f, maximum = 1f) },
-            lightness = { it.coerceIn(0.30f, 0.44f) },
-        ),
-        onBackground = Color.Black,
-        // The same hue taken down rather than up, for the pale page.
-        onBackgroundVariant = dominant.withHsl(
-            saturation = { adaptedArtworkSaturation(it, minimum = 0.22f, maximum = 0.55f) },
-            lightness = { 0.34f },
-        ),
-        divider = Color.Black.copy(alpha = 0.10f),
-    )
-}
 
 /**
  * Keeps neutral artwork neutral instead of inventing a hue for it.

@@ -488,14 +488,22 @@ private class PillSquashModel {
 internal fun Modifier.pillPlacement(center: () -> Offset, size: () -> Size): Modifier =
     layout { measurable, constraints ->
         val s = size()
-        val w = s.width.roundToInt().coerceAtLeast(1)
-        val h = s.height.roundToInt().coerceAtLeast(1)
-        val placeable = measurable.measure(Constraints.fixed(w, h))
-        layout(constraints.minWidth, constraints.minHeight) {
-            val c = center()
-            placeable.place((c.x - w / 2f).roundToInt(), (c.y - h / 2f).roundToInt())
+        if (s.width <= 0f || s.height <= 0f) {
+            val placeable = measurable.measure(Constraints.fixed(0, 0))
+            layout(constraints.minWidth, constraints.minHeight) {
+                // Not yet measured or zero size: do not place
+            }
+        } else {
+            val w = s.width.roundToInt().coerceAtLeast(1)
+            val h = s.height.roundToInt().coerceAtLeast(1)
+            val placeable = measurable.measure(Constraints.fixed(w, h))
+            layout(constraints.minWidth, constraints.minHeight) {
+                val c = center()
+                placeable.place((c.x - w / 2f).roundToInt(), (c.y - h / 2f).roundToInt())
+            }
         }
     }
+
 
 /** The flat pill: a fill and nothing else. */
 @Composable

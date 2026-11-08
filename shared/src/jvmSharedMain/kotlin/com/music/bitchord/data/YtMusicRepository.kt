@@ -431,12 +431,12 @@ object YtMusicRepository {
      * [InnertubeParser.parseSearch]), so every candidate here is audio-only
      * without a second check.
      */
-    suspend fun resolveAudio(song: Song): Song {
-        if (!song.isVideo) return song
-        audioVersionCache[song.videoId]?.let { return it }
+    suspend fun resolveAudio(song: Song): Song = withContext(Dispatchers.Default) {
+        if (!song.isVideo) return@withContext song
+        audioVersionCache[song.videoId]?.let { return@withContext it }
         officialVersion(song, wantAudio = true)?.let { audio ->
             audioVersionCache[song.videoId] = audio
-            return audio
+            return@withContext audio
         }
         val target = TrackMatcher.targetOf(song)
         var searchFailed = false
@@ -450,7 +450,7 @@ object YtMusicRepository {
             TrackMatcher.best(candidates, target)?.let { match ->
                 Log.d(TAG, "audio switch: '${song.title}' -> '${match.title}' ($query)")
                 audioVersionCache[song.videoId] = match
-                return match
+                return@withContext match
             }
             // Music-video timing is visual timing, not the audio release's
             // timing. The manual switch may therefore use the exact official
@@ -458,12 +458,12 @@ object YtMusicRepository {
             TrackMatcher.bestOfficialAudioForVideo(candidates, target)?.let { match ->
                 Log.d(TAG, "audio switch: accepted video/runtime drift '${song.title}' -> '${match.title}' ($query)")
                 audioVersionCache[song.videoId] = match
-                return match
+                return@withContext match
             }
         }
         Log.w(TAG, "audio switch: no official song match for '${song.title}' by '${song.artist}'")
         if (!searchFailed) audioVersionCache[song.videoId] = song
-        return song
+        song
     }
 
     /**
@@ -474,12 +474,12 @@ object YtMusicRepository {
      * This is the inverse of [resolveAudio] - it finds the music video
      * for a catalogue track. Returns null when no video version is found.
      */
-    suspend fun resolveVideo(song: Song): Song? {
-        if (song.isVideo) return null
-        videoVersionCache[song.videoId]?.let { return it }
+    suspend fun resolveVideo(song: Song): Song? = withContext(Dispatchers.Default) {
+        if (song.isVideo) return@withContext null
+        videoVersionCache[song.videoId]?.let { return@withContext it }
         officialVersion(song, wantAudio = false)?.let { video ->
             videoVersionCache[song.videoId] = video
-            return video
+            return@withContext video
         }
         val target = TrackMatcher.targetOf(song)
         for (query in TrackMatcher.queries(target)) {
@@ -491,12 +491,12 @@ object YtMusicRepository {
             TrackMatcher.best(candidates, target)?.let { match ->
                 Log.d(TAG, "video switch: '${song.title}' -> '${match.title}' ($query)")
                 videoVersionCache[song.videoId] = match
-                return match
+                return@withContext match
             }
         }
         Log.w(TAG, "video switch: no video match for '${song.title}' by '${song.artist}'")
         videoVersionCache[song.videoId] = null
-        return null
+        null
     }
 
     /**
@@ -628,12 +628,12 @@ object YtMusicRepository {
     suspend fun syncLikedMusic(
         firstToken: String?,
         loadNext: suspend (String) -> SongPage? = { moreSongs(it).getOrNull() },
-    ) {
-        if (firstToken == null) return
+    ) = withContext(Dispatchers.Default) {
+        if (firstToken == null) return@withContext
         val seen = HashSet<String>()
         var next: String? = firstToken
         while (next != null && seen.add(next)) {
-            val page = loadNext(next) ?: return
+            val page = loadNext(next) ?: return@withContext
             LikeState.seedLiked(page.songs.mapTo(HashSet()) { it.videoId })
             next = page.continuation
         }

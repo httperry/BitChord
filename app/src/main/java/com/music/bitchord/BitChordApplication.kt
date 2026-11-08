@@ -269,6 +269,16 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory, Configu
             .allowHardware(!emulatedGpu)
             .build()
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        SingletonImageLoader.get(this).memoryCache?.trimMemory(level)
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        SingletonImageLoader.get(this).memoryCache?.clear()
+    }
+
     /**
      * Whether graphics here go through an emulator's GL translator rather than
      * a real GPU driver — see [newImageLoader].

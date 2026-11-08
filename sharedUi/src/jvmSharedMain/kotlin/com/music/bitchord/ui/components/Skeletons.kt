@@ -45,6 +45,14 @@ private const val SHIMMER_PERIOD_MS = 1400
 
 private val BlockShape = RoundedCornerShape(6.dp)
 private val LineShape = RoundedCornerShape(4.dp)
+private val SkeletonCorner7 = RoundedCornerShape(7.dp)
+private val SkeletonCorner8 = RoundedCornerShape(8.dp)
+private val SkeletonCorner10 = RoundedCornerShape(10.dp)
+private val SkeletonCorner12 = RoundedCornerShape(12.dp)
+private val SkeletonCorner20 = RoundedCornerShape(20.dp)
+private val SkeletonPadding = PaddingValues(horizontal = PAGE_GUTTER)
+private val SkeletonArrangement14 = Arrangement.spacedBy(14.dp)
+private val SkeletonArrangement12 = Arrangement.spacedBy(12.dp)
 
 // Ragged widths, so a run of rows reads as text rather than as a barcode.
 private val TitleWidths = listOf(0.68f, 0.46f, 0.58f, 0.74f, 0.52f)
@@ -69,6 +77,7 @@ fun ShimmerBox(modifier: Modifier = Modifier, shape: Shape = BlockShape) {
         animationSpec = infiniteRepeatable(tween(SHIMMER_PERIOD_MS, easing = LinearEasing)),
         label = "sweep",
     )
+    val colors = remember(base, highlight) { listOf(base, highlight, base) }
     Box(
         modifier
             .clip(shape)
@@ -77,13 +86,16 @@ fun ShimmerBox(modifier: Modifier = Modifier, shape: Shape = BlockShape) {
                 // other, which leaves a beat of flat grey between passes rather
                 // than a highlight permanently parked somewhere on the block.
                 val band = size.width * 0.5f
-                val startX = -band + sweep.value * (size.width + band * 2)
-                val brush = Brush.horizontalGradient(
-                    colors = listOf(base, highlight, base),
-                    startX = startX,
-                    endX = startX + band,
-                )
-                onDrawBehind { drawRect(brush) }
+                val totalWidth = size.width + band * 2
+                onDrawBehind {
+                    val startX = -band + sweep.value * totalWidth
+                    val brush = Brush.horizontalGradient(
+                        colors = colors,
+                        startX = startX,
+                        endX = startX + band,
+                    )
+                    drawRect(brush)
+                }
             },
     )
 }
@@ -120,7 +132,7 @@ fun SongRowSkeleton(index: Int = 0, circular: Boolean = false, modifier: Modifie
             .padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ShimmerBox(Modifier.size(52.dp), if (circular) CircleShape else RoundedCornerShape(8.dp))
+        ShimmerBox(Modifier.size(52.dp), if (circular) CircleShape else SkeletonCorner8)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             SkeletonLine(fraction = TitleWidths[index % TitleWidths.size], height = 14.dp)
@@ -152,11 +164,11 @@ fun LazyListScope.recentlyPlayedSkeleton() {
             BoxWithConstraints {
                 val columnWidth = trackColumnWidth(maxWidth)
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = SkeletonPadding,
+                    horizontalArrangement = SkeletonArrangement12,
                     userScrollEnabled = false,
                 ) {
-                    item {
+                    item(key = "skeleton:recent:row") {
                         Column(Modifier.width(columnWidth)) {
                             repeat(4) { index -> CompactSongRowSkeleton(index) }
                         }
@@ -191,18 +203,19 @@ private fun RecentsHeaderSkeleton() {
  */
 @Composable
 fun ShelfSkeleton(index: Int = 0, cardWidth: Dp = SHELF_CARD_WIDTH, cardCorner: Dp = 12.dp) {
+    val cornerShape = if (cardCorner == 12.dp) SkeletonCorner12 else if (cardCorner == 10.dp) SkeletonCorner10 else RoundedCornerShape(cardCorner)
     Column(Modifier.padding(bottom = 26.dp)) {
         SectionHeaderSkeleton(index = index)
         LazyRow(
-            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = SkeletonPadding,
+            horizontalArrangement = SkeletonArrangement14,
             userScrollEnabled = false,
         ) {
-            items(3) { card ->
+            items(3, key = { "skeleton:shelf:card:$it" }) { card ->
                 Column(Modifier.width(cardWidth)) {
                     ShimmerBox(
                         modifier = Modifier.width(cardWidth).aspectRatio(1f),
-                        shape = RoundedCornerShape(cardCorner),
+                        shape = cornerShape,
                     )
                     Spacer(Modifier.height(12.dp))
                     SkeletonLine(fraction = TitleWidths[card % TitleWidths.size], height = 13.dp)
@@ -235,14 +248,14 @@ fun LazyListScope.feedMoreSkeleton() {
 fun ReplayCardRowSkeleton(modifier: Modifier = Modifier) {
     LazyRow(
         modifier = modifier.padding(vertical = 6.dp),
-        contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = SkeletonPadding,
+        horizontalArrangement = SkeletonArrangement12,
         userScrollEnabled = false,
     ) {
-        items(2) {
+        items(2, key = { "skeleton:replay:$it" }) {
             ShimmerBox(
                 modifier = Modifier.width(300.dp).aspectRatio(1.586f),
-                shape = RoundedCornerShape(20.dp),
+                shape = SkeletonCorner20,
             )
         }
     }
@@ -294,11 +307,11 @@ fun LazyListScope.detailSkeleton(isArtist: Boolean) {
                 BoxWithConstraints {
                     val columnWidth = trackColumnWidth(maxWidth)
                     LazyRow(
-                        contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = SkeletonPadding,
+                        horizontalArrangement = SkeletonArrangement12,
                         userScrollEnabled = false,
                     ) {
-                        item {
+                        item(key = "skeleton:detail:top:column") {
                             Column(Modifier.width(columnWidth)) {
                                 repeat(4) { index -> CompactSongRowSkeleton(index) }
                             }
@@ -330,7 +343,7 @@ private fun CompactSongRowSkeleton(index: Int) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ShimmerBox(Modifier.size(48.dp), RoundedCornerShape(7.dp))
+        ShimmerBox(Modifier.size(48.dp), SkeletonCorner7)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             SkeletonLine(fraction = TitleWidths[index % TitleWidths.size], height = 14.dp)

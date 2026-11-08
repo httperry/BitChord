@@ -502,14 +502,14 @@ fun shelfLayoutFor(title: String, items: List<ShelfItem>, fromList: Boolean): Sh
  * purpose: Recents and YouTube's own "Listen again" share tracks but rank them differently.
  */
 fun List<HomeShelf>.withoutRepeatsOf(existing: List<HomeShelf>): List<HomeShelf> {
-    val shown = existing.toMutableList()
+    val shownWithKeys = existing.map { it to it.browseKeys() }.toMutableList()
     return filter { shelf ->
         val keys = shelf.browseKeys()
-        val repeat = keys.isNotEmpty() && shown.any { other ->
-            val shared = other.browseKeys().count { it in keys }
+        val repeat = keys.isNotEmpty() && shownWithKeys.any { (other, otherKeys) ->
+            val shared = otherKeys.count { it in keys }
             shared > 0 && shared >= REPEAT_SHELF_SHARE * minOf(shelf.items.size, other.items.size)
         }
-        if (!repeat) shown += shelf
+        if (!repeat) shownWithKeys += (shelf to keys)
         !repeat
     }
 }

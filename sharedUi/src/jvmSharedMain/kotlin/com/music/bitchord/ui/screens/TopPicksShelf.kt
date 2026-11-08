@@ -140,6 +140,20 @@ private const val TOP_PICK_FRACTION = 0.60f
 private val TOP_PICK_MAX_WIDTH = 280.dp
 
 private val TopPickShape = RoundedCornerShape(12.dp)
+private val MoodTileShape = RoundedCornerShape(12.dp)
+private val TopPicksShelfPadding = PaddingValues(horizontal = PAGE_GUTTER)
+private val TopPicksShelfArrangement = Arrangement.spacedBy(14.dp)
+private val CoverFadeBrush = Brush.verticalGradient(0.78f to Color.Black, 1f to Color.Transparent)
+private val ReleaseArtVignette = Brush.verticalGradient(
+    0.6f to Color.Black.copy(alpha = 0.08f),
+    1f to Color.Black.copy(alpha = 0.38f),
+)
+private val FeaturedArtistVignette = Brush.verticalGradient(
+    0.45f to Color.Transparent,
+    0.72f to Color.Black.copy(alpha = 0.45f),
+    1f to Color.Black.copy(alpha = 0.82f),
+)
+private val CORE_MOODS = TopPickMood.entries.filter { it.isCoreMood }
 
 private fun topPickWidth(available: Dp): Dp = minOf(available * TOP_PICK_FRACTION, TOP_PICK_MAX_WIDTH)
 
@@ -168,16 +182,16 @@ internal fun TopPicksShelf(
             val cardWidth = topPickWidth(maxWidth)
             PausedWhileScrolling(rowState) {
                 ShelfRow(
-                    contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = TopPicksShelfPadding,
+                    horizontalArrangement = TopPicksShelfArrangement,
                     state = rowState,
                 ) {
                     itemsIndexed(picks, key = { index, pick -> "$index:${pick.kind}:${pick.title}" }) { index, pick ->
+                        val onClipFound = remember(index) { { found: Boolean -> hasClip[index] = found } }
+                        val mayPlay = index == owner
+                        val clipSlot = remember(mayPlay, onClipFound) { ClipSlot(mayPlay, onClipFound) }
                         CompositionLocalProvider(
-                            LocalClipSlot provides ClipSlot(
-                                mayPlay = index == owner,
-                                onClipFound = { found -> hasClip[index] = found },
-                            ),
+                            LocalClipSlot provides clipSlot,
                         ) {
                             TopPickCard(
                                 pick = pick,
@@ -278,14 +292,15 @@ private fun TopPickCard(
     modifier: Modifier,
 ) {
     val text = cardText(pick, listenerName)
-    val longPress = onLongPress?.let { { it(pick) } }
+    val longPress = remember(pick, onLongPress) { onLongPress?.let { { it(pick) } } }
+    val click = remember(pick, text.title, onClick) { { onClick(pick, text.title) } }
     Box(
         modifier = modifier
             .aspectRatio(TOP_PICK_RATIO)
             .clip(TopPickShape)
             .thumbnailBorder(TopPickShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .longPressMenuClickable(onClick = { onClick(pick, text.title) }, onLongClick = longPress)
+            .longPressMenuClickable(onClick = click, onLongClick = longPress)
             .contextClick(longPress),
     ) {
         val eyebrowColor: Color
@@ -314,39 +329,45 @@ private fun TopPickCard(
                 branded = true
             }
             TopPickKind.LATEST_RELEASE, TopPickKind.NEW_RELEASE_MIX -> {
+                val releaseMotion = remember(pick.browseId, pick.title, pick.artistName) {
+                    if (pick.kind == TopPickKind.LATEST_RELEASE) {
+                        val relKey = pick.browseId ?: pick.title
+                        val relTitle = pick.title
+                        val relArtist = pick.artistName.orEmpty()
+                        CardMotionSource(relKey) {
+                            AppUi.host.releaseMotion(relTitle, relArtist)
+                        }
+                    } else null
+                }
                 ReleaseArt(
                     pick.images.firstOrNull(),
                     Modifier.fillMaxSize(),
                     // A New Release Mix is a playlist; only a real release has a sleeve that moves.
-                    motion = pick.takeIf { it.kind == TopPickKind.LATEST_RELEASE }?.let { release ->
-                        CardMotionSource(release.browseId ?: release.title) {
-                            AppUi.host.releaseMotion(release.title, release.artistName.orEmpty())
-                        }
-                    },
+                    motion = releaseMotion,
                 )
                 eyebrowColor = PhotoEyebrow
                 branded = false
             }
             TopPickKind.FEATURED_ARTIST -> {
+                val artistImage = pick.images.firstOrNull()
+                val artworkReady = LocalArtworkImages.current
+                val artistArtUrl = remember(artistImage, artworkReady) {
+                    if (artworkReady) artistImage.croppedAt(HEADER_ART_PX * 3 / 4, HEADER_ART_PX) else null
+                }
+                val artistMotionSource = remember(pick.artistBrowseId, pick.artistName) { pick.artistMotion() }
                 AsyncImage(
-                    model = pick.images.firstOrNull().croppedAt(HEADER_ART_PX * 3 / 4, HEADER_ART_PX).whenArtworkReady(),
+                    model = artistArtUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                CardMotion(pick.artistMotion(), Modifier.fillMaxSize())
+                CardMotion(artistMotionSource, Modifier.fillMaxSize())
                 // The caption sits on the picture's own darkened foot, as on
                 // Apple's photo cards, rather than on a band of flat black.
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0.45f to Color.Transparent,
-                                0.72f to Color.Black.copy(alpha = 0.45f),
-                                1f to Color.Black.copy(alpha = 0.82f),
-                            ),
-                        ),
+                        .background(FeaturedArtistVignette),
                 )
                 eyebrowColor = PhotoEyebrow
                 branded = false
@@ -427,9 +448,17 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
     // would leave the still showing through the clip's own fade, so the still
     // steps out as the clip comes in.
     var covered by remember { mutableFloatStateOf(0f) }
+    val artworkReady = LocalArtworkImages.current
+    val backdropUrl = remember(url, artworkReady) {
+        if (artworkReady) url.croppedAt(BACKDROP_SOURCE_PX) else null
+    }
+    val coverUrl = remember(url, artworkReady) {
+        if (artworkReady) url.croppedAt(HEADER_ART_PX) else null
+    }
+    val onCoverChange = remember { { c: Float -> covered = c } }
     Box(modifier.background(Color.Black)) {
         AsyncImage(
-            model = rememberBlurredBackdrop(url.croppedAt(BACKDROP_SOURCE_PX).whenArtworkReady()),
+            model = rememberBlurredBackdrop(backdropUrl),
             contentDescription = null,
             contentScale = ContentScale.FillBounds,
             modifier = Modifier
@@ -442,15 +471,10 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
         Box(
             Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.6f to Color.Black.copy(alpha = 0.08f),
-                        1f to Color.Black.copy(alpha = 0.38f),
-                    ),
-                ),
+                .background(ReleaseArtVignette),
         )
         AsyncImage(
-            model = url.croppedAt(HEADER_ART_PX).whenArtworkReady(),
+            model = coverUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -467,7 +491,7 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
                 .drawWithContent {
                     drawContent()
                     drawRect(
-                        Brush.verticalGradient(0.78f to Color.Black, 1f to Color.Transparent),
+                        CoverFadeBrush,
                         blendMode = BlendMode.DstIn,
                     )
                 },
@@ -476,7 +500,7 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
             motion,
             Modifier.fillMaxWidth().aspectRatio(1f),
             bottomFade = 0.22f,
-            onCover = { covered = it },
+            onCover = onCoverChange,
         )
     }
 }
@@ -626,10 +650,21 @@ private val LocalClipSlot = compositionLocalOf<ClipSlot?> { null }
 private fun clipOwner(layout: LazyListLayoutInfo, hasClip: Map<Int, Boolean>): Int {
     val start = layout.viewportStartOffset
     val end = layout.viewportEndOffset
-    return layout.visibleItemsInfo
-        .filter { hasClip[it.index] == true && it.size > 0 }
-        .maxByOrNull { (minOf(it.offset + it.size, end) - maxOf(it.offset, start)).toFloat() / it.size }
-        ?.index ?: -1
+    val items = layout.visibleItemsInfo
+    var bestIndex = -1
+    var maxRatio = -1f
+    for (i in items.indices) {
+        val item = items[i]
+        if (hasClip[item.index] == true && item.size > 0) {
+            val visible = minOf(item.offset + item.size, end) - maxOf(item.offset, start)
+            val ratio = visible.toFloat() / item.size
+            if (ratio > maxRatio) {
+                maxRatio = ratio
+                bestIndex = item.index
+            }
+        }
+    }
+    return bestIndex
 }
 
 /**
@@ -873,36 +908,38 @@ private class MoodStyle(
     val eyebrow: Color = lerp(stroke, Color.White, 0.35f),
 )
 
-private fun TopPickMood.style(): MoodStyle = when (this) {
-    TopPickMood.ENERGY -> MoodStyle(Color(0xFF1EBD38), Color(0xFFE2F6A2), 3_000, Color(0xFFE8FF9C))
-    TopPickMood.RELAX -> MoodStyle(Color(0xFF31AFF3), Color(0xFFB4E9FF), 5_600, Color(0xFFD6F3FF))
-    TopPickMood.FEELING_BLUE -> MoodStyle(Color(0xFF253AB2), Color(0xFF6CC4FF), 3_700, Color(0xFFA9DBFF))
-    TopPickMood.FEEL_GOOD -> MoodStyle(Color(0xFFF2A900), Color(0xFFFFE8A0), 4_000, Color(0xFFFFF27A))
-    TopPickMood.FOCUS -> MoodStyle(Color(0xFFF28400), Color(0xFFFFD6A4), 3_600, Color(0xFFFFE2B8))
-    TopPickMood.HEARTBREAK -> MoodStyle(Color(0xFFEA3520), Color(0xFFFFA690), 2_700, Color(0xFFFFC9BC))
-    TopPickMood.LOVE -> MoodStyle(Color(0xFFF34CA0), Color(0xFFFFB8DC), 1_700, Color(0xFFFFD0EA))
-    TopPickMood.AFTER_HOURS -> MoodStyle(Color(0xFF3A1F78), Color(0xFFC9B6FF), 4_500)
-    TopPickMood.ALONE_TIME -> MoodStyle(Color(0xFF2C6E8C), Color(0xFFA9E2F5), 4_000)
-    TopPickMood.CHILL -> MoodStyle(Color(0xFF138A86), Color(0xFFA6F0E6), 5_000)
-    TopPickMood.COMMUTING -> MoodStyle(Color(0xFF17855F), Color(0xFFA8EFD0), 2_400)
-    TopPickMood.EATING_COOKING -> MoodStyle(Color(0xFFD9621A), Color(0xFFFFD3A8), 3_200)
-    TopPickMood.EVENING -> MoodStyle(Color(0xFF2A3A8C), Color(0xFFB8C6FF), 6_000)
-    TopPickMood.FITNESS -> MoodStyle(Color(0xFF8DB014), Color(0xFFEFFFA8), 2_000)
-    TopPickMood.GAMING -> MoodStyle(Color(0xFF239A2A), Color(0xFFB8FFB0), 6_000)
-    TopPickMood.HOME -> MoodStyle(Color(0xFF0E8A6C), Color(0xFFA8F2DB), 4_000)
-    TopPickMood.MORNING -> MoodStyle(Color(0xFFF08C1A), Color(0xFFFFE2A6), 5_000)
-    TopPickMood.MOTIVATION -> MoodStyle(Color(0xFFC01E4A), Color(0xFFFFB3C6), 1_800)
-    TopPickMood.OUTDOORS -> MoodStyle(Color(0xFF4C8A1E), Color(0xFFD4F5A8), 6_000)
-    TopPickMood.PARTY -> MoodStyle(Color(0xFFC2287A), Color(0xFFFFC0E0), 3_000)
-    TopPickMood.SLEEP -> MoodStyle(Color(0xFF26266E), Color(0xFFC2C6FF), 4_500)
-    TopPickMood.SOCIAL -> MoodStyle(Color(0xFFE0507A), Color(0xFFFFD0DE), 3_000)
-    TopPickMood.SPORTS -> MoodStyle(Color(0xFF1C6CD0), Color(0xFFB8D8FF), 3_000)
-    TopPickMood.SUMMERTIME -> MoodStyle(Color(0xFFFF8C00), Color(0xFFFFE6A8), 8_000)
-    TopPickMood.HOLIDAY -> MoodStyle(Color(0xFFC62828), Color(0xFFFFC8C8), 8_000)
-    TopPickMood.WEEKEND -> MoodStyle(Color(0xFF7A3CC2), Color(0xFFE2CCFF), 2_400)
-    TopPickMood.WELLBEING -> MoodStyle(Color(0xFF36A98A), Color(0xFFC6F7E6), 5_000)
-    TopPickMood.WORK -> MoodStyle(Color(0xFF3E63C9), Color(0xFFC4D2FF), 2_000)
-}
+private val MoodStyleCache: Map<TopPickMood, MoodStyle> = mapOf(
+    TopPickMood.ENERGY to MoodStyle(Color(0xFF1EBD38), Color(0xFFE2F6A2), 3_000, Color(0xFFE8FF9C)),
+    TopPickMood.RELAX to MoodStyle(Color(0xFF31AFF3), Color(0xFFB4E9FF), 5_600, Color(0xFFD6F3FF)),
+    TopPickMood.FEELING_BLUE to MoodStyle(Color(0xFF253AB2), Color(0xFF6CC4FF), 3_700, Color(0xFFA9DBFF)),
+    TopPickMood.FEEL_GOOD to MoodStyle(Color(0xFFF2A900), Color(0xFFFFE8A0), 4_000, Color(0xFFFFF27A)),
+    TopPickMood.FOCUS to MoodStyle(Color(0xFFF28400), Color(0xFFFFD6A4), 3_600, Color(0xFFFFE2B8)),
+    TopPickMood.HEARTBREAK to MoodStyle(Color(0xFFEA3520), Color(0xFFFFA690), 2_700, Color(0xFFFFC9BC)),
+    TopPickMood.LOVE to MoodStyle(Color(0xFFF34CA0), Color(0xFFFFB8DC), 1_700, Color(0xFFFFD0EA)),
+    TopPickMood.AFTER_HOURS to MoodStyle(Color(0xFF3A1F78), Color(0xFFC9B6FF), 4_500),
+    TopPickMood.ALONE_TIME to MoodStyle(Color(0xFF2C6E8C), Color(0xFFA9E2F5), 4_000),
+    TopPickMood.CHILL to MoodStyle(Color(0xFF138A86), Color(0xFFA6F0E6), 5_000),
+    TopPickMood.COMMUTING to MoodStyle(Color(0xFF17855F), Color(0xFFA8EFD0), 2_400),
+    TopPickMood.EATING_COOKING to MoodStyle(Color(0xFFD9621A), Color(0xFFFFD3A8), 3_200),
+    TopPickMood.EVENING to MoodStyle(Color(0xFF2A3A8C), Color(0xFFB8C6FF), 6_000),
+    TopPickMood.FITNESS to MoodStyle(Color(0xFF8DB014), Color(0xFFEFFFA8), 2_000),
+    TopPickMood.GAMING to MoodStyle(Color(0xFF239A2A), Color(0xFFB8FFB0), 6_000),
+    TopPickMood.HOME to MoodStyle(Color(0xFF0E8A6C), Color(0xFFA8F2DB), 4_000),
+    TopPickMood.MORNING to MoodStyle(Color(0xFFF08C1A), Color(0xFFFFE2A6), 5_000),
+    TopPickMood.MOTIVATION to MoodStyle(Color(0xFFC01E4A), Color(0xFFFFB3C6), 1_800),
+    TopPickMood.OUTDOORS to MoodStyle(Color(0xFF4C8A1E), Color(0xFFD4F5A8), 6_000),
+    TopPickMood.PARTY to MoodStyle(Color(0xFFC2287A), Color(0xFFFFC0E0), 3_000),
+    TopPickMood.SLEEP to MoodStyle(Color(0xFF26266E), Color(0xFFC2C6FF), 4_500),
+    TopPickMood.SOCIAL to MoodStyle(Color(0xFFE0507A), Color(0xFFFFD0DE), 3_000),
+    TopPickMood.SPORTS to MoodStyle(Color(0xFF1C6CD0), Color(0xFFB8D8FF), 3_000),
+    TopPickMood.SUMMERTIME to MoodStyle(Color(0xFFFF8C00), Color(0xFFFFE6A8), 8_000),
+    TopPickMood.HOLIDAY to MoodStyle(Color(0xFFC62828), Color(0xFFFFC8C8), 8_000),
+    TopPickMood.WEEKEND to MoodStyle(Color(0xFF7A3CC2), Color(0xFFE2CCFF), 2_400),
+    TopPickMood.WELLBEING to MoodStyle(Color(0xFF36A98A), Color(0xFFC6F7E6), 5_000),
+    TopPickMood.WORK to MoodStyle(Color(0xFF3E63C9), Color(0xFFC4D2FF), 2_000),
+)
+
+private fun TopPickMood.style(): MoodStyle = MoodStyleCache[this] ?: MoodStyle(Color(0xFF1EBD38), Color(0xFFE2F6A2), 3_000)
 
 internal fun TopPickMood.titleRes() = when (this) {
     TopPickMood.ENERGY -> Res.string.mood_energy
@@ -1555,11 +1592,11 @@ internal fun FindYourMoodShelf(onClick: (TopPickMood, String) -> Unit, onShowAll
     Column(Modifier.padding(bottom = 26.dp)) {
         SectionHeader(stringResource(Res.string.find_your_mood), onShowAll = onShowAll)
         ShelfRow(
-            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = TopPicksShelfPadding,
+            horizontalArrangement = TopPicksShelfArrangement,
             state = rowState,
         ) {
-            items(TopPickMood.entries.filter { it.isCoreMood }, key = { it.name }) { mood ->
+            items(CORE_MOODS, key = { it.name }) { mood ->
                 MoodTile(mood, onClick, Modifier.width(SHELF_CARD_WIDTH))
             }
         }
@@ -1598,13 +1635,14 @@ fun MoodGridPage(
 @Composable
 private fun MoodTile(mood: TopPickMood, onClick: (TopPickMood, String) -> Unit, modifier: Modifier) {
     val title = stringResource(mood.titleRes())
-    Column(modifier.clickable { onClick(mood, title) }) {
+    val click = remember(mood, title, onClick) { { onClick(mood, title) } }
+    Column(modifier.clickable(onClick = click)) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(12.dp))
-                .thumbnailBorder(RoundedCornerShape(12.dp)),
+                .clip(MoodTileShape)
+                .thumbnailBorder(MoodTileShape),
         ) {
             // Still. A shelf of tiles each breathing on its own loop kept the
             // page under the glass bars redrawing — and the bars' blur with
@@ -1675,8 +1713,10 @@ private fun ArtistCollageArt(
             2 -> listOf(Triple(0.40f, 0.28f, 0.60f), Triple(0.72f, 0.52f, 0.36f))
             else -> listOf(Triple(0.37f, 0.257f, 0.594f), Triple(0.76f, 0.48f, 0.333f), Triple(0.457f, 0.608f, 0.29f))
         }
-        slots.zip(images).forEach { (slot, url) ->
-            val (cx, cy, d) = slot
+        val count = minOf(slots.size, images.size)
+        for (i in 0 until count) {
+            val (cx, cy, d) = slots[i]
+            val url = images[i]
             val diameter = w * d
             val circle = Modifier
                 .offset(x = w * cx - diameter / 2, y = h * cy - diameter / 2)

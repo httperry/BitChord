@@ -1,6 +1,8 @@
 package com.music.bitchord.playback
 
 import com.music.bitchord.data.model.Song
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.Locale
 
 /**
@@ -39,6 +41,15 @@ object QueueBuilder {
      */
     fun extend(existing: List<Song>, candidates: List<Song>, limit: Int, preferVideos: Boolean = false): List<Song> {
         val taken = existing.toMutableList()
+        val takenVideoIds = existing.mapTo(HashSet()) { it.videoId }
+        val takenByTitle = HashMap<String, MutableList<Song>>()
+        for (song in existing) {
+            val title = normalisedTitle(song.title)
+            if (title.isNotEmpty()) {
+                takenByTitle.getOrPut(title) { mutableListOf() }.add(song)
+            }
+        }
+
         val perArtist = mutableMapOf<String, Int>()
         val seedArtists = existing.lastOrNull()?.artist?.let(::artistSet).orEmpty()
         val out = mutableListOf<Song>()
@@ -60,7 +71,22 @@ object QueueBuilder {
 
         for (candidate in ordered) {
             if (out.size >= limit) break
-            if (taken.any { isSameRecording(it, candidate) }) continue
+            // 1. O(1) videoId match check
+            if (candidate.videoId in takenVideoIds) continue
+
+            // 2. O(1) title bucket match check
+            val candTitle = normalisedTitle(candidate.title)
+            if (candTitle.isNotEmpty()) {
+                val matchesInBucket = takenByTitle[candTitle]
+                if (matchesInBucket != null) {
+                    val candArtists = artistSet(candidate.artist)
+                    val isDuplicate = matchesInBucket.any { existingSong ->
+                        val existingArtists = artistSet(existingSong.artist)
+                        existingArtists.isEmpty() || candArtists.isEmpty() || existingArtists.any { it in candArtists }
+                    }
+                    if (isDuplicate) continue
+                }
+            }
 
             val artists = artistSet(candidate.artist)
             val key = artists.minOrNull()
@@ -75,6 +101,10 @@ object QueueBuilder {
                 perArtist[key] = played + 1
             }
 
+            takenVideoIds += candidate.videoId
+            if (candTitle.isNotEmpty()) {
+                takenByTitle.getOrPut(candTitle) { mutableListOf() }.add(candidate)
+            }
             taken += candidate
             out += candidate
         }
@@ -97,8 +127,16 @@ object QueueBuilder {
         return left.isEmpty() || right.isEmpty() || left.any { it in right }
     }
 
-    private val titleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private val artistCache = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+    private val titleCache = Collections.synchronizedMap(
+        object : LinkedHashMap<String, String>(256, 0.75f, true) {
+            override fun removeEldestEntry(eldest: Map.Entry<String, String>?): Boolean = size > 2000
+        }
+    )
+    private val artistCache = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Set<String>>(256, 0.75f, true) {
+            override fun removeEldestEntry(eldest: Map.Entry<String, Set<String>>?): Boolean = size > 2000
+        }
+    )
 
     /**
      * `Kesariya (From "Brahmastra") | Official Video` and `Kesariya` are one
@@ -108,7 +146,6 @@ object QueueBuilder {
     fun normalisedTitle(raw: String): String {
         val cached = titleCache[raw]
         if (cached != null) return cached
-        if (titleCache.size > 2000) titleCache.clear()
         val result = raw.lowercase(Locale.ROOT)
             .substringBefore(" | ")
             .replace(NOISE, " ")
@@ -123,7 +160,6 @@ object QueueBuilder {
     fun artistSet(raw: String): Set<String> {
         val cached = artistCache[raw]
         if (cached != null) return cached
-        if (artistCache.size > 2000) artistCache.clear()
         val result = raw.lowercase(Locale.ROOT)
             .replace(TOPIC, " ")
             .split(",", "&", "·", "•", ";", " feat", " ft.", " ft ", " x ", " with ")

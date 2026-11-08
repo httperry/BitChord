@@ -38,8 +38,12 @@ import androidx.compose.ui.unit.dp
 import com.music.bitchord.ui.graphics.ColorUtils
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.SingletonImageLoader
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.size.Precision
+import com.music.bitchord.data.model.CARD_ART_PX
+import com.music.bitchord.data.model.artworkAt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -291,21 +295,40 @@ fun cyclingMeshPalette(
  * the playing clip once one is available, is quantised the same way and
  * takes over from there, crossfading in exactly like a track skip.
  */
+private const val PALETTE_CACHE_ENTRIES = 128
+
+/**
+ * Palettes already read, keyed by artwork URL. Touched from composition and
+ * from the resumption of [rememberArtworkColors]'s effect, both on the main thread.
+ */
+private val meshPaletteCache = object : LinkedHashMap<String, MeshPalette>(0, 0.75f, true) {
+    override fun removeEldestEntry(eldest: Map.Entry<String, MeshPalette>) = size > PALETTE_CACHE_ENTRIES
+}
+
 @Composable
 fun rememberArtworkColors(imageUrl: String?, canvasFrame: ImageBitmap? = null): MeshPalette {
     val context = LocalPlatformContext.current
-    var palette by remember(imageUrl) { mutableStateOf(MeshPalette(FallbackColors)) }
+    var palette by remember(imageUrl) {
+        mutableStateOf(imageUrl?.let(meshPaletteCache::get) ?: MeshPalette(FallbackColors))
+    }
 
     LaunchedEffect(imageUrl) {
-        if (imageUrl == null) return@LaunchedEffect
+        if (imageUrl == null || meshPaletteCache[imageUrl] != null) return@LaunchedEffect
         val request = ImageRequest.Builder(context)
-            .data(imageUrl)
+            .data(imageUrl.artworkAt(CARD_ART_PX))
             .size(128) // palette quality is fine at thumbnail size, and it's fast
+            .precision(Precision.EXACT)
             .forPixelAccess() // Palette needs pixel access
+            .memoryCachePolicy(CachePolicy.DISABLED)
             .build()
         val result = SingletonImageLoader.get(context).execute(request)
-        val bitmap = (result as? SuccessResult)?.image?.toImageBitmap() ?: return@LaunchedEffect
-        palette = MeshPalette(paletteOf(bitmap))
+        val image = (result as? SuccessResult)?.image ?: return@LaunchedEffect
+        val colors = withContext(Dispatchers.Default) {
+            paletteOf(image.toImageBitmap())
+        }
+        val computed = MeshPalette(colors)
+        meshPaletteCache[imageUrl] = computed
+        palette = computed
     }
 
     LaunchedEffect(canvasFrame) {

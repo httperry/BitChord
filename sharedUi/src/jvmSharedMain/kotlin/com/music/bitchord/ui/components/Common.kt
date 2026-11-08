@@ -162,6 +162,13 @@ val FLOATING_BAR_MAX_WIDTH = 440.dp
  */
 val SHELF_CARD_WIDTH = 150.dp
 
+private val CommonArtShape8 = RoundedCornerShape(8.dp)
+private val CommonBarsShape6 = RoundedCornerShape(6.dp)
+private val CommonPillShape11 = RoundedCornerShape(11.dp)
+private val CommonSignInShape22 = RoundedCornerShape(22.dp)
+private val CommonRowLiftPadding = PaddingValues(horizontal = PAGE_GUTTER)
+private val PlayingBarsBgColor = Color.Black.copy(alpha = 0.52f)
+
 /**
  * A track's thumbnail box at [height]: square for a song, 16:9 at the same
  * height for a music video — its picture's own shape, as YouTube Music lists
@@ -512,12 +519,12 @@ private fun SongRowContent(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(if (unavailable) 0.45f else 1f)
+            .graphicsLayer { this.alpha = if (unavailable) 0.45f else 1f }
             .background(activeBackground)
             .longPressMenuClickable(
                 onClick = onClick,
                 onLongClick = onLongPress,
-                liftPadding = PaddingValues(horizontal = PAGE_GUTTER),
+                liftPadding = CommonRowLiftPadding,
             )
             .contextClick(onMore ?: onLongPress)
             .padding(horizontal = PAGE_GUTTER, vertical = 4.dp),
@@ -551,14 +558,16 @@ private fun SongRowContent(
             }
         } else {
             Box(Modifier.trackArtSize(52.dp, song.isVideo)) {
+                val rawUrl = com.music.bitchord.ui.player.rememberRemoteArtworkUrl(song)
+                val artworkModel = remember(rawUrl) { rawUrl?.artworkAt(ROW_ART_PX) }
                 AsyncImage(
-                    model = com.music.bitchord.ui.player.rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
+                    model = artworkModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .matchParentSize()
-                        .clip(RoundedCornerShape(8.dp))
-                        .thumbnailBorder(RoundedCornerShape(8.dp))
+                        .clip(CommonArtShape8)
+                        .thumbnailBorder(CommonArtShape8)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 )
                 if (searchPlayingStyle && isCurrent && isPlaying) {
@@ -577,10 +586,12 @@ private fun SongRowContent(
                 color = titleColor,
             )
             Spacer(Modifier.height(2.dp))
-            val subtitle = listOfNotNull(
-                song.artist.takeIf { it.isNotBlank() },
-                song.downloadFormat,
-            ).joinToString(" · ")
+            val subtitle = remember(song.artist, song.downloadFormat) {
+                listOfNotNull(
+                    song.artist.takeIf { it.isNotBlank() },
+                    song.downloadFormat,
+                ).joinToString(" · ")
+            }
             val quality = if (showSourceQuality) song.sourceQualityBadge() else null
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (quality != null) {
@@ -759,8 +770,8 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(24.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color.Black.copy(alpha = 0.52f)),
+            .clip(CommonBarsShape6)
+            .background(PlayingBarsBgColor),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(width = 13.dp, height = 14.dp)) {
@@ -768,7 +779,8 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
             val step = barWidth + 2.dp.toPx()
             val corner = CornerRadius(minOf(2.dp.toPx(), barWidth / 2f))
             val ms = elapsedNanos.longValue / 1_000_000L
-            PLAYING_BAR_MINIMUMS.forEachIndexed { index, minimum ->
+            for (index in PLAYING_BAR_MINIMUMS.indices) {
+                val minimum = PLAYING_BAR_MINIMUMS[index]
                 val height = size.height * playingBarHeight(index, minimum, ms)
                 drawRoundRect(
                     color = Color.White,
@@ -869,7 +881,7 @@ fun SignInBanner(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(22.dp))
+            .clip(CommonSignInShape22)
             .clickable(interactionSource = interaction, indication = null, onClick = onSignIn),
     ) {
         // A card is a few hundred dp the reader is looking straight at, which
@@ -978,7 +990,7 @@ fun PillTextField(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(container, RoundedCornerShape(11.dp))
+            .background(container, CommonPillShape11)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

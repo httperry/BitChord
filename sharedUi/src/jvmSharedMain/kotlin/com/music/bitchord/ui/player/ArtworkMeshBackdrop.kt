@@ -36,8 +36,10 @@ import androidx.compose.ui.unit.dp
 import com.music.bitchord.ui.graphics.ColorUtils
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.SingletonImageLoader
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.size.Precision
 import com.music.bitchord.data.model.CARD_ART_PX
 import com.music.bitchord.data.model.artworkAt
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +102,7 @@ fun rememberFullArtworkBlurImage(
     prepare: Boolean = true,
 ): ImageBitmap? {
     val context = LocalPlatformContext.current
-    var image by remember { mutableStateOf(imageUrl?.let(fullBlurCache::get)) }
+    var image by remember(imageUrl) { mutableStateOf(imageUrl?.let(fullBlurCache::get)) }
 
     LaunchedEffect(imageUrl, artPx, prepare) {
         imageUrl?.let(fullBlurCache::get)?.let {
@@ -226,7 +228,9 @@ fun rememberArtworkMesh(
         val request = ImageRequest.Builder(context)
             .data(imageUrl.artworkAt(artPx))
             .size(MESH_PX)
+            .precision(Precision.EXACT)
             .forPixelAccess() // the sleeve has to be read back pixel by pixel
+            .memoryCachePolicy(CachePolicy.DISABLED)
             .build()
         // Tried more than once, because this effect is keyed on the artwork and
         // nothing else: a read that fails is not retried by Coil and cannot be
@@ -237,9 +241,9 @@ fun rememberArtworkMesh(
         repeat(MESH_ATTEMPTS) { attempt ->
             if (attempt > 0) delay(MESH_RETRY_DELAY_MS)
             val result = SingletonImageLoader.get(context).execute(request)
-            val bitmap = (result as? SuccessResult)?.image?.toImageBitmap()
-            if (bitmap != null) {
-                val found = withContext(Dispatchers.Default) { meshOf(bitmap, imageUrl.hashCode()) }
+            val image = (result as? SuccessResult)?.image
+            if (image != null) {
+                val found = withContext(Dispatchers.Default) { meshOf(image.toImageBitmap(), imageUrl.hashCode()) }
                 if (found != null) {
                     meshCache[imageUrl] = found
                     mesh = found
@@ -355,14 +359,7 @@ fun ArtworkMeshBackdrop(
         // more. The old backdrop needed a heavier one because it lightened
         // every colour it drew to a fixed band; these are the sleeve's own,
         // and a sleeve that ends dark should leave a dark screen.
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.Black.copy(alpha = 0.06f),
-                    Color.Black.copy(alpha = 0.30f),
-                ),
-            ),
-        )
+        drawRect(brush = ArtworkMeshScrim)
     }
 }
 
@@ -401,6 +398,14 @@ private fun DrawScope.drawMesh(mesh: ArtworkMesh, seamY: Float, alpha: Float) {
         filterQuality = FilterQuality.Low,
     )
 }
+
+/** Scrim over the mesh backdrop to keep white text legible without flattening dark art. */
+private val ArtworkMeshScrim = Brush.verticalGradient(
+    colors = listOf(
+        Color.Black.copy(alpha = 0.06f),
+        Color.Black.copy(alpha = 0.30f),
+    ),
+)
 
 /** The shade over the blurred cover, deepening toward the controls at the foot. */
 private val FullArtworkScrim = Brush.verticalGradient(
