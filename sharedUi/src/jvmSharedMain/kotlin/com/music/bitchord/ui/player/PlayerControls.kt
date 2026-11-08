@@ -76,6 +76,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -102,6 +103,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -115,6 +118,7 @@ import com.music.bitchord.ui.graphics.fadingEdges
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
 import com.music.bitchord.ui.icons.BitChordIcons
+import com.music.bitchord.ui.rememberIsForeground
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.data.NerdStats
 import com.music.bitchord.data.listentogether.PartyMember
@@ -215,7 +219,6 @@ internal fun PlayerScrubber(
     onScrubFinished: () -> Unit,
     centerLabel: @Composable BoxScope.() -> Unit = {},
 ) {
-    val shown = shown()
     // Held as a State and read only inside the bar's draw: the blend republishes
     // every fade tick, and collecting it by value here would recompose the
     // scrubber and its labels thirty times a second for a change only the
@@ -243,21 +246,12 @@ internal fun PlayerScrubber(
         ) {
             // Drawn like the artist line: the same white, added the same way.
             val timeColor = chromeWhite(0.55f)
-            Row(
+            ScrubberTimestamps(
+                shown = shown,
+                durationMs = durationMs,
+                timeColor = timeColor,
                 modifier = Modifier.fillMaxWidth().additiveChrome(LocalPlayerChrome.current),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = formatTime((shown * durationMs).toLong()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = timeColor,
-                )
-                Text(
-                    text = "-" + formatTime(durationMs - (shown * durationMs).toLong()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = timeColor,
-                )
-            }
+            )
             // Pinned to the box's own centre rather than squeezed into the gap
             // between the two timestamps: that gap's width changes by a digit's
             // worth every time a minute rolls over. Cross-faded with "Mixing"
@@ -274,6 +268,33 @@ internal fun PlayerScrubber(
                 MixingLabel(mixPulse, Modifier.align(Alignment.Center))
             }
         }
+    }
+}
+
+@Composable
+private fun ScrubberTimestamps(
+    shown: () -> Float,
+    durationMs: Long,
+    timeColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val currentShown = shown()
+    val elapsed = (currentShown * durationMs).toLong()
+    val remaining = (durationMs - elapsed).coerceAtLeast(0L)
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = formatTime(elapsed),
+            style = MaterialTheme.typography.labelMedium,
+            color = timeColor,
+        )
+        Text(
+            text = "-" + formatTime(remaining),
+            style = MaterialTheme.typography.labelMedium,
+            color = timeColor,
+        )
     }
 }
 
@@ -1438,6 +1459,8 @@ internal fun MarqueeText(
 ) {
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
+    val foreground = rememberIsForeground()
+    val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         if (leading != null) {
             leading()
@@ -1449,8 +1472,8 @@ internal fun MarqueeText(
                 textMeasurer.measure(text = text, style = style, maxLines = 1, softWrap = false)
             }
             val overflowing = layout.size.width > maxWidthPx
-            val crawls = enabled && overflowing
-            LaunchedEffect(crawls) { onOverflowChange(crawls) }
+            val crawls = enabled && overflowing && foreground && !reduceAnimation
+            LaunchedEffect(enabled && overflowing) { onOverflowChange(enabled && overflowing) }
 
             // One whole copy plus the gap behind it: that is the distance at
             // which the second copy is sitting exactly where the first was.
@@ -1580,6 +1603,8 @@ internal fun ArtistCreditsMarquee(
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val segments = remember(text, credits) { creditSegments(text, credits) }
+    val foreground = rememberIsForeground()
+    val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
 
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         BoxWithConstraints(Modifier.weight(1f, fill = false).clipToBounds()) {
@@ -1591,7 +1616,7 @@ internal fun ArtistCreditsMarquee(
                 textMeasurer.measure(text = text, style = style, maxLines = 1, softWrap = false)
             }
             val overflowing = layout.size.width > maxWidthPx
-            val crawls = enabled && overflowing
+            val crawls = enabled && overflowing && foreground && !reduceAnimation
             val travelPx = if (crawls) {
                 layout.size.width + with(density) { MARQUEE_GAP.roundToPx() }
             } else {
@@ -1841,7 +1866,7 @@ private fun LosslessLabel(
             modifier = if (iconSize.isSpecified) Modifier.size(iconSize) else Modifier,
         )
         Spacer(Modifier.width(4.dp))
-        if (animated) {
+        if (animated && !reduceAnimation) {
             ShimmerText(text = text)
         } else {
             Text(
@@ -1862,9 +1887,10 @@ private fun LosslessLabel(
  * "Lossless", with a highlight band sweeping left to right across it every
  * three seconds — confirmed, not just claimed, so it's worth the shine.
  *
- * The band's width is measured off the text itself via [onSizeChanged]
- * rather than assumed, so the sweep always clears the word fully at both
- * ends instead of being sized for whatever length happened to be typical.
+ * Sized and laid out once via [Text], and painted directly in the draw phase
+ * using [drawText] with a linear gradient brush. This avoids both recomposition
+ * on every animation tick and the offscreen FBO blit pass previously forced by
+ * [CompositingStrategy.Offscreen] with [BlendMode.SrcIn].
  *
  * [style] and [baseAlpha] default to the quality badge's own look; the output
  * caption under the transport passes its own so the same sweep can run across
@@ -1880,6 +1906,20 @@ private fun ShimmerText(
     ),
     baseAlpha: Float = 0.55f,
 ) {
+    val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
+    val baseColor = chromeWhite(baseAlpha)
+    if (reduceAnimation) {
+        Text(
+            text = text,
+            style = style,
+            color = baseColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier,
+        )
+        return
+    }
+
     val transition = rememberInfiniteTransition(label = "lossless-shimmer")
     val progress = transition.animateFloat(
         initialValue = 0f,
@@ -1891,33 +1931,29 @@ private fun ShimmerText(
         label = "lossless-shimmer-progress",
     )
     val tint = Color.White.copy(alpha = if (LocalPlayerChrome.current) CHROME_FULL_ALPHA else 1f)
-    val baseColor = chromeWhite(baseAlpha)
-    // The glyphs are laid out and drawn once, in the plain tint, and the moving
-    // band is painted over them in the draw phase with SrcIn — which keeps the
-    // glyphs' coverage and takes the gradient's colour, the same pixels a
-    // brush in the text style draws. As a brush the band was part of the
-    // style, so every frame of the sweep recomposed the text for the whole
-    // length of a lossless track.
+    val shimmerColors = remember(baseColor, tint) { listOf(baseColor, tint, baseColor) }
+    var textLayout by remember(text, style) { mutableStateOf<TextLayoutResult?>(null) }
+
     Text(
         text = text,
         style = style,
-        color = tint,
+        color = Color.Transparent,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        onTextLayout = { textLayout = it },
         modifier = modifier
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
-                drawContent()
+                val layout = textLayout ?: return@drawWithContent
                 val width = size.width
                 val band = width * 0.6f
                 val center = -band + progress.value * (width + 2 * band)
-                drawRect(
+                drawText(
+                    textLayoutResult = layout,
                     brush = Brush.linearGradient(
-                        colorStops = arrayOf(0f to baseColor, 0.5f to tint, 1f to baseColor),
+                        colors = shimmerColors,
                         start = Offset(center - band, 0f),
                         end = Offset(center + band, 0f),
                     ),
-                    blendMode = BlendMode.SrcIn,
                 )
             },
     )

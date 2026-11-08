@@ -1,12 +1,14 @@
 package com.music.bitchord.ui.player
 
 import com.music.bitchord.wear.WearBridge
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.database.ContentObserver
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -323,7 +325,8 @@ private class CastAwareVolume(
 
 /**
  * The music stream's volume. Hardware keys and the system panel change it
- * behind the app's back, so Settings is watched and the level follows.
+ * behind the app's back, so the system volume change broadcast is watched
+ * and the level follows.
  */
 private class MusicStreamVolume(private val context: Context) : SystemVolume {
     private val manager = context.getSystemService(AudioManager::class.java)
@@ -331,13 +334,23 @@ private class MusicStreamVolume(private val context: Context) : SystemVolume {
     override val level: StateFlow<Float> = _level.asStateFlow()
 
     init {
-        context.contentResolver.registerContentObserver(
-            Settings.System.CONTENT_URI,
-            true,
-            object : ContentObserver(Handler(Looper.getMainLooper())) {
-                override fun onChange(selfChange: Boolean) = refresh()
-            },
-        )
+        val filter = IntentFilter(VOLUME_CHANGED_ACTION)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val streamType = intent?.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1) ?: -1
+                if (streamType == AudioManager.STREAM_MUSIC || streamType == -1) {
+                    refresh()
+                }
+            }
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(receiver, filter)
+            }
+        }
     }
 
     private fun max(): Int = manager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
@@ -351,6 +364,11 @@ private class MusicStreamVolume(private val context: Context) : SystemVolume {
 
     override fun refresh() {
         _level.value = read()
+    }
+
+    companion object {
+        private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
+        private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
     }
 }
 

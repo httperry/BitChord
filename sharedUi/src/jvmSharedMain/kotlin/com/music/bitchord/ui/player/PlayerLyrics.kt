@@ -32,6 +32,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -570,6 +571,13 @@ internal fun adjustedLyricsSeekTarget(lineTimeMs: Long, offsetMs: Int): Long =
     (lineTimeMs + offsetMs.toLong()).coerceAtLeast(0L)
 
 /**
+ * A shared frame clock for lyrics across [NowPlayingScreen], [CurrentLyricStrip],
+ * and [LyricsPanel], so that only a single 120Hz `withFrameNanos` loop runs across
+ * the entire player screen.
+ */
+internal val LocalLyricClock = compositionLocalOf<MutableLongState?> { null }
+
+/**
  * The current lyric, one line, directly above the scrubber — or the line
  * saying why there isn't one.
  */
@@ -590,10 +598,10 @@ internal fun CurrentLyricStrip(
     val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
     var stripRtl by remember { mutableStateOf(false) }
     var activeText by remember { mutableStateOf("") }
-    if (isSynced) {
-        val clock = rememberLyricClock(trackKey, playhead, isPlaying)
+    val clock = if (isSynced) {
+        val c = LocalLyricClock.current ?: rememberLyricClock(trackKey, playhead, isPlaying)
         val index by remember(lines) {
-            derivedStateOf { lines.indexOfLast { it.timeMs <= clock.longValue } }
+            derivedStateOf { lines.indexOfLast { it.timeMs <= c.longValue } }
         }
         val current = lines.getOrNull(index)
         val instrumental = current == null || current.isGap
@@ -607,11 +615,17 @@ internal fun CurrentLyricStrip(
             else -> current.text
         }
         stripRtl = isRtl(activeText)
+        c
+    } else {
+        null
     }
 
     val align: Alignment = if (stripRtl) Alignment.CenterStart else Alignment.CenterStart
 
-    CompositionLocalProvider(LocalLayoutDirection provides if (stripRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+    CompositionLocalProvider(
+        LocalLayoutDirection provides if (stripRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
+        LocalLyricClock provides (clock ?: LocalLyricClock.current),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -629,6 +643,7 @@ internal fun CurrentLyricStrip(
                     isPlaying = isPlaying,
                     durationMs = durationMs,
                     onClick = onClick,
+                    clock = clock,
                     modifier = Modifier
                         .align(align),
                 )
@@ -701,7 +716,7 @@ private fun nanosToMs(nanos: Long): Double = nanos / 1_000_000.0
  * whole line would recompose sixty times a second.
  */
 @Composable
-private fun rememberLyricClock(
+internal fun rememberLyricClock(
     trackKey: Any,
     playhead: LyricPlayhead,
     isPlaying: Boolean,
@@ -1797,7 +1812,7 @@ internal fun LyricsPanel(
     modifier: Modifier = Modifier,
 ) {
     val panelPlaying = isPlaying && active
-    val clock = rememberLyricClock(trackKey, playhead, panelPlaying)
+    val clock = LocalLyricClock.current ?: rememberLyricClock(trackKey, playhead, panelPlaying)
     val subReveal = rememberSubLyricsReveal(subLines, trackKey)
 
     val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
@@ -2798,6 +2813,7 @@ private fun CurrentLyricLine(
     durationMs: Long,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    clock: MutableLongState? = null,
 ) {
     val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
     // One line box whatever the script: left to the font, a Devanagari or
@@ -2844,10 +2860,10 @@ private fun CurrentLyricLine(
         return
     }
 
-    val clock = rememberLyricClock(trackKey, playhead, isPlaying)
+    val activeClock = clock ?: LocalLyricClock.current ?: rememberLyricClock(trackKey, playhead, isPlaying)
 
     val index by remember(lines) {
-        derivedStateOf { lines.indexOfLast { it.timeMs <= clock.longValue } }
+        derivedStateOf { lines.indexOfLast { it.timeMs <= activeClock.longValue } }
     }
     val current = lines.getOrNull(index)
     // Before the first line, and through instrumental breaks, show the note.
@@ -2938,13 +2954,13 @@ private fun CurrentLyricLine(
                     ?: (start + 4_000L)
                 val fade = ((end - start) * LYRIC_FADE_FRACTION)
                     .coerceIn(LYRIC_FADE_MIN_MS, LYRIC_FADE_MAX_MS)
-                val remaining = (end - clock.longValue).toFloat()
+                val remaining = (end - activeClock.longValue).toFloat()
                 alpha = 0.78f * (remaining / fade).coerceIn(0f, 1f)
             }
             if (swept != null) {
                 SweptLyricLine(
                     line = swept,
-                    clock = clock,
+                    clock = activeClock,
                     style = voiceStyle(stripStyle, text, alignEnd = false, laneLocked = false),
                     dimAlpha = UNSUNG_ALPHA_STRIP,
                     maxLines = 1,

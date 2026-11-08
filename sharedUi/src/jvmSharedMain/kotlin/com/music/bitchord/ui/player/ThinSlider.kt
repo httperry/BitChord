@@ -58,7 +58,7 @@ import kotlin.math.cos
  */
 @Composable
 fun ThinSlider(
-    value: Float,
+    value: () -> Float,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     onValueChangeFinished: (() -> Unit)? = null,
@@ -232,7 +232,7 @@ fun ThinSlider(
             // brightest on each beat, easing down between them over the unplayed
             // track colour. A drag in progress always shows the finger.
             val cover = if (dragging) 0f else mixPulse?.cover ?: 0f
-            val base = value.coerceIn(0f, 1f)
+            val base = value().coerceIn(0f, 1f)
             val fraction = base + (1f - base) * cover
             // Scaled by [fillFactor]: retracted to nothing while the sheen
             // runs (two white signals on one bar would read as progress
@@ -274,6 +274,37 @@ fun ThinSlider(
         }
     }
 }
+
+@Composable
+fun ThinSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    onValueChangeFinished: (() -> Unit)? = null,
+    mixing: Boolean = false,
+    mixPulse: MixPulse? = null,
+    loading: Boolean = false,
+    transitionWindow: ClosedFloatingPointRange<Float>? = null,
+    idleHeight: Dp = 7.dp,
+    activeHeight: Dp = 12.dp,
+    activeColor: Color = Color.White.copy(alpha = 0.92f),
+    inactiveColor: Color = Color.White.copy(alpha = 0.26f),
+    markerColor: Color = Color.White.copy(alpha = 0.5f),
+) = ThinSlider(
+    value = { value },
+    onValueChange = onValueChange,
+    modifier = modifier,
+    onValueChangeFinished = onValueChangeFinished,
+    mixing = mixing,
+    mixPulse = mixPulse,
+    loading = loading,
+    transitionWindow = transitionWindow,
+    idleHeight = idleHeight,
+    activeHeight = activeHeight,
+    activeColor = activeColor,
+    inactiveColor = inactiveColor,
+    markerColor = markerColor,
+)
 
 private const val SHEEN_BAND_FRACTION = 0.34f
 

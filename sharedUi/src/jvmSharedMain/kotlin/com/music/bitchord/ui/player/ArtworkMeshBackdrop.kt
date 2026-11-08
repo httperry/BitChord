@@ -79,7 +79,13 @@ import kotlin.random.Random
  * as the old backdrop draws — would be thirty-six full-screen radial gradients.
  */
 @Immutable
-class ArtworkMesh internal constructor(internal val image: ImageBitmap)
+class ArtworkMesh internal constructor(
+    internal val image: ImageBitmap,
+    internal val seamRow: ImageBitmap = image,
+) {
+    internal val seamSrcSize: IntSize = IntSize(seamRow.width, seamRow.height)
+    internal val fullSrcSize: IntSize = IntSize(image.width, image.height)
+}
 
 /**
  * One pre-blurred bitmap for the full-cover player backdrop.
@@ -342,6 +348,8 @@ fun ArtworkMeshBackdrop(
         incoming = null
     }
 
+    val geometry = remember { BackdropGeometry() }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -350,10 +358,21 @@ fun ArtworkMeshBackdrop(
             .background(fallback),
     ) {
         val seamY = seam().toPx().coerceIn(0f, size.height)
-        shown?.let { drawMesh(it, seamY, alpha = 1f) }
+        geometry.update(
+            w = size.width.roundToInt(),
+            h = size.height.roundToInt(),
+            s = seamY.roundToInt(),
+        )
+
+        val fadeVal = if (incoming != null) fade.value else 0f
+        if (fadeVal < 0.999f) {
+            shown?.let { drawMesh(it, geometry, alpha = 1f) }
+        }
         // Read here rather than in composition: an Animatable read inside a
         // draw lambda invalidates the drawing and leaves composition out of it.
-        incoming?.let { drawMesh(it, seamY, alpha = fade.value) }
+        if (fadeVal > 0.001f) {
+            incoming?.let { drawMesh(it, geometry, alpha = fadeVal) }
+        }
 
         // Enough of a scrim to keep white text off a bright sleeve, and no
         // more. The old backdrop needed a heavier one because it lightened
@@ -363,25 +382,51 @@ fun ArtworkMeshBackdrop(
     }
 }
 
+/** Cached pixel dimensions for backdrop drawing to avoid per-frame IntSize/IntOffset allocations. */
+private class BackdropGeometry {
+    var width: Int = -1
+    var height: Int = -1
+    var seamInt: Int = -1
+    var hasTop: Boolean = false
+    var topDstSize: IntSize = IntSize.Zero
+    var bottomDstOffset: IntOffset = IntOffset.Zero
+    var bottomDstSize: IntSize = IntSize.Zero
+
+    fun update(w: Int, h: Int, s: Int) {
+        if (width == w && height == h && seamInt == s) return
+        width = w
+        height = h
+        seamInt = s
+        hasTop = s > 0
+        topDstSize = if (hasTop) IntSize(w, s) else IntSize.Zero
+        bottomDstOffset = IntOffset(0, s)
+        bottomDstSize = IntSize(w, (h - s).coerceAtLeast(0))
+    }
+}
+
 /**
- * Paints [mesh] over the whole surface: the grid from [seamY] down, and its
- * first row held from there up. Two draws of one small texture, both stretched
+ * Paints [mesh] over the whole surface: the grid from [geometry.bottomDstOffset] down, and its
+ * first row held from there up. Two draws of small textures, both stretched
  * by the sampler.
  */
-private fun DrawScope.drawMesh(mesh: ArtworkMesh, seamY: Float, alpha: Float) {
+private fun DrawScope.drawMesh(
+    mesh: ArtworkMesh,
+    geometry: BackdropGeometry,
+    alpha: Float,
+) {
     if (alpha <= 0.001f) return
-    val image = mesh.image
-    val width = size.width.roundToInt()
 
     // Above the seam: the sleeve's bottom edge, held. Skipped when the seam is
     // at the very top, where there is no such stretch to fill.
-    if (seamY > 0.5f) {
+    // Drawing from the dedicated 1-texel high seamRow clamps sampler coordinates
+    // vertically to row 0 without reading or thrashing texels from subsequent rows.
+    if (geometry.hasTop) {
         drawImage(
-            image = image,
+            image = mesh.seamRow,
             srcOffset = IntOffset.Zero,
-            srcSize = IntSize(image.width, 1),
+            srcSize = mesh.seamSrcSize,
             dstOffset = IntOffset.Zero,
-            dstSize = IntSize(width, seamY.roundToInt()),
+            dstSize = geometry.topDstSize,
             alpha = alpha,
             filterQuality = FilterQuality.Low,
         )
@@ -389,11 +434,11 @@ private fun DrawScope.drawMesh(mesh: ArtworkMesh, seamY: Float, alpha: Float) {
 
     // From the seam down: the mesh itself, stretched over whatever is left.
     drawImage(
-        image = image,
+        image = mesh.image,
         srcOffset = IntOffset.Zero,
-        srcSize = IntSize(image.width, image.height),
-        dstOffset = IntOffset(0, seamY.roundToInt()),
-        dstSize = IntSize(width, (size.height - seamY).roundToInt()),
+        srcSize = mesh.fullSrcSize,
+        dstOffset = geometry.bottomDstOffset,
+        dstSize = geometry.bottomDstSize,
         alpha = alpha,
         filterQuality = FilterQuality.Low,
     )
@@ -647,7 +692,11 @@ private fun meshOf(source: ImageBitmap, seed: Int): ArtworkMesh? {
         boxBlurPass(texels, scratch, MESH_TEX, MESH_TEX, MESH_BLUR_RADIUS, horizontal = true)
         boxBlurPass(scratch, texels, MESH_TEX, MESH_TEX, MESH_BLUR_RADIUS, horizontal = false)
     }
-    return ArtworkMesh(imageBitmapOf(texels, MESH_TEX, MESH_TEX))
+    val seamTexels = texels.copyOfRange(0, MESH_TEX)
+    return ArtworkMesh(
+        image = imageBitmapOf(texels, MESH_TEX, MESH_TEX),
+        seamRow = imageBitmapOf(seamTexels, MESH_TEX, 1),
+    )
 }
 
 /**

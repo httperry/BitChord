@@ -67,7 +67,9 @@ class PlaybackPosition {
      * not the moment it arrived.
      */
     fun report(positionMs: Long, sampledAtNanos: Long = System.nanoTime()) {
-        this.positionMs = positionMs
-        this.sampledAtNanos = sampledAtNanos
+        if (this.positionMs != positionMs || this.sampledAtNanos == 0L) {
+            this.positionMs = positionMs
+            this.sampledAtNanos = sampledAtNanos
+        }
     }
 }

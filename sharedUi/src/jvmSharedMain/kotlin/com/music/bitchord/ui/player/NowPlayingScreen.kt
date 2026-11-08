@@ -1024,6 +1024,12 @@ fun NowPlayingScreen(
     var lyricsOpen by remember {
         mutableStateOf(restoredPlayerScreen == LastPlayerScreen.LYRICS)
     }
+    val lyricsClockActive = (syncedLyricsEnabled || lyricsOpen || sideways) && isPlaying && position.advancing
+    val lyricClock = rememberLyricClock(
+        trackKey = song.videoId,
+        playhead = lyricsPlayhead,
+        isPlaying = lyricsClockActive,
+    )
     val queueSlide = remember { mutableFloatStateOf(0f) }
     // Expensive, song-scoped preparation is deliberately staggered. The small
     // backdrop decode runs after the track hand-off has settled; lyrics and
@@ -1959,7 +1965,8 @@ fun NowPlayingScreen(
     DisposableEffect(Unit) { onDispose { reportLiveCanvas(false) } }
     val frostOff by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val frost = if (frostOff) null else PlayerPlatform.host.rememberPlayerFrost()
-    FrostedPlayerFrame(
+    CompositionLocalProvider(LocalLyricClock provides lyricClock) {
+        FrostedPlayerFrame(
         modifier = modifier,
         // Off where a music video is the backdrop: it can go bright under the
         // controls. On over a Canvas: the controls only show with its dim and
@@ -2565,12 +2572,27 @@ fun NowPlayingScreen(
                     )
                 }
 
+                val deckGlassFallback = remember {
+                    Brush.verticalGradient(
+                        0.00f to Color.Transparent,
+                        SPOTIFY_DECK_TOP_FADE_FRACTION to Color.Black.copy(alpha = 0.40f),
+                        1.00f to Color.Black.copy(alpha = 0.40f),
+                    )
+                }
+                val deckGlassMask = remember {
+                    Brush.verticalGradient(
+                        0.00f to Color.Transparent,
+                        SPOTIFY_DECK_TOP_FADE_FRACTION to Color.Black,
+                        1.00f to Color.Black,
+                    )
+                }
+
                 // Spotify Canvas keeps its pixels sharp across the whole phone. Pure
                 // glass blur belongs only under the temporary lower control deck,
                 // above the video. When the deck slides away this layer leaves with
                 // it as well.
                 AnimatedVisibility(
-                    visible = spotifyCanvasPresentation && spotifyCanvasControlsOpen,
+                    visible = spotifyCanvasPresentation && spotifyCanvasControlsOpen && !playerSubviewOpen && !docking(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -2581,6 +2603,8 @@ fun NowPlayingScreen(
                     // Subscribe only while Spotify's glass layer exists. Static art and
                     // non-Spotify motion covers do not observe this new state at all.
                     val reduceDynamicBlur by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
+                    val deckVisible = !reduceDynamicBlur && renderEffectBlurSupported &&
+                        !overlayOpen.value && !playerSubviewOpen && !docking() && dockFade() > 0.01f
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -2589,20 +2613,14 @@ fun NowPlayingScreen(
                                 // blur the playing Canvas live themselves, and the
                                 // deck's glass under them would be a second live blur
                                 // of the same video for a deck nobody can see.
-                                if (reduceDynamicBlur || !renderEffectBlurSupported || overlayOpen.value) {
+                                if (!deckVisible) {
                                     // A real backdrop RenderEffect is unavailable on
                                     // older Android versions and intentionally skipped
                                     // when dynamic blur is reduced. Retain the deck's
                                     // contrast without paying for a fake blur path,
                                     // while keeping the same progressive top edge as
                                     // the live glass surface.
-                                    Modifier.background(
-                                        Brush.verticalGradient(
-                                            0.00f to Color.Transparent,
-                                            SPOTIFY_DECK_TOP_FADE_FRACTION to Color.Black.copy(alpha = 0.40f),
-                                            1.00f to Color.Black.copy(alpha = 0.40f),
-                                        ),
-                                    )
+                                    Modifier.background(deckGlassFallback)
                                 } else {
                                     Modifier.optimizedHazeEffect(
                                         state = playerHaze,
@@ -2626,12 +2644,10 @@ fun NowPlayingScreen(
                                         // this processes roughly 30% of the pixels used
                                         // by optimizedHazeEffect's normal 33% path.
                                         inputScale = HazeInputScale.Fixed(0.18f)
-                                        canDrawArea = { true }
-                                        mask = Brush.verticalGradient(
-                                            0.00f to Color.Transparent,
-                                            SPOTIFY_DECK_TOP_FADE_FRACTION to Color.Black,
-                                            1.00f to Color.Black,
-                                        )
+                                        canDrawArea = {
+                                            !playerSubviewOpen && !overlayOpen.value && !docking() && dockFade() > 0.01f
+                                        }
+                                        mask = deckGlassMask
                                     }
                                 },
                             ),
@@ -4188,6 +4204,7 @@ fun NowPlayingScreen(
             }
         }
     }
+}
 }
 
 /**
