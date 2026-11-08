@@ -956,21 +956,18 @@ private fun SweptLyricLine(
             maxLines = maxLines,
             overflow = overflow,
             // The feather erases into this layer, so the layer has to exist —
-            // and only while it is being drawn. Every line carrying one would
-            // put the whole panel through an offscreen buffer to soften an edge
-            // that at most two of them have.
-            modifier = riseAgainst(
-                Modifier
-                    .graphicsLayer {
-                        compositingStrategy = if (feather) {
-                            CompositingStrategy.Offscreen
-                        } else {
-                            CompositingStrategy.Auto
-                        }
+            // and only while it is being drawn. Sits outside riseAgainst so the
+            // entire line shares a single offscreen compositing pass rather than
+            // allocating and blitting an FBO per-character slice in riseWith.
+            modifier = Modifier
+                .graphicsLayer {
+                    compositingStrategy = if (feather) {
+                        CompositingStrategy.Offscreen
+                    } else {
+                        CompositingStrategy.Auto
                     }
-                    .then(room)
-                    .then(sweep),
-            ),
+                }
+                .then(riseAgainst(Modifier.then(room).then(sweep))),
         )
     }
 }
@@ -2070,7 +2067,12 @@ internal fun LyricsPanel(
         ),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        itemsIndexed(lines) { index, line ->
+        itemsIndexed(
+            items = lines,
+            key = { index, line ->
+                if (line.timeMs > 0L) "${line.timeMs}_$index" else "${line.text.hashCode()}_$index"
+            },
+        ) { index, line ->
             if (!isSynced && isGeniusSectionHeader(line.text)) {
                 val sectionTitle = line.text.removePrefix("[").removeSuffix("]").trim()
                 Column(
