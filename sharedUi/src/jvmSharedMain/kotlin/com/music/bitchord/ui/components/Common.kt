@@ -737,6 +737,8 @@ private fun playingBarHeight(index: Int, minimum: Float, ms: Long): Float {
     }
 }
 
+private val PlayingBarsShape = RoundedCornerShape(6.dp)
+
 @Composable
 fun SearchPlayingBars(modifier: Modifier = Modifier) {
     // Time in motion rather than an animation per bar: read only in the draw
@@ -762,9 +764,9 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
             .size(24.dp)
             .graphicsLayer {
                 clip = true
-                shape = RoundedCornerShape(6.dp)
+                shape = PlayingBarsShape
             }
-            .clip(RoundedCornerShape(6.dp))
+            .clip(PlayingBarsShape)
             .background(Color.Black.copy(alpha = 0.52f)),
         contentAlignment = Alignment.Center,
     ) {

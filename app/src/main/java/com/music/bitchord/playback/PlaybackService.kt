@@ -4743,7 +4743,10 @@ class PlaybackService : MediaLibraryService() {
         val mime = format.sampleMimeType ?: return false
         val videoId = uri.getQueryParameter("v") ?: return false
         val downloaded = com.music.bitchord.download.Downloads.savedUri(this, videoId) != null
-        if (downloaded) return false
+        if (downloaded) {
+            QualityUpgrade.markAnswered(mediaId)
+            return false
+        }
         val target = SourceResolver.targetIn(uri)
         val expectedSec = target.durationSec
         if (TrackMatcher.isSevereMismatch(expectedSec, durationSec)) {
@@ -5051,7 +5054,7 @@ class PlaybackService : MediaLibraryService() {
             // fetch Automix makes that neither of those two gates, and a
             // megabyte pulled for an analysis that will not run is a megabyte
             // taken off the connection the party is syncing over.
-            if (!ListenTogether.state.value.inParty) {
+            if (!ListenTogether.state.value.inParty && AppSettings.smartFadeEnabled.value) {
                 launch(Dispatchers.IO) {
                     AudioCache.warmRange(Uri.parse(upgradedUri), 0, ANALYSIS_HEAD_BYTES)
                 }
@@ -6702,7 +6705,10 @@ class PlaybackService : MediaLibraryService() {
                     // is after its own transition has been and gone. Cheap to
                     // repeat: it returns immediately unless the track is
                     // pending and nothing is already looking.
-                    lookForBetterCopy(player)
+                    val activeId = player.currentMediaItem?.mediaId
+                    if (activeId != null && (QualityUpgrade.isPending(activeId) || QualityUpgrade.shelvedFor(activeId) != null)) {
+                        lookForBetterCopy(player)
+                    }
                 }
                 delay(PROGRESS_SAMPLE_MS)
             }
@@ -6778,6 +6784,7 @@ class PlaybackService : MediaLibraryService() {
             /* bufferForPlaybackAfterRebufferMs = */ RESUME_PLAYBACK_MS,
         )
         .setTargetBufferBytes(FAR_BUFFER_BYTES)
+        .setPrioritizeTimeOverSizeThresholds(true)
         .setBackBuffer(/* backBufferDurationMs = */ BACK_BUFFER_MS, /* retainBackBufferFromKeyframe = */ true)
         .build()
 
@@ -6910,6 +6917,7 @@ class PlaybackService : MediaLibraryService() {
         // stale enabled state consume the first tap meant to enable Shuffle.
         QueueShuffle.setEnabled(AppSettings.shuffleEnabled.value)
         player.repeatMode = AppSettings.repeatMode.value
+        player.setWakeMode(if (BitPerfectOutput.status.value.active) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NONE)
     }
 
     /**
@@ -7257,6 +7265,12 @@ class PlaybackService : MediaLibraryService() {
         // attach or a detach all send the playing track back to be re-routed.
         UsbDirectDevices.init(this)
         BitPerfectOutput.watch(this)
+        scope.launch {
+            BitPerfectOutput.status.collect { status ->
+                val wakeMode = if (status.active) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NONE
+                eachPlayer { it.setWakeMode(wakeMode) }
+            }
+        }
         scope.launch {
             var available = false
             DacVolume.level.collect { level ->
@@ -9567,8 +9581,8 @@ class PlaybackService : MediaLibraryService() {
         /** 60s buffer is ample cushion and avoids unthrottled burst heating on the radio. */
         const val FAR_BUFFER_MS = 60 * 1000
 
-        /** ~100s at 160kbps: ample playback cushion while avoiding radio/I/O bursts. */
-        const val FAR_BUFFER_BYTES = 2 * 1024 * 1024
+        /** 10MB cushion accommodates 60s of Hi-Res/lossless audio without memory or radio churn. */
+        const val FAR_BUFFER_BYTES = 10 * 1024 * 1024
 
         /**
          * A short nudge backwards, and no more: this shares the byte ceiling

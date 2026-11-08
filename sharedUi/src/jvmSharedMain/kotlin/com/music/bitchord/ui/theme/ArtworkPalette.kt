@@ -162,6 +162,11 @@ private fun rememberArtworkSeed(imageUrl: String?, artPx: Int): Seed? {
 
     LaunchedEffect(imageUrl, artPx) {
         if (imageUrl == null || seed != null) return@LaunchedEffect
+        val cached = getCachedSeed(imageUrl)
+        if (cached != null) {
+            seed = cached
+            return@LaunchedEffect
+        }
         val request = ImageRequest.Builder(context)
             .data(imageUrl.artworkAt(artPx))
             .size(PALETTE_PX)
@@ -295,20 +300,27 @@ private fun ImageBitmap.topBandRelativeLuminance(): Float {
     return averageRelativeLuminance(pixels)
 }
 
+/** Precomputed lookup table for exact linear sRGB conversion of 8-bit channels (0..255). */
+private val SRGB_TO_LINEAR_LUT = FloatArray(256) { channel ->
+    val srgb = channel / 255f
+    if (srgb <= 0.04045f) srgb / 12.92f else ((srgb + 0.055f) / 1.055f).toDouble().pow(2.4).toFloat()
+}
+
 /** WCAG relative luminance: average in linear light, never gamma-encoded RGB. */
 internal fun averageRelativeLuminance(pixels: IntArray): Float {
     if (pixels.isEmpty()) return 0f
-    return pixels.sumOf { relativeLuminance(it).toDouble() }.div(pixels.size).toFloat()
+    var sum = 0.0
+    for (pixel in pixels) {
+        sum += relativeLuminance(pixel)
+    }
+    return (sum / pixels.size).toFloat()
 }
 
 internal fun relativeLuminance(argb: Int): Float {
-    fun linear(channel: Int): Float {
-        val srgb = channel / 255f
-        return if (srgb <= 0.04045f) srgb / 12.92f else ((srgb + 0.055f) / 1.055f).toDouble().pow(2.4).toFloat()
-    }
-    return 0.2126f * linear((argb shr 16) and 0xFF) +
-        0.7152f * linear((argb shr 8) and 0xFF) +
-        0.0722f * linear(argb and 0xFF)
+    val r = SRGB_TO_LINEAR_LUT[(argb shr 16) and 0xFF]
+    val g = SRGB_TO_LINEAR_LUT[(argb shr 8) and 0xFF]
+    val b = SRGB_TO_LINEAR_LUT[argb and 0xFF]
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b
 }
 
 /**

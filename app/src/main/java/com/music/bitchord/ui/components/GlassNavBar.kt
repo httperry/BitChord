@@ -384,13 +384,28 @@ private fun GlassNowPlaying(
                     bottom = 4.dp,
                 ),
         ) {
-            // A music video plays in the cover's place at its own 16:9, as in
-            // the floating mini player; the full player takes it over when up.
-            val showsPicture = song.isVideo && MusicOnlyPlayback.showsPicture(song.videoId)
+            // A music video expands the thumbnail to 16:9 at rest.
+            // Live video decoding is reserved for the full player (NowPlayingScreen);
+            // the glass accessory displays high-definition artwork, eliminating duplicate
+            // ExoPlayer instances, hardware MediaCodec decoding, and wake locks.
+            val isVideoWithPicture = song.isVideo && MusicOnlyPlayback.showsPicture(song.videoId)
             val artWidth by animateDpAsState(
-                targetValue = if (showsPicture && !VideoThumbnails.square) ACCESSORY_ART_SIZE * (16f / 9f) else ACCESSORY_ART_SIZE,
+                targetValue = if (isVideoWithPicture && !VideoThumbnails.square) ACCESSORY_ART_SIZE * (16f / 9f) else ACCESSORY_ART_SIZE,
                 label = "glassMiniArtWidth",
             )
+            val context = coil3.compose.LocalPlatformContext.current
+            val rawArtUrl = rememberRemoteArtworkUrl(song)
+            val artModel = remember(rawArtUrl, context) {
+                val url = rawArtUrl?.artworkAt(ROW_ART_PX) ?: rawArtUrl
+                if (url != null) {
+                    coil3.request.ImageRequest.Builder(context)
+                        .data(url)
+                        .size(ROW_ART_PX)
+                        .precision(coil3.size.Precision.EXACT)
+                        .crossfade(false)
+                        .build()
+                } else null
+            }
             Box(
                 modifier = Modifier
                     .size(width = artWidth, height = ACCESSORY_ART_SIZE)
@@ -401,20 +416,11 @@ private fun GlassNowPlaying(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 AsyncImage(
-                    model = rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
+                    model = artModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (showsPicture) {
-                    AndroidMusicVideo(
-                        videoId = song.videoId,
-                        fit = false,
-                        onRenderedChanged = {},
-                        modifier = Modifier.fillMaxSize(),
-                        priority = 0,
-                    )
-                }
             }
             Spacer(Modifier.width(if (isInline) 8.dp else 9.dp))
             // Title and artist at both densities, as Apple Music has them, in its

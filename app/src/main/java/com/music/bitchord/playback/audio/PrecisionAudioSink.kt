@@ -339,6 +339,10 @@ class PrecisionAudioSink(
         // Fast zero-copy passthrough when no DSP stage is modifying samples,
         // encodings match, and no loopdeck synchronization is in progress.
         if (!dspChain.isActive && inEncoding == outEncoding && outArm == null && inArm == null) {
+            val frames = inputBuffer.remaining() / bytesPerFrame
+            if (presentationTimeUs != C.TIME_UNSET && configuredSampleRate > 0) {
+                processedEndUs = presentationTimeUs + Util.sampleCountToDurationUs(frames.toLong(), configuredSampleRate)
+            }
             return delegate.handleBuffer(inputBuffer, presentationTimeUs, encodedAccessUnitCount)
         }
 

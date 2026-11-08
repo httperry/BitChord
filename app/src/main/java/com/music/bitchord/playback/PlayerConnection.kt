@@ -347,20 +347,43 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
             // Synced here too, so seeking while paused or buffering still moves
             // the scrubber (the poll loop only runs on play).
             position.report(player.currentPosition.coerceAtLeast(0L))
-            state = state.copy(
-                song = item?.toSong(),
-                isPlaying = player.isPlaying,
-                durationMs = player.duration.coerceAtLeast(0L),
-                error = error,
-                isLoading = player.playbackState == Player.STATE_BUFFERING,
-                repeatMode = player.repeatMode,
-                queue = queueSnapshot,
-                queueIndex = player.currentMediaItemIndex,
-                hasPrevious = player.hasPreviousMediaItem(),
-                hasNext = player.hasNextMediaItem(),
-                isQualityUpgraded = item?.mediaMetadata?.extras
-                    ?.getBoolean(EXTRA_QUALITY_UPGRADED) == true,
-            )
+            val newSong = item?.toSong()
+            val newIsPlaying = player.isPlaying
+            val newDurationMs = player.duration.coerceAtLeast(0L)
+            val newIsLoading = player.playbackState == Player.STATE_BUFFERING
+            val newRepeatMode = player.repeatMode
+            val newQueueIndex = player.currentMediaItemIndex
+            val newHasPrevious = player.hasPreviousMediaItem()
+            val newHasNext = player.hasNextMediaItem()
+            val newIsQualityUpgraded = item?.mediaMetadata?.extras
+                ?.getBoolean(EXTRA_QUALITY_UPGRADED) == true
+
+            if (state.song != newSong ||
+                state.isPlaying != newIsPlaying ||
+                state.durationMs != newDurationMs ||
+                state.error != error ||
+                state.isLoading != newIsLoading ||
+                state.repeatMode != newRepeatMode ||
+                state.queue !== queueSnapshot ||
+                state.queueIndex != newQueueIndex ||
+                state.hasPrevious != newHasPrevious ||
+                state.hasNext != newHasNext ||
+                state.isQualityUpgraded != newIsQualityUpgraded
+            ) {
+                state = state.copy(
+                    song = newSong,
+                    isPlaying = newIsPlaying,
+                    durationMs = newDurationMs,
+                    error = error,
+                    isLoading = newIsLoading,
+                    repeatMode = newRepeatMode,
+                    queue = queueSnapshot,
+                    queueIndex = newQueueIndex,
+                    hasPrevious = newHasPrevious,
+                    hasNext = newHasNext,
+                    isQualityUpgraded = newIsQualityUpgraded,
+                )
+            }
         }
 
         val listener = object : Player.Listener {
@@ -428,8 +451,10 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
     LaunchedEffect(controller, state.isPlaying, foreground) {
         while (controller != null && state.isPlaying && foreground) {
             position.report(controller.currentPosition.coerceAtLeast(0L))
-            val duration = controller.duration.coerceAtLeast(0L)
-            if (duration != state.durationMs) state = state.copy(durationMs = duration)
+            if (state.durationMs <= 0L) {
+                val duration = controller.duration.coerceAtLeast(0L)
+                if (duration != state.durationMs) state = state.copy(durationMs = duration)
+            }
             delay(500)
         }
     }
@@ -443,38 +468,44 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
  * service. A field dropped here disappears as soon as a Song passes through
  * Media3, because controllers and service helpers read it back through this.
  */
-fun MediaItem.toSong() = Song(
-    videoId = mediaId,
-    title = mediaMetadata.title?.toString().orEmpty(),
-    artist = mediaMetadata.artist?.toString().orEmpty(),
-    thumbnailUrl = mediaMetadata.artworkUri?.toString(),
-    durationText = mediaMetadata.extras?.getString(EXTRA_DURATION),
-    artistId = mediaMetadata.extras?.getString(EXTRA_ARTIST_ID),
-    artists = mediaMetadata.extras?.artistsFromBundle() ?: emptyList(),
-    albumId = mediaMetadata.extras?.getString(EXTRA_ALBUM_ID),
-    albumName = mediaMetadata.albumTitle?.toString(),
-    isExplicit = mediaMetadata.extras?.takeIf { it.containsKey(EXTRA_EXPLICIT) }
-        ?.getBoolean(EXTRA_EXPLICIT),
-    isVideo = mediaMetadata.extras?.getBoolean(EXTRA_IS_VIDEO) == true,
-    isVideoOrigin = mediaMetadata.extras?.getBoolean(EXTRA_VIDEO_ORIGIN) == true ||
-        mediaMetadata.extras?.getBoolean(EXTRA_IS_VIDEO) == true,
-    setVideoId = mediaMetadata.extras?.getString(EXTRA_SET_VIDEO_ID),
-    sourceQuality = mediaMetadata.extras?.getString(EXTRA_SOURCE_QUALITY),
-    sourceHiRes = mediaMetadata.extras?.getBoolean(EXTRA_SOURCE_HI_RES) == true,
-    queueTier = this.queueTier,
-    queueEntryId = this.queueEntryId,
-    radioName = mediaMetadata.extras?.getString(EXTRA_RADIO_NAME),
-    playbackSource = mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE),
-    playbackSourceType = mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE_TYPE)
-        ?.let { runCatching { PlaybackSourceType.valueOf(it) }.getOrNull() },
-    playbackSourceId = mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE_ID),
-    localUri = mediaMetadata.extras?.getString(EXTRA_LOCAL_URI),
-    localPath = mediaMetadata.extras?.getString(EXTRA_LOCAL_PATH),
-)
+fun MediaItem.toSong(): Song {
+    mediaItemSongCache[this]?.let { return it }
+    return Song(
+        videoId = mediaId,
+        title = mediaMetadata.title?.toString().orEmpty(),
+        artist = mediaMetadata.artist?.toString().orEmpty(),
+        thumbnailUrl = mediaMetadata.artworkUri?.toString(),
+        durationText = mediaMetadata.extras?.getString(EXTRA_DURATION),
+        artistId = mediaMetadata.extras?.getString(EXTRA_ARTIST_ID),
+        artists = mediaMetadata.extras?.artistsFromBundle() ?: emptyList(),
+        albumId = mediaMetadata.extras?.getString(EXTRA_ALBUM_ID),
+        albumName = mediaMetadata.albumTitle?.toString(),
+        isExplicit = mediaMetadata.extras?.takeIf { it.containsKey(EXTRA_EXPLICIT) }
+            ?.getBoolean(EXTRA_EXPLICIT),
+        isVideo = mediaMetadata.extras?.getBoolean(EXTRA_IS_VIDEO) == true,
+        isVideoOrigin = mediaMetadata.extras?.getBoolean(EXTRA_VIDEO_ORIGIN) == true ||
+            mediaMetadata.extras?.getBoolean(EXTRA_IS_VIDEO) == true,
+        setVideoId = mediaMetadata.extras?.getString(EXTRA_SET_VIDEO_ID),
+        sourceQuality = mediaMetadata.extras?.getString(EXTRA_SOURCE_QUALITY),
+        sourceHiRes = mediaMetadata.extras?.getBoolean(EXTRA_SOURCE_HI_RES) == true,
+        queueTier = this.queueTier,
+        queueEntryId = this.queueEntryId,
+        radioName = mediaMetadata.extras?.getString(EXTRA_RADIO_NAME),
+        playbackSource = mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE),
+        playbackSourceType = mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE_TYPE)
+            ?.let { runCatching { PlaybackSourceType.valueOf(it) }.getOrNull() },
+        playbackSourceId = mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE_ID),
+        localUri = mediaMetadata.extras?.getString(EXTRA_LOCAL_URI),
+        localPath = mediaMetadata.extras?.getString(EXTRA_LOCAL_PATH),
+    ).also { song ->
+        mediaItemSongCache[this] = song
+    }
+}
 
 internal val mediaItemTiers = java.util.Collections.synchronizedMap(java.util.WeakHashMap<MediaItem, QueueTier>())
 internal val mediaItemEntryIds = java.util.Collections.synchronizedMap(java.util.WeakHashMap<MediaItem, String>())
 internal val mediaItemCanonicalIndices = java.util.Collections.synchronizedMap(java.util.WeakHashMap<MediaItem, Int>())
+internal val mediaItemSongCache = java.util.Collections.synchronizedMap(java.util.WeakHashMap<MediaItem, Song>())
 
 /** @see Song.fromAutoplay */
 val MediaItem.fromAutoplay: Boolean
@@ -780,6 +811,7 @@ fun Song.toMediaItem(): MediaItem {
     .also { item ->
         queueEntryId?.let { mediaItemEntryIds[item] = it }
         mediaItemTiers[item] = queueTier
+        mediaItemSongCache[item] = this
     }
 }
 

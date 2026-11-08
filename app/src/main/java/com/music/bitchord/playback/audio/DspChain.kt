@@ -57,7 +57,7 @@ class DspChain(
     /** True when any DSP stage is actively modifying audio samples. */
     val isActive: Boolean
         get() = spatial.enabled ||
-            equalizer.isShaping ||
+            equalizer.isEnabled || equalizer.isShaping ||
             transition.isFiltering ||
             loudness.holdLimiter ||
             !loudness.isBypassed

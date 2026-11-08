@@ -1127,7 +1127,9 @@ private fun BitChordApp(
     // already answers "added to queue". Reached from every surface that had a
     // control taken away — see [ListenTogether.State.controlsLocked].
     val hostOnlyMessage = stringResource(R.string.listen_together_host_only_notice)
-    val showHostOnlyNotice: () -> Unit = { showQueueNotice(hostOnlyMessage) }
+    val showHostOnlyNotice: () -> Unit = remember(hostOnlyMessage) {
+        { showQueueNotice(hostOnlyMessage) }
+    }
 
     /**
      * Whether the host has taken the music, and say so if they have.
@@ -2436,10 +2438,12 @@ private fun BitChordApp(
     // under the status bar inset, and that inset varies by device and by window,
     // so a fixed number only ever lines up on the one device it was picked on.
     // See [topBarContentPadding].
-    val listPadding = PaddingValues(
-        top = topBarContentPadding(),
-        bottom = if (player.song != null) 210.dp else 140.dp,
-    )
+    val listPadding = remember(player.song != null) {
+        PaddingValues(
+            top = topBarContentPadding(),
+            bottom = if (player.song != null) 210.dp else 140.dp,
+        )
+    }
 
     // What colour the page currently under the bars is. The fades either end
     // of the screen are flat colour wherever their blur has least to say, so
@@ -3376,67 +3380,75 @@ private fun BitChordApp(
                                 },
                             )
                         } else when ((destination as? AppDestination.Tab)?.index ?: selectedTab) {
-                            TAB_HOME -> HomeScreen(
-                                state = visibleHomeState,
-                                listState = homeListState,
-                                currentSong = player.song,
-                                isPlaying = player.isPlaying,
-                                title = stringResource(R.string.listen_now),
-                                festiveLogo = diwaliFestive,
-                                onFestiveLogoClick = { showDiwali = true },
-                                signedIn = signedIn,
-                                onSignIn = { webSession = WebSessionMode.SIGN_IN },
-                                onItemClick = { item, shelfTitle ->
-                                    val song = shelfSong(item)
-                                    // Hoisted because ShelfItem lives in :shared, and
-                                    // Kotlin will not smart-cast a public nullable
-                                    // property declared in another module.
-                                    val browseId = item.browseId
-                                    when {
-                                        song != null -> playRadio(
-                                            song,
-                                            QueueSource(shelfTitle, PlaybackSourceType.HOME),
-                                        )
-                                        browseId != null -> viewModel.openDetail(
-                                            browseId = browseId,
-                                            title = item.title,
-                                            subtitle = item.subtitle,
-                                            thumbnailUrl = item.thumbnailUrl,
-                                        )
-                                    }
-                                },
-                                onItemLongPress = onShelfLongPress,
-                                onRetry = viewModel::loadHome,
-                                refreshing = MainViewModel.Feed.HOME in refreshing,
-                                onRefresh = { viewModel.refresh(MainViewModel.Feed.HOME) },
-                                pullState = homePull,
-                                contentPadding = listPadding,
-                                onLoadMore = viewModel::loadMoreHome,
-                                loadingMore = homeLoadingMore,
-                                recentlyPlayedLoading = homeRecentlyPlayedLoading && !hideRecents,
-                                topPicks = topPicks,
-                                topPicksLoading = topPicksLoading,
-                                listenerName = account?.name,
-                                // Neither shelf is drawn without its callback.
-                                onTopPickClick = openTopPick.takeUnless { hideTopPicks },
-                                onMoodClick = playMood.takeUnless { hideHomeMoods },
-                                onMoodsShowAll = { navigator.push(AppRoute.Moods) },
-                                // Nothing on Home is seen while the greeting covers it.
-                                artworkMotion = artworkMotion && !showDiwali,
-                                onTopPickLongPress = { pick ->
-                                    pick.browseId?.let { browseId ->
-                                        onShelfLongPress(
-                                            ShelfItem(
-                                                title = pick.title,
-                                                subtitle = pick.artistName.orEmpty(),
-                                                thumbnailUrl = pick.images.firstOrNull(),
-                                                videoId = null,
+                            TAB_HOME -> {
+                                val onHomeFestiveClick = remember { { showDiwali = true } }
+                                val onHomeSignIn = remember { { webSession = WebSessionMode.SIGN_IN } }
+                                val onHomeItemClick = remember(viewModel) {
+                                    { item: com.music.bitchord.data.model.ShelfItem, shelfTitle: String ->
+                                        val song = shelfSong(item)
+                                        val browseId = item.browseId
+                                        when {
+                                            song != null -> playRadio(
+                                                song,
+                                                QueueSource(shelfTitle, PlaybackSourceType.HOME),
+                                            )
+                                            browseId != null -> viewModel.openDetail(
                                                 browseId = browseId,
-                                            ),
-                                        )
+                                                title = item.title,
+                                                subtitle = item.subtitle,
+                                                thumbnailUrl = item.thumbnailUrl,
+                                            )
+                                        }
                                     }
-                                },
-                            )
+                                }
+                                val onHomeRefresh = remember(viewModel) { { viewModel.refresh(MainViewModel.Feed.HOME) } }
+                                val onHomeMoodsShowAll = remember(navigator) { { navigator.push(AppRoute.Moods) } }
+                                val onHomeTopPickLongPress = remember(onShelfLongPress) {
+                                    { pick: com.music.bitchord.data.innertube.model.TopPick ->
+                                        pick.browseId?.let { browseId ->
+                                            onShelfLongPress(
+                                                com.music.bitchord.data.model.ShelfItem(
+                                                    title = pick.title,
+                                                    subtitle = pick.artistName.orEmpty(),
+                                                    thumbnailUrl = pick.images.firstOrNull(),
+                                                    videoId = null,
+                                                    browseId = browseId,
+                                                ),
+                                            )
+                                        }
+                                        Unit
+                                    }
+                                }
+                                HomeScreen(
+                                    state = visibleHomeState,
+                                    listState = homeListState,
+                                    currentSong = player.song,
+                                    isPlaying = player.isPlaying,
+                                    title = stringResource(R.string.listen_now),
+                                    festiveLogo = diwaliFestive,
+                                    onFestiveLogoClick = onHomeFestiveClick,
+                                    signedIn = signedIn,
+                                    onSignIn = onHomeSignIn,
+                                    onItemClick = onHomeItemClick,
+                                    onItemLongPress = onShelfLongPress,
+                                    onRetry = viewModel::loadHome,
+                                    refreshing = MainViewModel.Feed.HOME in refreshing,
+                                    onRefresh = onHomeRefresh,
+                                    pullState = homePull,
+                                    contentPadding = listPadding,
+                                    onLoadMore = viewModel::loadMoreHome,
+                                    loadingMore = homeLoadingMore,
+                                    recentlyPlayedLoading = homeRecentlyPlayedLoading && !hideRecents,
+                                    topPicks = topPicks,
+                                    topPicksLoading = topPicksLoading,
+                                    listenerName = account?.name,
+                                    onTopPickClick = openTopPick.takeUnless { hideTopPicks },
+                                    onMoodClick = playMood.takeUnless { hideHomeMoods },
+                                    onMoodsShowAll = onHomeMoodsShowAll,
+                                    artworkMotion = artworkMotion && !showDiwali,
+                                    onTopPickLongPress = onHomeTopPickLongPress,
+                                )
+                            }
                             TAB_EXPLORE -> selectedMoodGenre?.let { category ->
                                 MoodGenrePlaylistsScreen(
                                     title = category.title,
@@ -4150,16 +4162,18 @@ private fun BitChordApp(
                 // One tab handler, whichever bar is drawing it.
                 // A tab is a fresh start: everything pushed over the old one —
                 // routes and release pages alike — goes with it.
-                val onTabSelected: (Int) -> Unit = { index ->
-                    navigator.clear()
-                    viewModel.closeMoodGenre()
-                    selectedTab = index
+                val onTabSelected: (Int) -> Unit = remember {
+                    { index ->
+                        navigator.clear()
+                        viewModel.closeMoodGenre()
+                        selectedTab = index
 
-                    // Every search tab tap resets the field, focuses it, and opens
-                    // the keyboard through SearchScreen's focus request.
-                    if (index == TAB_SEARCH) {
-                        viewModel.onQueryChange("")
-                        searchFocusRequested = true
+                        // Every search tab tap resets the field, focuses it, and opens
+                        // the keyboard through SearchScreen's focus request.
+                        if (index == TAB_SEARCH) {
+                            viewModel.onQueryChange("")
+                            searchFocusRequested = true
+                        }
                     }
                 }
 

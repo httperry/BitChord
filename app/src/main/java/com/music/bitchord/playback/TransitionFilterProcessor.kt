@@ -125,7 +125,8 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
 
     val isFiltering: Boolean
         get() = targetLowPassHz < OPEN_HZ || targetHighPassHz > OFF_HZ ||
-            currentLowPassHz < OPEN_HZ - SETTLED_HZ || currentHighPassHz > OFF_HZ + SETTLED_HZ
+            currentLowPassHz < OPEN_HZ - SETTLED_HZ || currentHighPassHz > OFF_HZ + SETTLED_HZ ||
+            echoEngaged
 
     /**
      * Engages the echo out, or moves it: [delaySeconds] between repeats, [send]

@@ -416,13 +416,28 @@ fun MiniPlayer(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // A music video plays here at its own 16:9, as the web player's
-            // mini player does, rather than cropped into the square cover.
-            val showsPicture = song.isVideo && MusicOnlyPlayback.showsPicture(song.videoId)
+            // A music video expands the thumbnail to 16:9 at rest.
+            // Live video decoding is reserved for the full player (NowPlayingScreen);
+            // the mini player displays high-definition artwork, eliminating duplicate
+            // ExoPlayer instances, hardware MediaCodec decoding, and wake locks.
+            val isVideoWithPicture = song.isVideo && MusicOnlyPlayback.showsPicture(song.videoId)
             val artWidth by animateDpAsState(
-                targetValue = if (showsPicture && !VideoThumbnails.square) VIDEO_ART_WIDTH else 40.dp,
+                targetValue = if (isVideoWithPicture && !VideoThumbnails.square) VIDEO_ART_WIDTH else 40.dp,
                 label = "miniArtWidth",
             )
+            val context = coil3.compose.LocalPlatformContext.current
+            val rawArtUrl = rememberRemoteArtworkUrl(song)
+            val artModel = remember(rawArtUrl, context) {
+                val url = rawArtUrl?.artworkAt(ROW_ART_PX) ?: rawArtUrl
+                if (url != null) {
+                    coil3.request.ImageRequest.Builder(context)
+                        .data(url)
+                        .size(ROW_ART_PX)
+                        .precision(coil3.size.Precision.EXACT)
+                        .crossfade(false)
+                        .build()
+                } else null
+            }
             Box(
                 modifier = Modifier
                     .size(width = artWidth, height = 40.dp)
@@ -432,23 +447,11 @@ fun MiniPlayer(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 AsyncImage(
-                    model = rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
+                    model = artModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                // A music video keeps playing in the cover's place, cropped to
-                // it, as the web player's mini player does — the full player,
-                // when it is up, takes the picture over.
-                if (showsPicture) {
-                    AndroidMusicVideo(
-                        videoId = song.videoId,
-                        fit = false,
-                        onRenderedChanged = {},
-                        modifier = Modifier.fillMaxSize(),
-                        priority = 0,
-                    )
-                }
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {

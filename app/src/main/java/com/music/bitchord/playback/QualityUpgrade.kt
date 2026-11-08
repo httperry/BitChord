@@ -9,6 +9,7 @@ import com.music.bitchord.data.sources.SourceStream
 import com.music.bitchord.data.sources.StreamFormat
 import com.music.bitchord.data.sources.StreamRequest
 import com.music.bitchord.data.sources.TrackMatcher
+import com.music.bitchord.download.Downloads
 import kotlinx.coroutines.Deferred
 import java.util.concurrent.ConcurrentHashMap
 
@@ -280,6 +281,10 @@ object QualityUpgrade {
         if (uri == null || uri.getQueryParameter("v") == null ||
             uri.getQueryParameter("m") == "1"
         ) return false
+        val videoId = uri.getQueryParameter("v")
+        if (mediaId in Downloads.saved.value || (videoId != null && videoId in Downloads.saved.value)) {
+            return false
+        }
         // Already upgraded: this *is* the better copy. Except when the listener
         // has asked by hand, where the marker is on a *reverted* item and
         // saying "this is the copy that was chosen" is the very thing being
@@ -654,6 +659,13 @@ object QualityUpgrade {
      * of [asked] testable without standing a source list up around it.
      */
     internal fun hasAnsweredFor(mediaId: String): Boolean = mediaId in asked
+
+    /** Settles the upgrade question for [mediaId], preventing continuous polling. */
+    fun markAnswered(mediaId: String) {
+        pending.remove(mediaId)?.inFlight?.cancel()
+        asked += mediaId
+        NerdStats.onLosslessRaceEnd(mediaId)
+    }
 
     /** Test seam: puts [mediaId] in the state a completed second look leaves it. */
     internal fun markAnsweredForTest(mediaId: String) {

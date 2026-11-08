@@ -247,6 +247,14 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         }
     }
 
+    private fun safeSleep(ms: Long) {
+        val start = SystemClock.elapsedRealtime()
+        while (!stopped && SystemClock.elapsedRealtime() - start < ms) {
+            val chunk = minOf(50L, ms - (SystemClock.elapsedRealtime() - start))
+            if (chunk > 0) Thread.sleep(chunk)
+        }
+    }
+
     /**
      * What is known about [trackId] right now: never a computation, never a
      * block. Returns an empty analysis for anything not yet finished, which
@@ -421,13 +429,13 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
 
         executor.execute {
             try {
-                // Efficient mode yields to decoding and playback rather than
-                // competing for a core. Thread count remains the speed knob.
+                // Keep background priority for BALANCED and EFFICIENT modes so
+                // EAS/CFS scheduler places analysis on power-efficient LITTLE cores.
                 Process.setThreadPriority(
-                    if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.EFFICIENT) {
-                        Process.THREAD_PRIORITY_BACKGROUND
-                    } else {
+                    if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.PERFORMANCE) {
                         Process.THREAD_PRIORITY_DEFAULT
+                    } else {
+                        Process.THREAD_PRIORITY_BACKGROUND
                     },
                 )
                 // [restoreOnce] queues onto this same single-threaded executor,
@@ -1093,6 +1101,11 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         if (structural.decodedShort) return WholeTrack(null, decodedShort = true)
         val features = structural.features ?: return WholeTrack(empty(trackId, effectiveDuration))
 
+        // Yield after the heavy whole-track DSP pass so CPU frequencies can settle
+        if (AppSettings.automixPerformanceMode.value != AutomixPerformanceMode.PERFORMANCE) {
+            safeSleep(150L)
+        }
+
         // Pass 2 (Phases 2 and 3, models): the Beat This! grid and the open-unmix vocal mask, over
         // the opening and the ending only. A transition only ever reads the tail of the outgoing
         // track and the head of the incoming one, and a track is both of those at different
@@ -1113,6 +1126,10 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // is worse than none.
             if (stopped) return WholeTrack(null)
             region(openSource, from, to, features)?.let(regions::add)
+            // Cooperative yield between ONNX model windows
+            if (AppSettings.automixPerformanceMode.value != AutomixPerformanceMode.PERFORMANCE) {
+                safeSleep(50L)
+            }
         }
         if (stopped) return WholeTrack(null)
 
