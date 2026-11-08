@@ -736,6 +736,8 @@ private fun SharedTransitionScope.ExpandedAccessory(
             animatedVisibilityScope
         )
     }
+}
+
 private class TabRowLayoutState {
     var widthPx: Float = 0f
     var heightPx: Float = 0f
