@@ -337,7 +337,11 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
             } else if (refreshCurrentQueueItem && item != null) {
                 val index = player.currentMediaItemIndex
                 if (index in queueSnapshot.indices) {
-                    queueSnapshot = queueSnapshot.toMutableList().also { it[index] = item.toSong() }
+                    val currentSong = queueSnapshot[index]
+                    val updatedSong = item.toSong()
+                    if (currentSong.videoId != updatedSong.videoId || currentSong.title != updatedSong.title) {
+                        queueSnapshot = queueSnapshot.toMutableList().also { it[index] = updatedSong }
+                    }
                 }
             }
             // Synced here too, so seeking while paused or buffering still moves

@@ -914,7 +914,7 @@ private fun ServiceCard(colors: List<Color>, trackKey: String, icon: ImageVector
         MeshGradientBackground(
             palette = palette,
             trackKey = trackKey,
-            continuous = true,
+            continuous = false,
             blurRadius = 24.dp,
         )
         Icon(
@@ -956,7 +956,7 @@ internal fun ShelfCard(
                     MeshGradientBackground(
                         palette = palette,
                         trackKey = "local:downloads",
-                        continuous = true,
+                        continuous = false,
                         blurRadius = 24.dp,
                     )
                     Icon(

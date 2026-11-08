@@ -336,6 +336,12 @@ class PrecisionAudioSink(
             }
         }
 
+        // Fast zero-copy passthrough when no DSP stage is modifying samples,
+        // encodings match, and no loopdeck synchronization is in progress.
+        if (!dspChain.isActive && inEncoding == outEncoding && outArm == null && inArm == null) {
+            return delegate.handleBuffer(inputBuffer, presentationTimeUs, encodedAccessUnitCount)
+        }
+
         // 2. Output buffer is drained; process available input in blocks.
         //    A decoder buffer larger than the block capacity is split, and each
         //    sub-block carries its own timestamp: handing the delegate the same

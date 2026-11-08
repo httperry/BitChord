@@ -54,6 +54,14 @@ class DspChain(
         loudness.onStreamBoundary()
     }
 
+    /** True when any DSP stage is actively modifying audio samples. */
+    val isActive: Boolean
+        get() = spatial.enabled ||
+            equalizer.isShaping ||
+            transition.isFiltering ||
+            loudness.holdLimiter ||
+            !loudness.isBypassed
+
     override fun process(block: AudioBlock) {
         if (block.frameCount == 0) return
 

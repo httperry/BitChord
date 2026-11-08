@@ -15,6 +15,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.CacheWriter
@@ -149,6 +150,18 @@ object AudioCache {
     private const val MAX_ANALYSIS_TRACK_BYTES = 16L * 1024 * 1024
 
     /**
+     * Sized for ~35-40 seconds of Opus audio (plenty for beat-grid intro analysis).
+     * Prevents downloading whole songs during head analysis.
+     */
+    private const val ANALYSIS_HEAD_REQUEST_BYTES = 768L * 1024
+
+    /**
+     * Buffer size for cache disk writes. Media3 default is 20 KB which generates
+     * excessive dirty page writeback churn. 256 KB buffers reduce flash writes by >90%.
+     */
+    private const val CACHE_WRITE_BUFFER_BYTES = 256 * 1024
+
+    /**
      * How long [renditionKeysFor]'s answer is reused. Short enough that a
      * rendition which just started downloading is picked up well inside the
      * several seconds an analysis takes anyway.
@@ -163,7 +176,7 @@ object AudioCache {
      * skips into a single fetch of wherever the listener lands, and leaves the
      * player's opening burst holding the cache entry alone — see [fetchWhole].
      */
-    private const val PREFETCH_DELAY_MS = 8_000L
+    private const val PREFETCH_DELAY_MS = 25_000L
 
     /** How long to leave the player alone with an entry before trying again. */
     private const val RETRY_DELAY_MS = 5_000L
@@ -1300,9 +1313,14 @@ object AudioCache {
             .onFailure { TrackLog.d(TAG, "cache entry $key still in use: ${it.message}", about = videoId) }
     }
 
+    private fun createDataSinkFactory() = CacheDataSink.Factory()
+        .setCache(cache)
+        .setBufferSize(CACHE_WRITE_BUFFER_BYTES)
+
     private fun cacheFactory(upstream: DataSource.Factory) = CacheDataSource.Factory()
         .setCache(cache)
         .setUpstreamDataSourceFactory(upstream)
+        .setCacheWriteDataSinkFactory(createDataSinkFactory())
         .setCacheKeyFactory(keyFactory)
         // A cache write that fails (full disk, evicted mid-write) should drop
         // to streaming, not surface as a playback error.
@@ -1329,6 +1347,7 @@ object AudioCache {
     private fun readAheadCacheFactory(upstream: DataSource.Factory) = CacheDataSource.Factory()
         .setCache(cache)
         .setUpstreamDataSourceFactory(upstream)
+        .setCacheWriteDataSinkFactory(createDataSinkFactory())
         .setCacheKeyFactory(keyFactory)
 
     /** Set once the player exists; read-ahead resolves streams the same way. */
@@ -1969,7 +1988,7 @@ object AudioCache {
      * already, from resolving the stream, so asking first costs nothing.
      */
     private fun analysisHeadSize(total: Long): Long =
-        if (total > 0) minOf(total, MAX_ANALYSIS_TRACK_BYTES) else MAX_ANALYSIS_HEAD_BYTES
+        if (total > 0) minOf(total, ANALYSIS_HEAD_REQUEST_BYTES) else ANALYSIS_HEAD_REQUEST_BYTES
 
     /**
      * Makes sure [videoId]'s entry is either empty or already covers [want]

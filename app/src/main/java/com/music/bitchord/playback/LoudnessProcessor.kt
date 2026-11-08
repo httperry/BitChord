@@ -113,6 +113,15 @@ class LoudnessProcessor {
         snap = true
     }
 
+    /** True when this stage is completely passive (unity gain, no trim, no limiter reduction). */
+    val isBypassed: Boolean
+        get() = !holdLimiter &&
+            targetGain() == 1f &&
+            trimTarget >= 1f &&
+            kotlin.math.abs(currentGain - 1f) < SETTLED &&
+            currentTrim >= 1f - SETTLED &&
+            reduction >= PARK_REDUCTION
+
     fun configure(sampleRate: Int, channelCount: Int) {
         this.sampleRate = sampleRate
         this.channelCount = channelCount

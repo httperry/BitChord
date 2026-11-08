@@ -694,7 +694,7 @@ private fun loopPhase(periodMs: Int): State<Float> {
  * changed. As a layer it is one texture, and a frame of the loop itself redraws
  * this canvas without re-recording the card around it.
  */
-private val RetainedArt = Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+private val RetainedArt = Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Auto }
 
 private fun wave(phase: Float, offset: Float): Float = sin(2f * PI.toFloat() * (phase + offset))
 

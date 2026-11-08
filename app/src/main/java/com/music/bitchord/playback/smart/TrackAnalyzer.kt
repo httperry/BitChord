@@ -147,7 +147,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
     private val overheated: Boolean
         get() {
             thermalWatch
-            return thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
+            return thermalStatus >= PowerManager.THERMAL_STATUS_MODERATE
         }
 
     /**
@@ -239,9 +239,11 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
     private fun discardsOf(key: String): Int = discarded[key] ?: 0
 
     private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "bitchord-smart-analysis").apply {
+        Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+            runnable.run()
+        }, "bitchord-smart-analysis").apply {
             isDaemon = true
-            priority = Thread.NORM_PRIORITY
         }
     }
 
@@ -311,6 +313,10 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
      */
     fun request(trackId: String, uri: Uri, durationSeconds: Double) {
         if (trackId.isBlank()) return
+        if (!AppSettings.smartFadeEnabled.value) {
+            restoreOnce(trackId)
+            return
+        }
         // Before anything else this would spend: [analysisUriFor] alone can put
         // a catalogue match on the network for a track the party will never
         // mix. See [stopped].

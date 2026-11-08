@@ -773,7 +773,16 @@ class CrossfadeController(
                 tick()
                 delay(
                     when (phase) {
-                        Phase.IDLE -> IDLE_STEP_MS
+                        Phase.IDLE -> {
+                            val duration = runCatching { active().duration }.getOrNull() ?: -1L
+                            val pos = runCatching { active().currentPosition }.getOrNull() ?: -1L
+                            val remaining = if (duration > 0 && pos >= 0) duration - pos else 0L
+                            when {
+                                remaining > 30_000L -> 2_000L
+                                remaining > 10_000L -> 1_000L
+                                else -> IDLE_STEP_MS
+                            }
+                        }
                         Phase.ARMING -> ARM_STEP_MS
                         Phase.FADING -> FADE_STEP_MS
                         Phase.SLEEP_FADE -> FADE_STEP_MS
@@ -1287,7 +1296,12 @@ class CrossfadeController(
         val nextItem = player.getMediaItemAt(nextIndex)
         if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) return
         requestAnalysis(currentItem, duration)
-        requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
+        // Defer next track analysis until current track is usable or within 60s of transition,
+        // avoiding concurrent multi-track decoding and ONNX inference storms on song start.
+        val remainingMs = duration - player.currentPosition
+        if (remainingMs <= 60_000L || analysisFor(currentItem).isUsable) {
+            requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
+        }
     }
 
     /**

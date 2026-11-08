@@ -756,9 +756,14 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
         }
     }
     // The plate is a fixed square so only the bars move, never the box around them.
+    // Isolated in a graphicsLayer so 40 FPS frame ticks do not dirty parent hazeSource/layerBackdrop.
     Box(
         modifier = modifier
             .size(24.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(6.dp)
+            }
             .clip(RoundedCornerShape(6.dp))
             .background(Color.Black.copy(alpha = 0.52f)),
         contentAlignment = Alignment.Center,

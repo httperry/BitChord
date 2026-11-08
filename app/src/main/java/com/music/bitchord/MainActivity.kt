@@ -4163,6 +4163,17 @@ private fun BitChordApp(
                     }
                 }
 
+                val onBarPlayPause = remember { { togglePlayPause() } }
+                val onBarNext = remember(controller) { { controller?.seekToNextMediaItem() } }
+                val onBarPrevious = remember(controller) { { controller?.seekToPrevious() } }
+                val onBarExpand = remember(reducePlayerMotion) {
+                    if (reducePlayerMotion) {
+                        { showNowPlaying = true }
+                    } else {
+                        playerSheetMotion::open
+                    }
+                }
+
                 if (glassActive) Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -4183,16 +4194,10 @@ private fun BitChordApp(
                         song = player.song,
                         isPlaying = player.isPlaying,
                         isLoading = playPauseBusy,
-                        onPlayPause = {
-                            togglePlayPause()
-                        },
-                        onNext = { controller?.seekToNextMediaItem() },
-                        onPrevious = { controller?.seekToPrevious() },
-                        onExpand = if (reducePlayerMotion) {
-                            { showNowPlaying = true }
-                        } else {
-                            playerSheetMotion::open
-                        },
+                        onPlayPause = onBarPlayPause,
+                        onNext = onBarNext,
+                        onPrevious = onBarPrevious,
+                        onExpand = onBarExpand,
                         controlsLocked = controlsLocked,
                         onBlockedControl = showHostOnlyNotice,
                         dock = activeDock,
@@ -4220,16 +4225,10 @@ private fun BitChordApp(
                             isPlaying = player.isPlaying,
                             isLoading = playPauseBusy,
                             hazeState = hazeState,
-                            onPlayPause = {
-                                togglePlayPause()
-                            },
-                            onNext = { controller?.seekToNextMediaItem() },
-                            onPrevious = { controller?.seekToPrevious() },
-                            onExpand = if (reducePlayerMotion) {
-                                { showNowPlaying = true }
-                            } else {
-                                playerSheetMotion::open
-                            },
+                            onPlayPause = onBarPlayPause,
+                            onNext = onBarNext,
+                            onPrevious = onBarPrevious,
+                            onExpand = onBarExpand,
                             controlsLocked = controlsLocked,
                             onBlockedControl = showHostOnlyNotice,
                             dock = activeDock,

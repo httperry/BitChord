@@ -159,7 +159,8 @@ object PcmBoundary {
         val scaled = f * 32768.0f
         if (scaled <= -32768.0f) return Short.MIN_VALUE
         if (scaled >= 32767.0f) return Short.MAX_VALUE
-        return Math.round(scaled).toShort()
+        val rounded = if (scaled >= 0f) (scaled + 0.5f).toInt() else (scaled - 0.5f).toInt()
+        return rounded.toShort()
     }
 
     /**
@@ -170,7 +171,7 @@ object PcmBoundary {
         val scaled = f * 8388608.0f
         if (scaled <= -8388608.0f) return -8388608
         if (scaled >= 8388607.0f) return 8388607
-        return Math.round(scaled)
+        return if (scaled >= 0f) (scaled + 0.5f).toInt() else (scaled - 0.5f).toInt()
     }
 
     /**

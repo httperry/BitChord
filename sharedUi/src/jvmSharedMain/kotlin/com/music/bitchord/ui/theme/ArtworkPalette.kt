@@ -152,10 +152,13 @@ fun rememberArtworkTopBandLuminance(
     artPx: Int = CARD_ART_PX,
 ): Float? = rememberArtworkSeed(imageUrl, artPx)?.topBandLuminance
 
+private fun getCachedSeed(url: String): Seed? = synchronized(seedCache) { seedCache[url] }
+private fun putCachedSeed(url: String, seed: Seed) { synchronized(seedCache) { seedCache[url] = seed } }
+
 @Composable
 private fun rememberArtworkSeed(imageUrl: String?, artPx: Int): Seed? {
     val context = LocalPlatformContext.current
-    var seed by remember(imageUrl) { mutableStateOf(imageUrl?.let(seedCache::get)) }
+    var seed by remember(imageUrl) { mutableStateOf(imageUrl?.let(::getCachedSeed)) }
 
     LaunchedEffect(imageUrl, artPx) {
         if (imageUrl == null || seed != null) return@LaunchedEffect
@@ -167,7 +170,7 @@ private fun rememberArtworkSeed(imageUrl: String?, artPx: Int): Seed? {
         val result = SingletonImageLoader.get(context).execute(request)
         val bitmap = (result as? SuccessResult)?.image?.toImageBitmap() ?: return@LaunchedEffect
         val found = withContext(Dispatchers.Default) { seedOf(bitmap) } ?: return@LaunchedEffect
-        seedCache[imageUrl] = found
+        putCachedSeed(imageUrl, found)
         seed = found
     }
     return seed
@@ -177,9 +180,7 @@ private fun rememberArtworkSeed(imageUrl: String?, artPx: Int): Seed? {
  * Colours already read, keyed by artwork URL.
  *
  * Reading them again costs a decode and a quantise for an answer that cannot
- * have changed — the artwork at a URL is the artwork at that URL. Access is
- * from composition and from the resumption of [rememberArtworkPalette]'s
- * effect, both on the main thread, so it needs no locking of its own.
+ * have changed — the artwork at a URL is the artwork at that URL.
  */
 private val seedCache = object : LinkedHashMap<String, Seed>(0, 0.75f, true) {
     override fun removeEldestEntry(eldest: Map.Entry<String, Seed>) = size > SEED_CACHE_ENTRIES

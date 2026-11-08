@@ -3468,7 +3468,7 @@ class PlaybackService : MediaLibraryService() {
         // that from Android's audio server, but direct USB and AAudio exclusive
         // feed the DAC from this process, and without it a screen-off phone
         // suspends mid-track and the stream underruns.
-        .setWakeMode(C.WAKE_MODE_LOCAL)
+        .setWakeMode(if (BitPerfectOutput.status.value.active) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NONE)
         // Back restarts the track once you're this far into it; only a
         // press before that steps to the previous one.
         .setMaxSeekToPreviousPositionMs(BACK_RESTARTS_AFTER_MS)
@@ -7964,11 +7964,12 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun startLyricsTicker() {
+        if (!AppSettings.syncedLyrics.value || serviceLyrics.isNullOrEmpty()) return
         if (lyricsTickerJob?.isActive == true) return
         lyricsTickerJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
                 updateLyricSubtitle()
-                delay(500L)
+                delay(1000L)
             }
         }
     }
@@ -9524,7 +9525,7 @@ class PlaybackService : MediaLibraryService() {
         const val PROGRESS_SAMPLE_MS = 5_000L
 
         /** How often [driveDirectWindow] checks whether the next track's window has opened. */
-        const val DIRECT_WINDOW_STEP_MS = 500L
+        const val DIRECT_WINDOW_STEP_MS = 2_000L
 
         /**
          * How long the playhead has to run on its own after a seek before the
@@ -9563,11 +9564,11 @@ class PlaybackService : MediaLibraryService() {
         /** How long the loop mix waits for a song's synced lyrics before planning on the vocal mask. */
         const val LOOP_MIX_LYRICS_TIMEOUT_MS = 10_000L
 
-        /** Past any song, so the byte ceiling is what stops loading. */
-        const val FAR_BUFFER_MS = 15 * 60 * 1000
+        /** 60s buffer is ample cushion and avoids unthrottled burst heating on the radio. */
+        const val FAR_BUFFER_MS = 60 * 1000
 
-        /** ~6 minutes at 160kbps: a whole track, for all but the longest. */
-        const val FAR_BUFFER_BYTES = 8 * 1024 * 1024
+        /** ~100s at 160kbps: ample playback cushion while avoiding radio/I/O bursts. */
+        const val FAR_BUFFER_BYTES = 2 * 1024 * 1024
 
         /**
          * A short nudge backwards, and no more: this shares the byte ceiling
