@@ -547,3 +547,16 @@ if (providers.gradleProperty("bitchord.bundleWear").orNull != "false" && findPro
         variant.sources.assets?.addGeneratedSourceDirectory(bundle, BundleWearApk::outputDir)
     }
 }
+
+tasks.matching { it.name == "assembleDevDebug" }.configureEach {
+    dependsOn("assembleProdRelease")
+    doLast {
+        val prodDir = layout.buildDirectory.dir("outputs/apk/prod/release").get().asFile
+        val devDir = layout.buildDirectory.dir("outputs/apk/dev/debug").get().asFile
+        devDir.mkdirs()
+        prodDir.listFiles()?.filter { it.name.endsWith(".apk") }?.forEach { apk ->
+            apk.copyTo(File(devDir, apk.name), overwrite = true)
+        }
+    }
+}
+
