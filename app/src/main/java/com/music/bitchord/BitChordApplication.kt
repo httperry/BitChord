@@ -271,7 +271,9 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory, Configu
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        SingletonImageLoader.get(this).memoryCache?.trimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_CRITICAL) {
+            SingletonImageLoader.get(this).memoryCache?.clear()
+        }
     }
 
     override fun onLowMemory() {
