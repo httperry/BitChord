@@ -132,8 +132,8 @@ android {
     productFlavors {
         create("dev") {
             dimension = "env"
-            applicationId = "com.dev.bitchord"
-            resValue("string", "app_name", "BitChord Dev")
+            applicationId = "com.music.bitchord.opt"
+            resValue("string", "app_name", "BitChord Opt")
         }
         create("prod") {
             dimension = "env"
@@ -163,6 +163,14 @@ android {
     buildTypes {
         debug {
             if (betaSuffix.isNotEmpty()) versionNameSuffix = "-$betaSuffix"
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             // Carried here too — see [betaSuffix]. A sideloaded beta is a
@@ -545,18 +553,6 @@ if (providers.gradleProperty("bitchord.bundleWear").orNull != "false" && findPro
             apks.from(rootProject.layout.projectDirectory.dir("wearos/build/outputs/apk/$flavor/$type"))
         }
         variant.sources.assets?.addGeneratedSourceDirectory(bundle, BundleWearApk::outputDir)
-    }
-}
-
-tasks.matching { it.name == "assembleDevDebug" }.configureEach {
-    dependsOn("assembleProdRelease")
-    doLast {
-        val prodDir = layout.buildDirectory.dir("outputs/apk/prod/release").get().asFile
-        val devDir = layout.buildDirectory.dir("outputs/apk/dev/debug").get().asFile
-        devDir.mkdirs()
-        prodDir.listFiles()?.filter { it.name.endsWith(".apk") }?.forEach { apk ->
-            apk.copyTo(File(devDir, apk.name), overwrite = true)
-        }
     }
 }
 
