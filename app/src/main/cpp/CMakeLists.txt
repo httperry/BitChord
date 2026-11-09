@@ -82,8 +82,9 @@ target_link_options(bitchord_dst PRIVATE "-Wl,-z,max-page-size=16384")
 # Oboe is Apache-2.0; exclusive_output.cpp is adapted from Mornye (LGPL-3.0).
 include(FetchContent)
 set(OBOE_DISABLE_CONVERSION ON CACHE BOOL "" FORCE)
+# Vendored: oboe-1.11.0 tarball committed under vendor/ to avoid GitHub CDN during CI.
 FetchContent_Declare(oboe
-    URL https://github.com/google/oboe/archive/refs/tags/1.11.0.tar.gz
+    URL "file://${CMAKE_CURRENT_SOURCE_DIR}/vendor/oboe-1.11.0.tar.gz"
     URL_HASH SHA256=0ccf2110640a2b4489f1c93a404f2978656b434d8c5dc9cb6258f9cc95c79b15)
 FetchContent_MakeAvailable(oboe)
 
@@ -104,8 +105,9 @@ set_property(TARGET bitchord_exclusive APPEND PROPERTY LINK_DEPENDS
 # (LGPL-2.1) is built from its pinned release using the source list and
 # config.h it ships for Android (android/jni/libusb.mk). The transport is
 # adapted from Mornye's Rust driver (LGPL-3.0).
+# Vendored: libusb-1.0.27 tarball committed under vendor/ to avoid GitHub CDN during CI.
 FetchContent_Declare(libusb
-    URL https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27.tar.bz2
+    URL "file://${CMAKE_CURRENT_SOURCE_DIR}/vendor/libusb-1.0.27.tar.bz2"
     URL_HASH SHA256=ffaa41d741a8a3bee244ac8e54a72ea05bf2879663c098c82fc5757853441575)
 FetchContent_MakeAvailable(libusb)
 add_library(bitchord_libusb STATIC
