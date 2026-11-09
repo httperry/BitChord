@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import coil3.request.transformations
+import coil3.size.Precision
 import coil3.size.Size
 import coil3.transform.Transformation
 
@@ -21,6 +22,9 @@ actual fun rememberBlurredBackdrop(url: String?): Any? {
         url ?: return@remember null
         ImageRequest.Builder(context)
             .data(url)
+            // Downsample at decode time: prevents full 4.7MB decode
+            .size(BackdropBlur.WIDTH, (BackdropBlur.WIDTH / (1f - BackdropBlur.STRIP)).toInt())
+            .precision(Precision.INEXACT)
             .transformations(BackdropBlur)
             .build()
     }
@@ -38,12 +42,12 @@ actual fun rememberBlurredBackdrop(url: String?): Any? {
 private object BackdropBlur : Transformation() {
 
     /** The share of the cover, from the bottom, that the backdrop continues. */
-    private const val STRIP = 0.4f
-    private const val WIDTH = 48
+    const val STRIP = 0.4f
+    const val WIDTH = 48
     private const val RADIUS = 3
     private const val PASSES = 3
 
-    override val cacheKey = "backdropBlur:$STRIP:$WIDTH:$RADIUS:$PASSES"
+    override val cacheKey = "backdropBlur:$STRIP:$WIDTH:$RADIUS:$PASSES:v2_hardware"
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         val top = (input.height * (1f - STRIP)).toInt().coerceIn(0, input.height - 1)
@@ -74,7 +78,13 @@ private object BackdropBlur : Transformation() {
             boxBlur(pixels, WIDTH, height, RADIUS, horizontal = true)
             boxBlur(pixels, WIDTH, height, RADIUS, horizontal = false)
         }
-        return Bitmap.createBitmap(pixels, WIDTH, height, Bitmap.Config.ARGB_8888)
+        val output = Bitmap.createBitmap(pixels, WIDTH, height, Bitmap.Config.ARGB_8888)
+        val hardwareResult = output.copy(Bitmap.Config.HARDWARE, false)
+        if (hardwareResult != null) {
+            output.recycle()
+            return hardwareResult
+        }
+        return output
     }
 
     /** One pass of a running-sum box blur along rows or columns, edges clamped. */

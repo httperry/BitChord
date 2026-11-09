@@ -113,12 +113,16 @@ class LoudnessProcessor {
         snap = true
     }
 
+    /** Mode where gain is applied directly to hardware sink/player volume. */
+    @Volatile
+    var offloadedToHardwareVolume: Boolean = false
+
     /** True when this stage is completely passive (unity gain, no trim, no limiter reduction). */
     val isBypassed: Boolean
         get() = !holdLimiter &&
-            targetGain() == 1f &&
+            (offloadedToHardwareVolume || targetGain() == 1f) &&
             trimTarget >= 1f &&
-            kotlin.math.abs(currentGain - 1f) < SETTLED &&
+            (offloadedToHardwareVolume || kotlin.math.abs(currentGain - 1f) < SETTLED) &&
             currentTrim >= 1f - SETTLED &&
             reduction >= PARK_REDUCTION
 
@@ -163,8 +167,8 @@ class LoudnessProcessor {
         // it a fraction under unity for the rest of the track, and the chain
         // would never be bit-exact again after the EQ or normalization was
         // switched off.
-        if (!holdLimiter && targetGain == 1f && targetTrim >= 1f &&
-            abs(currentGain - 1f) < SETTLED && currentTrim >= 1f - SETTLED && reduction >= PARK_REDUCTION
+        if ((offloadedToHardwareVolume || (!holdLimiter && targetGain == 1f)) && targetTrim >= 1f &&
+            (offloadedToHardwareVolume || abs(currentGain - 1f) < SETTLED) && currentTrim >= 1f - SETTLED && reduction >= PARK_REDUCTION
         ) {
             currentGain = 1f
             currentTrim = 1f

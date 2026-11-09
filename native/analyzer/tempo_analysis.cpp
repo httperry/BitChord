@@ -38,6 +38,9 @@
 #include <complex>
 #include <numeric>
 #include <vector>
+#if defined(__ARM_NEON) || defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 namespace bitchord::smart {
 namespace {
@@ -194,6 +197,46 @@ OnsetEnvelopes OnsetEnvelope(
 double Correlation(const std::vector<double>& values, int lag, size_t limit) {
   const size_t length = std::min(limit, values.size());
   if (lag <= 0 || static_cast<size_t>(lag) >= length) return 0;
+#if defined(__ARM_NEON) || defined(__aarch64__)
+  const double* __restrict__ p_left = values.data() + lag;
+  const double* __restrict__ p_right = values.data();
+  const size_t count = length - lag;
+
+  float64x2_t v_cross0 = vdupq_n_f64(0.0);
+  float64x2_t v_cross1 = vdupq_n_f64(0.0);
+  float64x2_t v_left_e0 = vdupq_n_f64(0.0);
+  float64x2_t v_left_e1 = vdupq_n_f64(0.0);
+  float64x2_t v_right_e0 = vdupq_n_f64(0.0);
+  float64x2_t v_right_e1 = vdupq_n_f64(0.0);
+
+  size_t i = 0;
+  for (; i + 3 < count; i += 4) {
+    float64x2_t l0 = vld1q_f64(p_left + i);
+    float64x2_t r0 = vld1q_f64(p_right + i);
+    float64x2_t l1 = vld1q_f64(p_left + i + 2);
+    float64x2_t r1 = vld1q_f64(p_right + i + 2);
+
+    v_cross0 = vfmaq_f64(v_cross0, l0, r0);
+    v_left_e0 = vfmaq_f64(v_left_e0, l0, l0);
+    v_right_e0 = vfmaq_f64(v_right_e0, r0, r0);
+
+    v_cross1 = vfmaq_f64(v_cross1, l1, r1);
+    v_left_e1 = vfmaq_f64(v_left_e1, l1, l1);
+    v_right_e1 = vfmaq_f64(v_right_e1, r1, r1);
+  }
+
+  double cross = vaddvq_f64(vaddq_f64(v_cross0, v_cross1));
+  double left_energy = vaddvq_f64(vaddq_f64(v_left_e0, v_left_e1));
+  double right_energy = vaddvq_f64(vaddq_f64(v_right_e0, v_right_e1));
+
+  for (; i < count; ++i) {
+    const double l = p_left[i];
+    const double r = p_right[i];
+    cross += l * r;
+    left_energy += l * l;
+    right_energy += r * r;
+  }
+#else
   double cross = 0;
   double left_energy = 0;
   double right_energy = 0;
@@ -204,6 +247,7 @@ double Correlation(const std::vector<double>& values, int lag, size_t limit) {
     left_energy += left * left;
     right_energy += right * right;
   }
+#endif
   return cross / std::sqrt(std::max(1e-12, left_energy * right_energy));
 }
 

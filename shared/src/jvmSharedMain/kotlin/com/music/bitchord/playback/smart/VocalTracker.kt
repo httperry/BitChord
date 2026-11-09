@@ -123,6 +123,23 @@ class VocalTracker(
                     // the life of the session, which a backgrounded music player cannot justify.
                     setCPUArenaAllocator(false)
                     setMemoryPatternOptimization(false)
+                    // Hardware Acceleration via NNAPI (NPU / DSP) with FP16 relaxation
+                    runCatching {
+                        val flagsClass = Class.forName("ai.onnxruntime.providers.NNAPIFlags")
+                        @Suppress("UNCHECKED_CAST")
+                        val useFp16 = java.lang.Enum.valueOf(flagsClass.asSubclass(Enum::class.java) as Class<out Enum<*>>, "USE_FP16")
+                        @Suppress("UNCHECKED_CAST")
+                        val flagSet = java.util.EnumSet.of(useFp16 as Nothing)
+                        val method = javaClass.getMethod("addNnapi", java.util.EnumSet::class.java)
+                        method.invoke(this, flagSet)
+                        AnalysisLog.warn("VocalTracker: Initialized with NNAPI FP16 hardware acceleration")
+                    }.getOrElse {
+                        runCatching {
+                            val method = javaClass.getMethod("addNnapi")
+                            method.invoke(this)
+                            AnalysisLog.warn("VocalTracker: Initialized with NNAPI hardware acceleration")
+                        }
+                    }
                 }
                 OrtEnvironment.getEnvironment().createSession(file.absolutePath, options)
                     .also {

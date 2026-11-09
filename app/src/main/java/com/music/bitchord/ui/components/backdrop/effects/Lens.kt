@@ -28,7 +28,7 @@ fun BackdropEffectScope.lens(
     chromaticAberration: Boolean = false
 ) {
     if (!isRuntimeShaderSupported()) return
-    if (refractionHeight <= 0f || refractionAmount <= 0f) return
+    if (refractionHeight < 0.5f || refractionAmount < 0.5f) return
 
     if (padding > 0f) {
         padding = (padding - refractionHeight).fastCoerceAtLeast(0f)

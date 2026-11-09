@@ -62,6 +62,14 @@ class DspChain(
             loudness.holdLimiter ||
             !loudness.isBypassed
 
+    /** True only when non-volume transformative active filtering is altering samples. */
+    val isTransformativeActive: Boolean
+        get() = spatial.enabled ||
+            equalizer.isEnabled || equalizer.isShaping ||
+            transition.isFiltering ||
+            loudness.holdLimiter ||
+            (!loudness.offloadedToHardwareVolume && !loudness.isBypassed)
+
     override fun process(block: AudioBlock) {
         if (block.frameCount == 0) return
 

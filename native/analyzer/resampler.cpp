@@ -24,6 +24,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#if defined(__ARM_NEON) || defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 namespace bitchord::smart {
 namespace {
@@ -155,6 +158,26 @@ bool ResamplePolyphase(
 
     if (first >= 0 && first + taps <= size) {
       const float* run = samples + first;
+#if defined(__ARM_NEON) || defined(__aarch64__)
+      float32x4_t sum0 = vdupq_n_f32(0.0f);
+      float32x4_t sum1 = vdupq_n_f32(0.0f);
+      long k = 0;
+      for (; k + 7 < taps; k += 8) {
+        float32x4_t r0 = vld1q_f32(row + k);
+        float32x4_t s0 = vld1q_f32(run + k);
+        sum0 = vfmaq_f32(sum0, r0, s0);
+
+        float32x4_t r1 = vld1q_f32(row + k + 4);
+        float32x4_t s1 = vld1q_f32(run + k + 4);
+        sum1 = vfmaq_f32(sum1, r1, s1);
+      }
+      float32x4_t total_vec = vaddq_f32(sum0, sum1);
+      float sum = vaddvq_f32(total_vec);
+      for (; k < taps; ++k) {
+        sum += row[k] * run[k];
+      }
+      (*out)[index] = sum;
+#else
       float sum = 0.0f;
       {
         // Reassociated so the sum can be split across vector lanes; the
@@ -163,6 +186,7 @@ bool ResamplePolyphase(
         for (long k = 0; k < taps; ++k) sum += row[k] * run[k];
       }
       (*out)[index] = sum;
+#endif
     } else {
       // The edges, clamped as the general path clamps them and normalized
       // by the weight the taps actually landed on.

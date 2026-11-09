@@ -63,7 +63,12 @@ import java.util.Locale
  * plain fade.
  */
 @UnstableApi
-class TrackAnalyzer(private val context: Context, private val cache: AudioCache) {
+class TrackAnalyzer(
+    private val context: Context,
+    private val cache: AudioCache,
+    private val isPlaybackActive: () -> Boolean = { false },
+    private val isTransitioning: () -> Boolean = { false },
+) {
 
     private val tracker = BeatTracker(
         modelPath = {
@@ -515,14 +520,9 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 }
             } finally {
                 running.remove(trackId)
-                // The session holds the model's arena and a parsed ONNX graph in native heap for
-                // as long as it is open, which a backgrounded music player cannot justify between
-                // transitions. Released the moment nothing is in flight; reloading costs under a
-                // second against an analysis that already takes several.
-                if (running.isEmpty()) {
-                    tracker.release()
-                    vocals.release()
-                }
+                // Retain warm sessions in memory across tracks while Automix is active,
+                // eliminating multi-second graph reparsing and NPU driver recompilation spikes.
+                // Complete teardown occurs when release() is invoked on shutdown.
             }
         }
     }
@@ -1088,6 +1088,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         // held while the models ran, in a process that was reaching a 256 MB heap limit and had
         // died on it. Returning is what releases them — a `val` cannot be nulled, and a narrower
         // scope alone does not make ART treat one as dead.
+        waitForPlaybackHeadroom()
         val structural = structure(trackId, uri, copy, effectiveDuration)
         // A party started while Pass 1 was decoding. Dropped as "no result"
         // rather than as a failure — the track was never measured, so nothing
@@ -1102,6 +1103,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         val features = structural.features ?: return WholeTrack(empty(trackId, effectiveDuration))
 
         // Yield after the heavy whole-track DSP pass so CPU frequencies can settle
+        waitForPlaybackHeadroom()
         if (AppSettings.automixPerformanceMode.value != AutomixPerformanceMode.PERFORMANCE) {
             safeSleep(150L)
         }
@@ -1125,6 +1127,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
             // standing in. A result assembled out of a half-finished analysis
             // is worse than none.
             if (stopped) return WholeTrack(null)
+            waitForPlaybackHeadroom()
             region(openSource, from, to, features)?.let(regions::add)
             // Cooperative yield between ONNX model windows
             if (AppSettings.automixPerformanceMode.value != AutomixPerformanceMode.PERFORMANCE) {
@@ -1576,6 +1579,15 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 "${bands?.decodedFrom?.let { "%.1f".format(Locale.ROOT, it) } ?: "-"}s",
         )
         return bands
+    }
+
+    private fun waitForPlaybackHeadroom() {
+        while (!stopped && isTransitioning()) {
+            safeSleep(100L)
+        }
+        if (isPlaybackActive() && AppSettings.automixPerformanceMode.value.yieldsToPlayback) {
+            safeSleep(100L)
+        }
     }
 
     fun release() {

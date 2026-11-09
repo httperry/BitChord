@@ -65,6 +65,13 @@ double Percentile(const std::vector<double>& values, double ratio) {
   return copy[index];
 }
 
+double Percentile(std::vector<double>&& values, double ratio) {
+  if (values.empty()) return 0;
+  const size_t index = static_cast<size_t>(Clamp(ratio, 0, 1) * (values.size() - 1));
+  std::nth_element(values.begin(), values.begin() + index, values.end());
+  return values[index];
+}
+
 double Average(const std::vector<double>& values, size_t start, size_t end) {
   start = std::min(start, values.size());
   end = std::min(std::max(start, end), values.size());

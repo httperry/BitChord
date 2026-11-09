@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
@@ -497,6 +498,36 @@ internal fun Modifier.pillPlacement(center: () -> Offset, size: () -> Size): Mod
         }
     }
 
+/**
+ * Zero-layout GPU placement for the selection pill.
+ * Measures the pill ONCE at [baseSize]. All animation (center position, stretch,
+ * squash) is executed directly on the GPU RenderNode via translation and scale matrices,
+ * eliminating 120 CPU layout and measurement passes per second during drags.
+ */
+internal fun Modifier.pillGpuPlacement(
+    baseSize: Size,
+    center: () -> Offset,
+    liveSize: () -> Size,
+): Modifier = this
+    .layout { measurable, constraints ->
+        val w = baseSize.width.roundToInt().coerceAtLeast(1)
+        val h = baseSize.height.roundToInt().coerceAtLeast(1)
+        val placeable = measurable.measure(Constraints.fixed(w, h))
+        layout(constraints.minWidth, constraints.minHeight) {
+            placeable.placeWithLayer(0, 0)
+        }
+    }
+    .graphicsLayer {
+        val c = center()
+        val s = liveSize()
+        val bw = baseSize.width.coerceAtLeast(1f)
+        val bh = baseSize.height.coerceAtLeast(1f)
+        translationX = c.x - bw / 2f
+        translationY = c.y - bh / 2f
+        scaleX = s.width / bw
+        scaleY = s.height / bh
+    }
+
 /** The flat pill: a fill and nothing else. */
 @Composable
 internal fun FlatSelectionPill(
@@ -544,11 +575,15 @@ internal fun GlassSelectionPill(
             shape = { shape },
             effects = {
                 if (!glassPerformance && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && (motion.glassPresence > 0.001f || motion.material > 0.001f)) {
-                    lens(
-                        refractionHeight = LENS_HEIGHT.toPx() * motion.glassPresence,
-                        refractionAmount = LENS_AMOUNT.toPx() * motion.material,
-                        chromaticAberration = true,
-                    )
+                    val rHeight = LENS_HEIGHT.toPx() * motion.glassPresence
+                    val rAmount = LENS_AMOUNT.toPx() * motion.material
+                    if (rHeight >= 0.5f && rAmount >= 0.5f) {
+                        lens(
+                            refractionHeight = rHeight,
+                            refractionAmount = rAmount,
+                            chromaticAberration = true,
+                        )
+                    }
                 }
             },
             highlight = {

@@ -80,7 +80,10 @@ internal class ShadowNode(
     private val paint = Paint()
 
     override fun ContentDrawScope.draw() {
-        val shadow = shadow() ?: return drawContent()
+        val shadow = shadow()
+        if (shadow == null || shadow.alpha <= 0.001f || shadow.color.alpha <= 0.001f) {
+            return drawContent()
+        }
 
         val shadowLayer = shadowLayer
         if (shadowLayer != null) {

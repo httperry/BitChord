@@ -47,12 +47,14 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioOffloadSupportProvider
+import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
@@ -644,7 +646,14 @@ class PlaybackService : MediaLibraryService() {
         if (activeFilter === transitionFilterA) loudnessB else loudnessA
 
     /** Automix's DSP analyzer — see [com.music.bitchord.playback.smart.TrackAnalyzer]. */
-    private val trackAnalyzer = com.music.bitchord.playback.smart.TrackAnalyzer(this, AudioCache)
+    private val trackAnalyzer by lazy {
+        com.music.bitchord.playback.smart.TrackAnalyzer(
+            context = this,
+            cache = AudioCache,
+            isPlaybackActive = { player?.isPlaying == true },
+            isTransitioning = { crossfade?.isTransitioning() == true },
+        )
+    }
 
     /** Shared with the crossfade's tail player, so both read the same disk cache. */
     private var mediaSourceFactory: DefaultMediaSourceFactory? = null
@@ -3477,21 +3486,34 @@ class PlaybackService : MediaLibraryService() {
         filter: TransitionFilterProcessor,
         loudness: LoudnessProcessor,
         ownsSession: Boolean,
-    ): ExoPlayer = ExoPlayer.Builder(this)
-        .setRenderersFactory(silenceSkippingRenderers(spatial, equalizer, filter, loudness))
-        .setMediaSourceFactory(requireNotNull(mediaSourceFactory))
-        .setLoadControl(farBufferingLoadControl())
-        .setAudioAttributes(AUDIO_ATTRIBUTES, /* handleAudioFocus = */ ownsSession)
-        .setHandleAudioBecomingNoisy(ownsSession)
-        // Keeps the CPU awake while this player is playing. Normal output gets
-        // that from Android's audio server, but direct USB and AAudio exclusive
-        // feed the DAC from this process, and without it a screen-off phone
-        // suspends mid-track and the stream underruns.
-        .setWakeMode(if (BitPerfectOutput.status.value.active) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NONE)
-        // Back restarts the track once you're this far into it; only a
-        // press before that steps to the previous one.
-        .setMaxSeekToPreviousPositionMs(BACK_RESTARTS_AFTER_MS)
-        .build()
+    ): ExoPlayer {
+        val offloadPreferences = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
+            .setIsGaplessSupportRequired(false)
+            .setIsSpeedChangeSupportRequired(false)
+            .build()
+
+        return ExoPlayer.Builder(this)
+            .setRenderersFactory(silenceSkippingRenderers(spatial, equalizer, filter, loudness))
+            .setMediaSourceFactory(requireNotNull(mediaSourceFactory))
+            .setLoadControl(farBufferingLoadControl())
+            .setAudioAttributes(AUDIO_ATTRIBUTES, /* handleAudioFocus = */ ownsSession)
+            .setHandleAudioBecomingNoisy(ownsSession)
+            // Keeps the CPU awake while this player is playing. Normal output gets
+            // that from Android's audio server, but direct USB and AAudio exclusive
+            // feed the DAC from this process, and without it a screen-off phone
+            // suspends mid-track and the stream underruns.
+            .setWakeMode(if (BitPerfectOutput.status.value.active) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NONE)
+            // Back restarts the track once you're this far into it; only a
+            // press before that steps to the previous one.
+            .setMaxSeekToPreviousPositionMs(BACK_RESTARTS_AFTER_MS)
+            .build()
+            .apply {
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setAudioOffloadPreferences(offloadPreferences)
+                    .build()
+            }
+    }
 
     /**
      * Moves the session onto the player the crossfade has just started the
@@ -6860,9 +6882,17 @@ class PlaybackService : MediaLibraryService() {
             enableFloatOutput: Boolean,
             enableAudioTrackPlaybackParams: Boolean,
         ): AudioSink {
+            val bufferSizeProvider = DefaultAudioTrackBufferSizeProvider.Builder()
+                .setOffloadBufferDurationUs(30_000_000L) // 30s hardware DSP buffer
+                .setMinPcmBufferDurationUs(1_000_000L)   // 1s min PCM buffer
+                .setMaxPcmBufferDurationUs(3_000_000L)   // 3s max PCM buffer
+                .setPcmBufferMultiplicationFactor(4)
+                .build()
+
             val defaultSink = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(enableFloatOutput)
                 .setAudioOffloadSupportProvider(DefaultAudioOffloadSupportProvider(context))
+                .setAudioTrackBufferSizeProvider(bufferSizeProvider)
                 // Speed handled by the AudioTrack itself on a float-capable
                 // route, rather than by Sonic. `DefaultAudioSink.configure`
                 // appends `audioProcessorChain.getAudioProcessors()` — which is
@@ -7484,6 +7514,17 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun setupLoudness(mediaId: String?) {
         val exoPlayer = player ?: return
+        val gain = loudnessGainFor(mediaId ?: "")
+        val activeEq = equalizer?.isShaping == true || equalizer?.isEnabled == true
+        val activeSpatial = spatial?.enabled == true
+        val canOffloadVolume = !activeEq && !activeSpatial && gain <= 1.0f
+
+        activeLoudness().offloadedToHardwareVolume = canOffloadVolume
+        if (canOffloadVolume) {
+            exoPlayer.volume = gain
+        } else {
+            exoPlayer.volume = 1f
+        }
         activeLoudness().track(mediaId, nextMediaIdOf(exoPlayer))
         publishLoudnessFor(mediaId)
     }

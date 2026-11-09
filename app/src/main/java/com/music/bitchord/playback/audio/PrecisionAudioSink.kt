@@ -271,13 +271,14 @@ class PrecisionAudioSink(
         configuredSampleRate = 0
         publishLoopFormat(0, 0, false)
         if (isAudible()) {
+            val isBitstream = format.pcmEncoding == C.ENCODING_INVALID || format.sampleMimeType != MimeTypes.AUDIO_RAW
             AudioOutputStatus.publishOutputExactness(
-                exact = false,
-                detail = "${encodingLabel(format.pcmEncoding)} is not linear PCM",
+                exact = isBitstream,
+                detail = if (isBitstream) "Direct DSP Hardware Offload (${format.sampleMimeType ?: "Bitstream"})" else "${encodingLabel(format.pcmEncoding)} is not linear PCM",
             )
             AudioOutputStatus.publishDsp(
                 decoderOutputEncoding = null,
-                dspFormat = "Legacy PCM",
+                dspFormat = if (isBitstream) "DSP Bitstream Offload" else "Legacy PCM",
                 dspAvailable = false,
             )
         }
@@ -804,7 +805,7 @@ class PrecisionAudioSink(
     }
 
     override fun getFormatOffloadSupport(format: Format): AudioOffloadSupport {
-        if (dspChain.isActive) return AudioOffloadSupport.DEFAULT_UNSUPPORTED
+        if (dspChain.isTransformativeActive) return AudioOffloadSupport.DEFAULT_UNSUPPORTED
         return delegate.getFormatOffloadSupport(format)
     }
 

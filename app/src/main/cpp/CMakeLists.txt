@@ -38,7 +38,9 @@ target_include_directories(bitchord_analysis PRIVATE
 
 # -ffast-math is deliberately NOT enabled: the analyzer's log/mel-adjacent
 # arithmetic (see audio_analysis.cpp) is tuned against exact IEEE behaviour.
-target_compile_options(bitchord_analysis PRIVATE -O3 -fvisibility=hidden)
+# -ffp-contract=fast permits hardware FMA (vfmaq_f32) without violating IEEE NaN/Inf.
+target_compile_options(bitchord_analysis PRIVATE
+    -O3 -flto=thin -march=armv8-a+simd -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden)
 
 find_library(log-lib log)
 target_link_libraries(bitchord_analysis ${log-lib})
@@ -46,7 +48,7 @@ target_link_libraries(bitchord_analysis ${log-lib})
 # 16KB page-size support (Android 15+ 16KB kernels, Play requirement): align
 # LOAD segments to 16KB. A superset of 4KB alignment, so 4KB devices are
 # unaffected. APK-side alignment of uncompressed .so files is handled by AGP.
-target_link_options(bitchord_analysis PRIVATE "-Wl,-z,max-page-size=16384")
+target_link_options(bitchord_analysis PRIVATE "-flto=thin" "-Wl,-z,max-page-size=16384")
 
 # Automix's loop mix: two Signalsmith Stretch decks looping whole bars on a
 # ramping tempo, rendered inside the outgoing player's audio sink. Signalsmith
@@ -61,8 +63,8 @@ target_include_directories(bitchord_loopmix PRIVATE
     ${BITCHORD_NATIVE_DIR}
     ${BITCHORD_NATIVE_DIR}/third_party
 )
-target_compile_options(bitchord_loopmix PRIVATE -O3 -ffast-math -fvisibility=hidden -Wno-unused-parameter)
-target_link_options(bitchord_loopmix PRIVATE "-Wl,-z,max-page-size=16384")
+target_compile_options(bitchord_loopmix PRIVATE -O3 -flto=thin -march=armv8-a+simd -ffast-math -fvisibility=hidden -Wno-unused-parameter)
+target_link_options(bitchord_loopmix PRIVATE "-flto=thin" "-Wl,-z,max-page-size=16384")
 
 # DSD playback (DSF/DFF). The decimator turns 1-bit DSD into float PCM for
 # DsdExtractor; DST is the lossless compression SACD rips use inside DFF.
@@ -89,11 +91,12 @@ FetchContent_Declare(oboe
 FetchContent_MakeAvailable(oboe)
 
 add_library(bitchord_exclusive SHARED bitperfect/exclusive_output.cpp)
-target_compile_options(bitchord_exclusive PRIVATE -O2 -Wall -Wextra -fvisibility=hidden)
+target_compile_options(bitchord_exclusive PRIVATE -O3 -flto=thin -march=armv8-a+simd -Wall -Wextra -fvisibility=hidden)
 target_link_libraries(bitchord_exclusive PRIVATE oboe ${log-lib})
 # Only JNI is public: Oboe is static, and its symbols must not keep otherwise
 # unused code alive or be exported from this library.
 target_link_options(bitchord_exclusive PRIVATE
+    "-flto=thin"
     "-Wl,-z,max-page-size=16384"
     "-Wl,--gc-sections"
     "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/bitperfect/exports.map")
@@ -128,9 +131,10 @@ target_compile_options(bitchord_libusb PRIVATE -O2 -fvisibility=hidden -pthread 
 set_target_properties(bitchord_libusb PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(bitchord_usb SHARED bitperfect/usb_transport.cpp)
-target_compile_options(bitchord_usb PRIVATE -O2 -Wall -Wextra -fvisibility=hidden)
+target_compile_options(bitchord_usb PRIVATE -O3 -flto=thin -march=armv8-a+simd -Wall -Wextra -fvisibility=hidden)
 target_link_libraries(bitchord_usb PRIVATE bitchord_libusb ${log-lib})
 target_link_options(bitchord_usb PRIVATE
+    "-flto=thin"
     "-Wl,-z,max-page-size=16384"
     "-Wl,--gc-sections"
     "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/bitperfect/exports.map")
