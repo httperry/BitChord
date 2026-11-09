@@ -1095,7 +1095,7 @@ private fun BitChordApp(
         }
     }
     val controller = rememberMediaController()
-    val player = rememberPlayerState(controller)
+    val player = rememberPlayerState(controller, pollFast = showNowPlaying)
     // A music video's picture follows this controller's clock — see [MusicVideoEngine].
     DisposableEffect(controller) {
         MusicVideoEngine.attach(controller)
