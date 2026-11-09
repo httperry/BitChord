@@ -678,7 +678,7 @@ private fun loopPhase(periodMs: Int): State<Float> {
             }
             // A nine-second breath doesn't need every vsync, and each frame of
             // it redraws the page under the glass — see MOTION_FRAME_GAP_MS.
-            delay(250L)
+            delay(50L)
         }
     }
     return phase

@@ -1085,9 +1085,7 @@ class CrossfadeController(
 
         // Even for the marker alone: a stored analysis is only loaded off disk
         // by asking for it, and without that a paused track plans blind.
-        if (AppSettings.smartFadeEnabled.value) {
-            requestAnalysisAround(player, duration)
-        }
+        requestAnalysisAround(player, duration)
 
         // Only used before analysis lands, or when the evidence is too weak
         // for more than a plain fade (see [TransitionTier.PLAIN_CROSSFADE]):

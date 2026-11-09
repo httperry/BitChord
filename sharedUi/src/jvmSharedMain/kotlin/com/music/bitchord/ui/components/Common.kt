@@ -755,18 +755,18 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
                 if (last != Long.MIN_VALUE) elapsedNanos.longValue += now - last
                 last = now
             }
-            delay(80L)
+            delay(MOTION_FRAME_GAP_MS)
         }
     }
     // The plate is a fixed square so only the bars move, never the box around them.
-    // Isolated in a graphicsLayer so frame ticks do not dirty parent hazeSource/layerBackdrop.
+    // Isolated in a graphicsLayer so 40 FPS frame ticks do not dirty parent hazeSource/layerBackdrop.
     Box(
         modifier = modifier
             .size(24.dp)
             .graphicsLayer {
                 clip = true
                 shape = PlayingBarsShape
-                compositingStrategy = CompositingStrategy.Auto
+                compositingStrategy = CompositingStrategy.Offscreen
             }
             .clip(PlayingBarsShape)
             .background(Color.Black.copy(alpha = 0.52f)),
@@ -886,7 +886,7 @@ fun SignInBanner(
         MeshGradientBackground(
             palette = cyclingMeshPalette(WelcomeMeshPalettes, running = motion),
             modifier = Modifier.matchParentSize(),
-            continuous = false,
+            continuous = true,
             paused = !motion,
             driftMillis = 6_000,
             blurRadius = 36.dp,
