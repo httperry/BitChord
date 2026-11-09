@@ -150,11 +150,12 @@ android {
         // exactly the failure the unsigned fallback above exists to avoid, so
         // the keystore has to be looked for rather than assumed.
         val store = signing.getProperty("storeFile")?.let { rootProject.file(it) }
-        if (store != null && store.exists()) {
+        val alias = signing.getProperty("keyAlias")
+        if (store != null && store.exists() && store.length() > 0L && !alias.isNullOrBlank()) {
             create("release") {
                 storeFile = store
                 storePassword = signing.getProperty("storePassword")
-                keyAlias = signing.getProperty("keyAlias")
+                keyAlias = alias
                 keyPassword = signing.getProperty("keyPassword")
             }
         }
