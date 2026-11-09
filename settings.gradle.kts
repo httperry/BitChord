@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        maven("https://cache-redirector.jetbrains.com/maven-central")
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -8,6 +9,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven("https://cache-redirector.jetbrains.com/maven-central")
         google()
         mavenCentral()
         // NewPipeExtractor is published via JitPack.
