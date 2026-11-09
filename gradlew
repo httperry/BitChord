@@ -179,7 +179,15 @@ save () {
 }
 APP_ARGS=`save "$@"`
 
+JAVA_OPTS="-Dorg.gradle.internal.http.socketTimeout=120000 -Dorg.gradle.internal.http.connectionTimeout=120000 $JAVA_OPTS"
+
 # Collect all arguments for the java command, following the shell quoting and substitution rules
 eval set -- $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS "\"-Dorg.gradle.appname=$APP_BASE_NAME\"" -classpath "\"$CLASSPATH\"" org.gradle.wrapper.GradleWrapperMain "$APP_ARGS"
 
-exec "$JAVACMD" "$@"
+# Execute with retries on transient wrapper download errors
+for attempt in 1 2 3; do
+    "$JAVACMD" "$@" && exit 0
+    echo "gradlew failed (attempt $attempt/3), retrying in 3 seconds..."
+    sleep 3
+done
+exit 1
