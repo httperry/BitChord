@@ -188,9 +188,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Null without a keystore to sign with: the build then produces
-            // app-release-unsigned.apk instead of failing outright.
-            signingConfig = signingConfigs.findByName("release")
+            // Fall back to debug signing when release keystore is absent (e.g. on forks)
+            // so release builds produce properly signed, installable APKs instead of unsigned.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         /*
          * The release build, installable next to the dev and prod apps: same R8,
