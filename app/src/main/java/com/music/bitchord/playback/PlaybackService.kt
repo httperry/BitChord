@@ -645,6 +645,12 @@ class PlaybackService : MediaLibraryService() {
     private fun spareLoudness(): LoudnessProcessor =
         if (activeFilter === transitionFilterA) loudnessB else loudnessA
 
+    private fun activeEqualizer(): EqualizerProcessor =
+        if (activeFilter === transitionFilterA) equalizerProcessorA else equalizerProcessorB
+
+    private fun activeSpatial(): SpatialAudioProcessor =
+        if (activeFilter === transitionFilterA) spatialAudioProcessorA else spatialAudioProcessorB
+
     /** Automix's DSP analyzer — see [com.music.bitchord.playback.smart.TrackAnalyzer]. */
     private val trackAnalyzer by lazy {
         com.music.bitchord.playback.smart.TrackAnalyzer(
@@ -6883,9 +6889,9 @@ class PlaybackService : MediaLibraryService() {
             enableAudioTrackPlaybackParams: Boolean,
         ): AudioSink {
             val bufferSizeProvider = DefaultAudioTrackBufferSizeProvider.Builder()
-                .setOffloadBufferDurationUs(30_000_000L) // 30s hardware DSP buffer
-                .setMinPcmBufferDurationUs(1_000_000L)   // 1s min PCM buffer
-                .setMaxPcmBufferDurationUs(3_000_000L)   // 3s max PCM buffer
+                .setOffloadBufferDurationUs(30_000_000) // 30s hardware DSP buffer
+                .setMinPcmBufferDurationUs(1_000_000)   // 1s min PCM buffer
+                .setMaxPcmBufferDurationUs(3_000_000)   // 3s max PCM buffer
                 .setPcmBufferMultiplicationFactor(4)
                 .build()
 
@@ -7515,8 +7521,10 @@ class PlaybackService : MediaLibraryService() {
     private fun setupLoudness(mediaId: String?) {
         val exoPlayer = player ?: return
         val gain = loudnessGainFor(mediaId ?: "")
-        val activeEq = equalizer?.isShaping == true || equalizer?.isEnabled == true
-        val activeSpatial = spatial?.enabled == true
+        val eq = activeEqualizer()
+        val sp = activeSpatial()
+        val activeEq = eq.isShaping || eq.isEnabled
+        val activeSpatial = sp.enabled
         val canOffloadVolume = !activeEq && !activeSpatial && gain <= 1.0f
 
         activeLoudness().offloadedToHardwareVolume = canOffloadVolume
