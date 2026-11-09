@@ -107,8 +107,8 @@ android {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
-            isUniversalApk = true
+            include("arm64-v8a")
+            isUniversalApk = false
         }
     }
 
@@ -137,7 +137,7 @@ android {
         }
         create("prod") {
             dimension = "env"
-            // Matches defaultConfig — this is the package already shipped/installed.
+            applicationId = "com.music.bitchord.opt"
         }
     }
 
