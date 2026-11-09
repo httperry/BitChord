@@ -100,13 +100,8 @@ private const val RECENTS_TITLE = "Recents"
 private const val RECENT_TRACKS_PER_COLUMN = 4
 
 private fun List<ShelfItem>.playingItemMatcher(song: Song?): (ShelfItem) -> Boolean {
-    song ?: return { false }
-    // The card that was played, when the shelf holds it, and only that one —
-    // see [com.music.bitchord.data.model.playingRowMatcher], which rows use.
-    if (any { it.videoId == song.videoId }) return { it.videoId == song.videoId }
-    val byName = firstOrNull { it.videoId != null && it.title == song.title && it.subtitle == song.artist }
-        ?: return { false }
-    return { it == byName }
+    val targetId = song?.videoId?.takeIf { it.isNotEmpty() } ?: return { false }
+    return { it.videoId == targetId }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -345,7 +340,7 @@ private fun RecentShelf(
                             RecentTrackRow(
                                 item = item,
                                 onClick = { onItemClick(item) },
-                                onLongPress = onItemLongPress?.let { { it(item) } },
+                                onItemLongPress = onItemLongPress,
                                 isCurrent = isCurr,
                                 isPlaying = isCurr && isPlaying,
                             )
@@ -387,16 +382,20 @@ private fun RecentSectionHeader(title: String, subtitle: String) {
 private fun RecentTrackRow(
     item: ShelfItem,
     onClick: () -> Unit,
-    onLongPress: (() -> Unit)?,
+    onLongPress: (() -> Unit)? = null,
+    onItemLongPress: ((ShelfItem) -> Unit)? = null,
     isCurrent: Boolean,
     isPlaying: Boolean,
 ) {
+    val effectiveLongPress = remember(onItemLongPress, onLongPress, item) {
+        if (onItemLongPress != null) { { onItemLongPress(item) } } else onLongPress
+    }
     CompactTrackRow(
         title = item.title,
         subtitle = item.subtitle,
         thumbnailUrl = item.thumbnailUrl,
         onClick = onClick,
-        onLongPress = onLongPress,
+        onLongPress = effectiveLongPress,
         isCurrent = isCurrent,
         isPlaying = isPlaying,
         isVideo = item.isVideo,
@@ -767,7 +766,7 @@ internal fun Shelf(
                     VideoShelfCard(
                         item = item,
                         onClick = { onItemClick(item) },
-                        onLongPress = onItemLongPress?.let { { it(item) } },
+                        onItemLongPress = onItemLongPress,
                         isCurrent = isCurr,
                         isPlaying = isPlay,
                     )
@@ -775,7 +774,7 @@ internal fun Shelf(
                     ShelfCard(
                         item = item,
                         onClick = { onItemClick(item) },
-                        onLongPress = onItemLongPress?.let { { it(item) } },
+                        onItemLongPress = onItemLongPress,
                         isCurrent = isCurr,
                         isPlaying = isPlay,
                     )
@@ -796,6 +795,7 @@ fun VideoShelfCard(
     item: ShelfItem,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
+    onItemLongPress: ((ShelfItem) -> Unit)? = null,
     modifier: Modifier = Modifier.width(VIDEO_CARD_WIDTH),
     isCurrent: Boolean = false,
     isPlaying: Boolean = false,
@@ -803,10 +803,13 @@ fun VideoShelfCard(
     subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     placeholderColor: Color = MaterialTheme.colorScheme.surfaceVariant,
 ) {
+    val effectiveLongPress = remember(onItemLongPress, onLongPress, item) {
+        if (onItemLongPress != null) { { onItemLongPress(item) } } else onLongPress
+    }
     Column(
         modifier = modifier
-            .longPressMenuClickable(onClick = onClick, onLongClick = onLongPress)
-            .contextClick(onLongPress),
+            .longPressMenuClickable(onClick = onClick, onLongClick = effectiveLongPress)
+            .contextClick(effectiveLongPress),
     ) {
         Box(
             modifier = Modifier
@@ -948,16 +951,20 @@ internal fun ShelfCard(
     item: ShelfItem,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
+    onItemLongPress: ((ShelfItem) -> Unit)? = null,
     modifier: Modifier = Modifier.width(SHELF_CARD_WIDTH),
     /** Set on a Library playlist card that's in [AppSettings.pinnedPlaylists][com.music.bitchord.data.settings.AppSettings.pinnedPlaylists]. */
     isPinned: Boolean = false,
     isCurrent: Boolean = false,
     isPlaying: Boolean = false,
 ) {
+    val effectiveLongPress = remember(onItemLongPress, onLongPress, item) {
+        if (onItemLongPress != null) { { onItemLongPress(item) } } else onLongPress
+    }
     Column(
         modifier = modifier
-            .longPressMenuClickable(onClick = onClick, onLongClick = onLongPress)
-            .contextClick(onLongPress),
+            .longPressMenuClickable(onClick = onClick, onLongClick = effectiveLongPress)
+            .contextClick(effectiveLongPress),
     ) {
         when (item.browseId) {
             "local:downloads" -> {

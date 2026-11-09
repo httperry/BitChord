@@ -14,6 +14,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import com.music.bitchord.ui.player.MESH_CYCLE_MILLIS
@@ -765,6 +766,7 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
             .graphicsLayer {
                 clip = true
                 shape = PlayingBarsShape
+                compositingStrategy = CompositingStrategy.Offscreen
             }
             .clip(PlayingBarsShape)
             .background(Color.Black.copy(alpha = 0.52f)),

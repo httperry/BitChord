@@ -82,6 +82,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
     private val mixInput = FloatArray(EqLayout.SLOTS)
     private val mixBand = FloatArray(EqLayout.SLOTS)
     private val mixLow = FloatArray(EqLayout.SLOTS)
+    private val precomputedBaseTan = FloatArray(EqLayout.SLOTS)
 
     /** Which sections are worth running this sub-block, and how many. */
     private val activeSlots = IntArray(EqLayout.SLOTS)
@@ -137,6 +138,12 @@ class EqualizerProcessor : BaseAudioProcessor() {
         }
         if (frame.size != channelCount) {
             frame = FloatArray(channelCount)
+        }
+        if (sampleRate > 0) {
+            for (slot in 0 until EqLayout.SLOTS) {
+                val spec = EqLayout.slots[slot]
+                precomputedBaseTan[slot] = tan(Math.PI * usableFrequency(spec.frequencyHz) / sampleRate).toFloat()
+            }
         }
         running.fill(false)
         limiter.configure(sampleRate)
@@ -210,6 +217,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
         state = FloatArray(0)
         channelGain = FloatArray(0)
         frame = FloatArray(0)
+        precomputedBaseTan.fill(0f)
         running.fill(false)
         limiter.reset()
         isShaping = false
@@ -329,7 +337,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val spec = EqLayout.slots[slot]
         val a = 10f.pow(currentGainDb[slot] / 40f)
         val q = currentQ[slot].coerceAtLeast(MIN_Q)
-        val base = tan(Math.PI * usableFrequency(spec.frequencyHz) / sampleRate).toFloat()
+        val base = precomputedBaseTan[slot]
         val g: Float
         val k: Float
         when (spec.kind) {

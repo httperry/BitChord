@@ -1,8 +1,12 @@
 package com.music.bitchord.playback
 
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import android.os.PowerManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
@@ -48,6 +52,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioOffloadSupportProvider
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
@@ -847,6 +852,20 @@ class PlaybackService : MediaLibraryService() {
     private var serviceLyrics: List<LyricLine>? = null
     private var lastPublishedSubtitle: String? = null
     private var lyricsTickerJob: Job? = null
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> {
+                    if (player?.isPlaying == true) {
+                        startLyricsTicker()
+                    }
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    stopLyricsTicker()
+                }
+            }
+        }
+    }
 
     /**
      * Everything the service books against the player it is currently on.
@@ -6843,6 +6862,7 @@ class PlaybackService : MediaLibraryService() {
         ): AudioSink {
             val defaultSink = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(enableFloatOutput)
+                .setAudioOffloadSupportProvider(DefaultAudioOffloadSupportProvider(context))
                 // Speed handled by the AudioTrack itself on a float-capable
                 // route, rather than by Sonic. `DefaultAudioSink.configure`
                 // appends `audioProcessorChain.getAudioProcessors()` — which is
@@ -7335,6 +7355,16 @@ class PlaybackService : MediaLibraryService() {
             }.distinctUntilChanged().collect {
                 loadLyricsForCurrentTrack()
             }
+        }
+        val screenFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(screenReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(screenReceiver, screenFilter)
         }
         scope.launch {
             AppSettings.spatialAudio.collect { applySpatialAudioEnabled() }
@@ -7857,6 +7887,7 @@ class PlaybackService : MediaLibraryService() {
         publishWidgetState(playing = false)
         lyricsTickerJob?.cancel()
         lyricsTickerJob = null
+        runCatching { unregisterReceiver(screenReceiver) }
         serviceLyricsJob?.cancel()
         serviceLyricsJob = null
         serviceLyrics = null
@@ -7971,7 +8002,7 @@ class PlaybackService : MediaLibraryService() {
             withContext(Dispatchers.Main) {
                 serviceLyrics = lines
                 if (player?.isPlaying == true) {
-                    updateLyricSubtitle()
+                    startLyricsTicker()
                 }
             }
         }
@@ -7979,9 +8010,15 @@ class PlaybackService : MediaLibraryService() {
 
     private fun startLyricsTicker() {
         if (!AppSettings.syncedLyrics.value || serviceLyrics.isNullOrEmpty()) return
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (powerManager?.isInteractive == false) return
         if (lyricsTickerJob?.isActive == true) return
         lyricsTickerJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
+                val pm = getSystemService(PowerManager::class.java)
+                if (pm?.isInteractive == false || !AppSettings.syncedLyrics.value || serviceLyrics.isNullOrEmpty()) {
+                    break
+                }
                 updateLyricSubtitle()
                 delay(1000L)
             }

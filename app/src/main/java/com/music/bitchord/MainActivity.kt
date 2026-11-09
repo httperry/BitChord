@@ -56,6 +56,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyListState
@@ -565,7 +567,9 @@ private fun BitChordApp(
     // The Top Picks and mood artwork loop forever; nobody sees it with the
     // app in the background or Now Playing pulled up over the page.
     val appForeground = com.music.bitchord.ui.rememberIsForeground()
-    val artworkMotion = appForeground && !showNowPlaying
+    var userActive by remember { mutableStateOf(true) }
+    val lastInteractionTime = remember { longArrayOf(android.os.SystemClock.uptimeMillis()) }
+    val artworkMotion = appForeground && !showNowPlaying && userActive
     // Top Picks turns over each hour; coming back to the app after a
     // turn-over is an open too.
     LaunchedEffect(appForeground) {
@@ -842,6 +846,24 @@ private fun BitChordApp(
     // route — Back, a tab, another page over it — puts the list away with it.
     LaunchedEffect(detail?.browseId) {
         if (reorderTarget?.browseId != detail?.browseId) reorderTarget = null
+    }
+
+    // Inactivity detector: pause artwork motion and playing bars after 30 seconds
+    // of no interaction on Home; resumes immediately on touch.
+    val isOnHome = selectedTab == TAB_HOME && route == null && detail == null
+    LaunchedEffect(isOnHome, appForeground, userActive) {
+        if (!appForeground || !isOnHome) {
+            userActive = true
+            return@LaunchedEffect
+        }
+        while (true) {
+            val elapsed = android.os.SystemClock.uptimeMillis() - lastInteractionTime[0]
+            if (elapsed >= 30_000L) {
+                userActive = false
+                break
+            }
+            kotlinx.coroutines.delay(30_000L - elapsed)
+        }
     }
 
     SystemBarIcons(
@@ -2127,9 +2149,11 @@ private fun BitChordApp(
      * below, so a card that plays a song offers the track menu and a card that
      * opens a page offers the album / playlist one.
      */
-    val onShelfLongPress: (ShelfItem) -> Unit = { item ->
-        val song = shelfSong(item)
-        if (song != null) openSongMenu(song) else onBrowseLongPress(item)
+    val onShelfLongPress: (ShelfItem) -> Unit = remember(shelfSong, openSongMenu, onBrowseLongPress) {
+        { item ->
+            val song = shelfSong(item)
+            if (song != null) openSongMenu(song) else onBrowseLongPress(item)
+        }
     }
 
     /**
@@ -2803,6 +2827,17 @@ private fun BitChordApp(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        lastInteractionTime[0] = android.os.SystemClock.uptimeMillis()
+                        if (!userActive) {
+                            userActive = true
+                        }
+                    }
+                }
+            }
             // Nothing of the page under a portrait player that is fully up:
             // that player is its own window, opaque from edge to edge, and
             // this one drawing on behind it — the page, the glass bar and the
@@ -3787,7 +3822,7 @@ private fun BitChordApp(
                             .rotate(180f)
                             .graphicsLayer { alpha = topFadeAlpha },
                     )
-                } else {
+                } else if (topFadeAlpha > 0.01f) {
                     TopFadeBlur(
                         hazeState = hazeState,
                         pageColor = chromePageColor,

@@ -45,6 +45,7 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
     private var delayLeft = FloatArray(0)
     private var delayRight = FloatArray(0)
     private var delayIndex = 0
+    private var delayMask = 0
     private var lowpassLeft = 0f
     private var lowpassRight = 0f
 
@@ -58,17 +59,29 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
             delayLeft = FloatArray(0)
             delayRight = FloatArray(0)
             delayIndex = 0
+            delayMask = 0
             lowpassLeft = 0f
             lowpassRight = 0f
             return
         }
-        val delaySamples = (sampleRate * DELAY_MS / 1000f)
+        val targetDelaySamples = (sampleRate * DELAY_MS / 1000f)
             .roundToInt()
             .coerceAtLeast(1)
+        var p2 = 1
+        while (p2 < targetDelaySamples) {
+            p2 = p2 shl 1
+        }
+        val lower = p2 shr 1
+        val delaySamples = if (lower >= 1 && (targetDelaySamples - lower) < (p2 - targetDelaySamples)) {
+            lower
+        } else {
+            p2
+        }
         if (delayLeft.size != delaySamples) {
             delayLeft = FloatArray(delaySamples)
             delayRight = FloatArray(delaySamples)
         }
+        delayMask = delaySamples - 1
         onFlush()
     }
 
@@ -80,8 +93,8 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
         if (!enabled || block.frameCount == 0) return
         if (block.channelCount != 2) return // Spatial widening only applies to stereo
 
-        val delaySize = delayLeft.size
-        if (delaySize == 0) return
+        val delayMask = this.delayMask
+        if (delayMask <= 0) return
 
         val totalSamples = block.frameCount * 2
         var idx = 0
@@ -107,7 +120,7 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
 
             delayLeft[dIdx] = left
             delayRight[dIdx] = right
-            dIdx = (dIdx + 1) % delaySize
+            dIdx = (dIdx + 1) and delayMask
 
             // Headroom is preserved: no clamping to [-1.0f, +1.0f]
             block.samples[idx] = widenedLeft * outputGain
@@ -160,6 +173,7 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
         delayLeft = FloatArray(0)
         delayRight = FloatArray(0)
         delayIndex = 0
+        delayMask = 0
         lowpassLeft = 0f
         lowpassRight = 0f
         channelCount = 0
@@ -180,8 +194,8 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
         inputBuffer.order(ByteOrder.nativeOrder())
         outputBuffer.order(ByteOrder.nativeOrder())
 
-        val delaySize = delayLeft.size
-        if (delaySize == 0) {
+        val delayMask = this.delayMask
+        if (delayMask <= 0) {
             outputBuffer.put(inputBuffer)
             outputBuffer.flip()
             return
@@ -210,7 +224,7 @@ class SpatialAudioProcessor : BaseAudioProcessor() {
 
             delayLeft[dIdx] = left
             delayRight[dIdx] = right
-            dIdx = (dIdx + 1) % delaySize
+            dIdx = (dIdx + 1) and delayMask
 
             outputBuffer.putShort(PcmBoundary.clamp16FromFloat(widenedLeft * outputGain))
             outputBuffer.putShort(PcmBoundary.clamp16FromFloat(widenedRight * outputGain))

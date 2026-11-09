@@ -1,6 +1,9 @@
 package com.music.bitchord.ui.components
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import coil3.compose.LocalPlatformContext
@@ -45,11 +48,28 @@ private object BackdropBlur : Transformation() {
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         val top = (input.height * (1f - STRIP)).toInt().coerceIn(0, input.height - 1)
         val height = ((input.height - top) * WIDTH / input.width.toFloat()).toInt().coerceAtLeast(4)
-        val software = if (input.config == Bitmap.Config.HARDWARE) input.copy(Bitmap.Config.ARGB_8888, false) else input
-        val strip = Bitmap.createBitmap(software, 0, top, software.width, software.height - top)
-        val small = Bitmap.createScaledBitmap(strip, WIDTH, height, true)
+        val small = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(small)
+        val srcRect = Rect(0, top, input.width, input.height)
+        val dstRect = Rect(0, 0, WIDTH, height)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        var intermediate: Bitmap? = null
+        try {
+            if (input.config == Bitmap.Config.HARDWARE) {
+                intermediate = input.copy(Bitmap.Config.ARGB_8888, false)
+                canvas.drawBitmap(intermediate, srcRect, dstRect, paint)
+            } else {
+                canvas.drawBitmap(input, srcRect, dstRect, paint)
+            }
+        } finally {
+            intermediate?.recycle()
+        }
         val pixels = IntArray(WIDTH * height)
-        small.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, height)
+        try {
+            small.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, height)
+        } finally {
+            small.recycle()
+        }
         repeat(PASSES) {
             boxBlur(pixels, WIDTH, height, RADIUS, horizontal = true)
             boxBlur(pixels, WIDTH, height, RADIUS, horizontal = false)

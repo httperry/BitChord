@@ -172,9 +172,11 @@ private fun rememberArtworkSeed(imageUrl: String?, artPx: Int): Seed? {
             .size(PALETTE_PX)
             .forPixelAccess()
             .build()
-        val result = SingletonImageLoader.get(context).execute(request)
-        val bitmap = (result as? SuccessResult)?.image?.toImageBitmap() ?: return@LaunchedEffect
-        val found = withContext(Dispatchers.Default) { seedOf(bitmap) } ?: return@LaunchedEffect
+        val found = withContext(Dispatchers.Default) {
+            val result = SingletonImageLoader.get(context).execute(request)
+            val bitmap = (result as? SuccessResult)?.image?.toImageBitmap() ?: return@withContext null
+            seedOf(bitmap)
+        } ?: return@LaunchedEffect
         putCachedSeed(imageUrl, found)
         seed = found
     }
@@ -211,18 +213,25 @@ private data class Seed(
 )
 
 private fun seedOf(bitmap: ImageBitmap): Seed? {
-    fun swatches(clearFilters: Boolean) =
-        paletteSwatches(bitmap, SWATCH_COUNT, clearFilters)
-
     // The default filter deliberately throws away near-black and near-white.
     // That is useful while looking for an accent, but it is the wrong answer
     // to "what colour is this page mostly made of?" A dark photograph would
     // otherwise be reduced to whatever warm face or tiny coloured detail
     // survived the filter, and a monochrome sleeve to an anti-aliased fringe.
     // Both cases used to turn into the same maroon page.
-    val all = swatches(clearFilters = true)
+    val all = paletteSwatches(bitmap, SWATCH_COUNT, clearFilters = true)
     if (all.isEmpty()) return null
-    val accentCandidates = swatches(clearFilters = false).ifEmpty { all }
+
+    // Quantize once above and filter candidates in memory instead of calling
+    // paletteSwatches twice.
+    val hsl = FloatArray(3)
+    val accentCandidates = all.filter { swatch ->
+        ColorUtils.colorToHSL(swatch.rgb, hsl)
+        val isBlack = hsl[2] <= 0.05f
+        val isWhite = hsl[2] >= 0.95f
+        val nearRedILine = hsl[0] in 10f..37f && hsl[1] <= 0.82f
+        !isWhite && !isBlack && !nearRedILine
+    }.ifEmpty { all }
 
     val dominant = all.maxBy { it.population }
     // The accent has to earn its place twice over: a colour nobody sees enough
@@ -230,7 +239,7 @@ private fun seedOf(bitmap: ImageBitmap): Seed? {
     // saturation against the *square root* of population is what stops a sleeve
     // that is four-fifths black sky from accenting in black.
     val vibrant = accentCandidates.maxBy { swatch ->
-        val hsl = FloatArray(3).also { ColorUtils.colorToHSL(swatch.rgb, it) }
+        ColorUtils.colorToHSL(swatch.rgb, hsl)
         hsl[1] * sqrt(swatch.population.toFloat())
     }
     return Seed(
@@ -270,16 +279,22 @@ private fun ImageBitmap.bottomEdgeColor(): Color {
     var red = 0L
     var green = 0L
     var blue = 0L
-    pixels.forEach { pixel ->
+    var count = 0
+    val size = pixels.size
+    var i = 0
+    while (i < size) {
+        val pixel = pixels[i]
         red += (pixel shr 16) and 0xFF
         green += (pixel shr 8) and 0xFF
         blue += pixel and 0xFF
+        count++
+        i += 2
     }
-    val count = pixels.size.coerceAtLeast(1)
+    val safeCount = count.coerceAtLeast(1)
     return Color(
-        red = (red / count).toInt(),
-        green = (green / count).toInt(),
-        blue = (blue / count).toInt(),
+        red = (red / safeCount).toInt(),
+        green = (green / safeCount).toInt(),
+        blue = (blue / safeCount).toInt(),
     )
 }
 

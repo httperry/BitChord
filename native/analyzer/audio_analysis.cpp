@@ -57,11 +57,12 @@ double ToDb(double value) {
   return value > 1e-9 ? 20.0 * std::log10(value) : -70.0;
 }
 
-double Percentile(std::vector<double> values, double ratio) {
+double Percentile(const std::vector<double>& values, double ratio) {
   if (values.empty()) return 0;
   const size_t index = static_cast<size_t>(Clamp(ratio, 0, 1) * (values.size() - 1));
-  std::nth_element(values.begin(), values.begin() + index, values.end());
-  return values[index];
+  std::vector<double> copy = values;
+  std::nth_element(copy.begin(), copy.begin() + index, copy.end());
+  return copy[index];
 }
 
 double Average(const std::vector<double>& values, size_t start, size_t end) {

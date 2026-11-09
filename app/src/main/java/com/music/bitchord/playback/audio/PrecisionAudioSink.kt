@@ -1,11 +1,13 @@
 package com.music.bitchord.playback.audio
 
 import android.util.Log
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
+import androidx.media3.exoplayer.audio.AudioOffloadSupport
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
@@ -800,6 +802,11 @@ class PrecisionAudioSink(
             }
         }
         return delegate.getFormatSupport(format)
+    }
+
+    override fun getAudioOffloadSupport(format: Format, audioAttributes: AudioAttributes): AudioOffloadSupport {
+        if (dspChain.isActive) return AudioOffloadSupport.DEFAULT_UNSUPPORTED
+        return delegate.getAudioOffloadSupport(format, audioAttributes)
     }
 
     /**

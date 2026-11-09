@@ -341,8 +341,8 @@ internal fun AndroidCanvasArtworkPlayer(
     // regardless of playback state, so coming back from background always has
     // a surface ready and `onRenderedFirstFrame()` fires naturally.
     val foreground = rememberIsForeground()
-    LaunchedEffect(foreground, pausedForTransition) {
-        val play = foreground && !pausedForTransition
+    LaunchedEffect(foreground, isPlaying, pausedForTransition) {
+        val play = foreground && isPlaying && !pausedForTransition
         val afterTransition = gate.heldForTransition
         gate.heldForTransition = pausedForTransition
         // Held a moment longer on the way out of a transition, if asked: the

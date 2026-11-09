@@ -243,7 +243,7 @@ public:
     }
 
     void events() {
-        timeval timeout{0, 1000};
+        timeval timeout{0, 10000};
         check(libusb_handle_events_timeout(context, &timeout));
     }
 

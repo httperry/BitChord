@@ -345,6 +345,10 @@ internal fun Modifier.playerDockArt(dock: PlayerDock?, corner: Dp): Modifier {
 /** The mini player's cover for a music video: 16:9 at the cover's 40dp height. */
 private val VIDEO_ART_WIDTH = 71.dp
 
+private val MiniPlayerPillShape = RoundedCornerShape(percent = 50)
+private val MiniPlayerBorderColor = Color.White.copy(alpha = 0.10f)
+private val MiniPlayerBorderWidth = 0.5.dp
+
 /** Frosted mini player that rides just above the floating tab bar. */
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
@@ -368,11 +372,14 @@ fun MiniPlayer(
 ) {
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val haptics = rememberHaptics()
+    val hazeStyle = remember(MaterialTheme.colorScheme.surface) {
+        HazeMaterials.thin(MaterialTheme.colorScheme.surface)
+    }
     // percent rather than a dp figure, so the corner stays exactly half the
     // height if the row's contents ever change it — which is what keeps a pill
     // a pill instead of a rounded rectangle. Same idiom as [FloatingBottomBar]
     // directly below it, so the two shapes are the same family.
-    val shape = RoundedCornerShape(percent = 50)
+    val shape = MiniPlayerPillShape
     Box(
         modifier = modifier
             .padding(horizontal = BAR_GUTTER)
@@ -397,11 +404,11 @@ fun MiniPlayer(
                 } else {
                     Modifier.optimizedHazeEffect(
                         state = hazeState,
-                        style = HazeMaterials.thin(MaterialTheme.colorScheme.surface),
+                        style = hazeStyle,
                     )
                 },
             )
-            .border(0.5.dp, Color.White.copy(alpha = 0.10f), shape)
+            .border(MiniPlayerBorderWidth, MiniPlayerBorderColor, shape)
             // Deliberately silent: the whole bar is the target, so it catches
             // stray taps meant for the page behind it, and the sheet rising is
             // its own confirmation. The glyphs on it still buzz.

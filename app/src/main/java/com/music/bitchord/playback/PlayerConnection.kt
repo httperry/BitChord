@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Stable
@@ -43,6 +44,7 @@ import java.io.File
 import java.util.Locale
 
 /** Snapshot of playback state, driven by the MediaController. */
+@Immutable
 data class PlayerState(
     val song: Song? = null,
     val isPlaying: Boolean = false,
@@ -300,7 +302,10 @@ fun MediaController.setQueueDragActive(active: Boolean) {
 
 /** Mirrors the controller into Compose state, polling position while playing. */
 @Composable
-fun rememberPlayerState(controller: MediaController?): PlayerState {
+fun rememberPlayerState(
+    controller: MediaController?,
+    pollFast: Boolean = true,
+): PlayerState {
     val position = remember { PlaybackPosition() }
     var state by remember { mutableStateOf(PlayerState(position = position)) }
 
@@ -448,14 +453,14 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
     // Nothing is lost by stopping: `sync` above runs on the controller's own
     // events, and the first thing that happens on the way back is a fresh read.
     val foreground = rememberIsForeground()
-    LaunchedEffect(controller, state.isPlaying, foreground) {
+    LaunchedEffect(controller, state.isPlaying, foreground, pollFast) {
         while (controller != null && state.isPlaying && foreground) {
             position.report(controller.currentPosition.coerceAtLeast(0L))
             if (state.durationMs <= 0L) {
                 val duration = controller.duration.coerceAtLeast(0L)
                 if (duration != state.durationMs) state = state.copy(durationMs = duration)
             }
-            delay(500)
+            delay(if (pollFast) 500L else 3000L)
         }
     }
     return state

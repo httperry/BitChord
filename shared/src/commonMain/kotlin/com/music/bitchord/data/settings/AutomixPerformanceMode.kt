@@ -8,5 +8,5 @@ enum class AutomixPerformanceMode(val inferenceThreads: Int) {
     ;
 
     /** Whether analysis should yield to playback rather than compete with it. */
-    val yieldsToPlayback: Boolean get() = this == EFFICIENT
+    val yieldsToPlayback: Boolean get() = this != PERFORMANCE
 }

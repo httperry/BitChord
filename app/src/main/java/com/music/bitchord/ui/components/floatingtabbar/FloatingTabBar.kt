@@ -1065,7 +1065,7 @@ private fun Modifier.animateEnterExitAccessory(
     animatedVisibilityScope: AnimatedVisibilityScope
 ): Modifier = with(sharedTransitionScope) {
     with(animatedVisibilityScope) {
-        val animatedAlpha by transition.animateFloat { targetState ->
+        val alphaAnimation = transition.animateFloat { targetState ->
             when (targetState) {
                 EnterExitState.Visible -> 1f
                 else -> 0f
@@ -1075,8 +1075,8 @@ private fun Modifier.animateEnterExitAccessory(
         this@animateEnterExitAccessory
             .renderInSharedTransitionScopeOverlay()
             .graphicsLayer(
-                compositingStrategy = CompositingStrategy.ModulateAlpha,
-                alpha = animatedAlpha
+                compositingStrategy = if (alphaAnimation.value < 0.999f) CompositingStrategy.ModulateAlpha else CompositingStrategy.Auto,
+                alpha = alphaAnimation.value
             )
     }
 }

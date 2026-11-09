@@ -134,6 +134,15 @@ fun MeshGradientBackground(
     }
     val baseColor by animateColorAsState(tuned.first().dimmed(), colorSpec, label = "meshBase")
 
+    val colorStops = remember(animatedColors) {
+        animatedColors.map { color ->
+            Array(FADE_CURVE_STOPS + 1) { i ->
+                val t = PRECOMPUTED_STOPS[i]
+                t to color.copy(alpha = BLOB_ALPHA * (1f - smootherStep(t)))
+            }
+        }
+    }
+
     // Read in the draw lambda, not here: an Animatable read during draw
     // invalidates only the drawing, leaving composition out of the loop.
     val phase = remember { Animatable(0f) }
@@ -183,20 +192,15 @@ fun MeshGradientBackground(
             .background(baseColor)
             .blur(blurRadius),
     ) {
-        val anchors = listOf(
-            Offset(0.20f, 0.25f),
-            Offset(0.80f, 0.20f),
-            Offset(0.75f, 0.80f),
-            Offset(0.25f, 0.75f),
-        )
-        val speeds = listOf(1f, -0.7f, 0.85f, -1.15f)
         val drift = phase.value
 
         animatedColors.forEachIndexed { index, color ->
-            val anchor = anchors[index]
+            val anchorX = MESH_ANCHOR_X[index]
+            val anchorY = MESH_ANCHOR_Y[index]
+            val speed = MESH_SPEEDS[index]
             val center = Offset(
-                x = (anchor.x + 0.16f * cos(drift * speeds[index] + index * 1.7f)) * size.width,
-                y = (anchor.y + 0.16f * sin(drift * speeds[index] * 0.9f + index * 2.3f)) * size.height,
+                x = (anchorX + 0.16f * cos(drift * speed + index * 1.7f)) * size.width,
+                y = (anchorY + 0.16f * sin(drift * speed * 0.9f + index * 2.3f)) * size.height,
             )
             val radius = size.maxDimension * 0.62f
             drawCircle(
@@ -204,10 +208,7 @@ fun MeshGradientBackground(
                 // stops dead at the rim, and that corner showed as a ring where each
                 // blob ended, even through the blur.
                 brush = Brush.radialGradient(
-                    colorStops = Array(FADE_CURVE_STOPS + 1) { i ->
-                        val t = i / FADE_CURVE_STOPS.toFloat()
-                        t to color.copy(alpha = BLOB_ALPHA * (1f - smootherStep(t)))
-                    },
+                    colorStops = colorStops[index],
                     center = center,
                     radius = radius,
                 ),
@@ -230,6 +231,11 @@ fun MeshGradientBackground(
 
 /** A blob's opacity at its centre. */
 private const val BLOB_ALPHA = 0.85f
+
+private val MESH_ANCHOR_X = floatArrayOf(0.20f, 0.80f, 0.75f, 0.25f)
+private val MESH_ANCHOR_Y = floatArrayOf(0.25f, 0.20f, 0.80f, 0.75f)
+private val MESH_SPEEDS = floatArrayOf(1f, -0.7f, 0.85f, -1.15f)
+private val PRECOMPUTED_STOPS = FloatArray(FADE_CURVE_STOPS + 1) { i -> i / FADE_CURVE_STOPS.toFloat() }
 
 /**
  * How long each palette in a [cyclingMeshPalette] is held, which is also how
