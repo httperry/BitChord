@@ -402,7 +402,6 @@ private fun GlassNowPlaying(
                         .data(url)
                         .size(ROW_ART_PX)
                         .precision(coil3.size.Precision.EXACT)
-                        .crossfade(false)
                         .build()
                 } else null
             }

@@ -2438,10 +2438,12 @@ private fun BitChordApp(
     // under the status bar inset, and that inset varies by device and by window,
     // so a fixed number only ever lines up on the one device it was picked on.
     // See [topBarContentPadding].
-    val listPadding = remember(player.song != null) {
+    val topPadding = topBarContentPadding()
+    val hasSong = player.song != null
+    val listPadding = remember(hasSong, topPadding) {
         PaddingValues(
-            top = topBarContentPadding(),
-            bottom = if (player.song != null) 210.dp else 140.dp,
+            top = topPadding,
+            bottom = if (hasSong) 210.dp else 140.dp,
         )
     }
 
@@ -3404,7 +3406,7 @@ private fun BitChordApp(
                                 val onHomeRefresh = remember(viewModel) { { viewModel.refresh(MainViewModel.Feed.HOME) } }
                                 val onHomeMoodsShowAll = remember(navigator) { { navigator.push(AppRoute.Moods) } }
                                 val onHomeTopPickLongPress = remember(onShelfLongPress) {
-                                    { pick: com.music.bitchord.data.innertube.model.TopPick ->
+                                    { pick: com.music.bitchord.data.model.TopPick ->
                                         pick.browseId?.let { browseId ->
                                             onShelfLongPress(
                                                 com.music.bitchord.data.model.ShelfItem(
@@ -4177,14 +4179,14 @@ private fun BitChordApp(
                     }
                 }
 
-                val onBarPlayPause = remember { { togglePlayPause() } }
-                val onBarNext = remember(controller) { { controller?.seekToNextMediaItem() } }
-                val onBarPrevious = remember(controller) { { controller?.seekToPrevious() } }
-                val onBarExpand = remember(reducePlayerMotion) {
+                val onBarPlayPause: () -> Unit = remember { { togglePlayPause() } }
+                val onBarNext: () -> Unit = remember(controller) { { controller?.seekToNextMediaItem(); Unit } }
+                val onBarPrevious: () -> Unit = remember(controller) { { controller?.seekToPrevious(); Unit } }
+                val onBarExpand: () -> Unit = remember(reducePlayerMotion) {
                     if (reducePlayerMotion) {
                         { showNowPlaying = true }
                     } else {
-                        playerSheetMotion::open
+                        { playerSheetMotion.open() }
                     }
                 }
 
