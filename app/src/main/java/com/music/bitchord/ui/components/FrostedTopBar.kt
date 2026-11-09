@@ -491,7 +491,7 @@ private fun artworkPageSurface(
     hazeState: HazeState?,
 ): Modifier {
     val container = MaterialTheme.colorScheme.surface
-    val hazeStyle = remember(container) { HazeMaterials.regular(container) }
+    val hazeStyle = HazeMaterials.regular(container)
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val useLiquidGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
 

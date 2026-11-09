@@ -372,9 +372,7 @@ fun MiniPlayer(
 ) {
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val haptics = rememberHaptics()
-    val hazeStyle = remember(MaterialTheme.colorScheme.surface) {
-        HazeMaterials.thin(MaterialTheme.colorScheme.surface)
-    }
+    val hazeStyle = HazeMaterials.thin(MaterialTheme.colorScheme.surface)
     // percent rather than a dp figure, so the corner stays exactly half the
     // height if the row's contents ever change it — which is what keeps a pill
     // a pill instead of a rounded rectangle. Same idiom as [FloatingBottomBar]
