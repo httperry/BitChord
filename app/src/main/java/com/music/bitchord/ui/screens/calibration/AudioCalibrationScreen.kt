@@ -229,26 +229,26 @@ fun AudioCalibrationScreen(
         }
 
         // --- Main Control Card Container (Device Preset + Personal EQ) ---
+        val containerShape = RoundedCornerShape(18.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
                 .then(
                     if (isGlass) {
                         Modifier
                             .lightweightLiquidGlass(
-                                shape = RoundedCornerShape(18.dp),
-                                specular = true,
-                                tintAlpha = 0.65f,
+                                shape = containerShape,
+                                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
                             )
-                            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, RoundedCornerShape(18.dp))
+                            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, containerShape)
                     } else {
                         Modifier
+                            .clip(containerShape)
                             .background(MaterialTheme.colorScheme.surfaceContainer)
                             .border(
                                 width = 1.dp,
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(18.dp),
+                                shape = containerShape,
                             )
                     }
                 ),
@@ -442,24 +442,23 @@ fun AudioCalibrationScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
                 .alpha(controlsAlpha)
                 .then(
                     if (isGlass) {
                         Modifier
                             .lightweightLiquidGlass(
-                                shape = RoundedCornerShape(18.dp),
-                                specular = true,
-                                tintAlpha = 0.65f,
+                                shape = containerShape,
+                                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
                             )
-                            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, RoundedCornerShape(18.dp))
+                            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, containerShape)
                     } else {
                         Modifier
+                            .clip(containerShape)
                             .background(MaterialTheme.colorScheme.surfaceContainer)
                             .border(
                                 width = 1.dp,
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(18.dp),
+                                shape = containerShape,
                             )
                     }
                 )
