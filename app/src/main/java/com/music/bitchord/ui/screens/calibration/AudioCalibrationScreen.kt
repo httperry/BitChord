@@ -123,8 +123,8 @@ fun AudioCalibrationScreen(
     val previewUncalibrated by AppSettings.previewUncalibrated.collectAsStateWithLifecycle()
     val outputStatus by AudioOutputStatus.current.collectAsStateWithLifecycle()
 
-    val selectedModel = remember(modelId) {
-        modelId?.let { AcousticModelCatalog.getModelById(it)?.toHeadphoneModel() }
+    val selectedModel: HeadphoneModel? = remember(modelId) {
+        modelId?.let { id -> HeadphoneCatalog.MODELS.firstOrNull { it.id == id } }
     }
 
     var showModelPicker by remember { mutableStateOf(false) }
@@ -298,8 +298,8 @@ fun AudioCalibrationScreen(
                         val subtitleText = when {
                             isPhoneSpeaker -> stringResource(R.string.disabled_on_phone_speaker)
                             !devicePresetEnabled -> "Preset disabled"
-                            selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
                             modelName != null -> "${modelBrand ?: ""} $modelName".trim()
+                            selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
                             else -> stringResource(R.string.select_device_preset)
                         }
                         Text(
@@ -614,8 +614,8 @@ fun AudioCalibrationScreen(
                 // Footer: Device Name & Curve Legend
                 val deviceDisplayName = when {
                     isPhoneSpeaker -> stringResource(R.string.disabled_on_phone_speaker)
-                    selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
                     modelName != null -> "${modelBrand ?: ""} $modelName".trim()
+                    selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
                     outputStatus.deviceName.isNotBlank() -> outputStatus.deviceName
                     else -> "No Device Selected"
                 }
