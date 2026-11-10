@@ -26,9 +26,13 @@ add_library(bitchord_analysis SHARED
     ${BITCHORD_NATIVE_DIR}/analyzer/resampler.cpp
     ${BITCHORD_NATIVE_DIR}/analyzer/mel_spectrogram.cpp
     ${BITCHORD_NATIVE_DIR}/analyzer/vocal_spectrogram.cpp
+    ${BITCHORD_NATIVE_DIR}/analyzer/waveform_decimator.cpp
+    ${BITCHORD_NATIVE_DIR}/analyzer/vocal_mask_matcher.cpp
+    ${BITCHORD_NATIVE_DIR}/graphics/color_quantizer.cpp
     jni/analysis_jni.cpp
     jni/mel_jni.cpp
     jni/vocal_jni.cpp
+    jni/math_vector_jni.cpp
 )
 
 target_include_directories(bitchord_analysis PRIVATE
@@ -49,6 +53,24 @@ target_link_libraries(bitchord_analysis ${log-lib})
 # LOAD segments to 16KB. A superset of 4KB alignment, so 4KB devices are
 # unaffected. APK-side alignment of uncompressed .so files is handled by AGP.
 target_link_options(bitchord_analysis PRIVATE "-flto=thin" "-Wl,-z,max-page-size=16384")
+
+# Real-time Audio DSP: 10-band SVF EQ cascade, mid/side spatializer, and peak limiter
+# vectorized with ARM NEON SIMD intrinsics and zero-copy direct ByteBuffers.
+add_library(bitchord_dsp SHARED
+    ${BITCHORD_NATIVE_DIR}/dsp/neon_biquad_eq.cpp
+    ${BITCHORD_NATIVE_DIR}/dsp/neon_spatializer.cpp
+    ${BITCHORD_NATIVE_DIR}/dsp/neon_limiter.cpp
+    jni/dsp_chain_jni.cpp
+)
+target_include_directories(bitchord_dsp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${BITCHORD_NATIVE_DIR}
+    ${BITCHORD_NATIVE_DIR}/dsp
+)
+target_compile_options(bitchord_dsp PRIVATE
+    -O3 -flto=thin -march=armv8-a+simd -ffp-contract=fast -fno-math-errno -funroll-loops -fvisibility=hidden)
+target_link_libraries(bitchord_dsp ${log-lib})
+target_link_options(bitchord_dsp PRIVATE "-flto=thin" "-Wl,-z,max-page-size=16384")
 
 # Automix's loop mix: two Signalsmith Stretch decks looping whole bars on a
 # ramping tempo, rendered inside the outgoing player's audio sink. Signalsmith

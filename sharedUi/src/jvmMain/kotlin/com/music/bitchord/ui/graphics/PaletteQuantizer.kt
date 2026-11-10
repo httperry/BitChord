@@ -61,10 +61,14 @@ internal object PaletteQuantizer {
         val quantizedColors: List<Swatch>
 
         init {
-            for (i in pixels.indices) {
-                val quantized = quantizeFromRgb888(pixels[i])
-                pixels[i] = quantized
-                histogram[quantized]++
+            if (NativePalette.isAvailable) {
+                NativePalette.buildHistogram(pixels, pixels.size, histogram, null)
+            } else {
+                for (i in pixels.indices) {
+                    val quantized = quantizeFromRgb888(pixels[i])
+                    pixels[i] = quantized
+                    histogram[quantized]++
+                }
             }
             var distinct = 0
             for (color in histogram.indices) {
