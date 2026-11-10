@@ -85,7 +85,10 @@ object AcousticModelCatalog {
     }
 
     @Volatile
-    private var modelsList: List<AcousticModel> = BUILTIN_MODELS
+    private var customModelsList: List<AcousticModel>? = null
+
+    private val modelsList: List<AcousticModel>
+        get() = customModelsList ?: BUILTIN_MODELS
 
     /**
      * Returns all acoustic models currently loaded in the catalog.
@@ -195,7 +198,7 @@ object AcousticModelCatalog {
      */
     @Synchronized
     fun reloadFromJson(jsonString: String) {
-        modelsList = loadFromJson(jsonString)
+        customModelsList = loadFromJson(jsonString)
     }
 
     /**
@@ -203,7 +206,7 @@ object AcousticModelCatalog {
      */
     @Synchronized
     fun resetToDefault() {
-        modelsList = BUILTIN_MODELS
+        customModelsList = null
     }
 
     /**
@@ -212,7 +215,7 @@ object AcousticModelCatalog {
     fun loadFromInputStream(inputStream: java.io.InputStream): List<AcousticModel> {
         val jsonContent = inputStream.bufferedReader().use { it.readText() }
         val loaded = loadFromJson(jsonContent)
-        modelsList = loaded
+        customModelsList = loaded
         return loaded
     }
 
@@ -1697,6 +1700,7 @@ object AcousticModelCatalog {
                 )
             ),
         )
+    }
 }
 
 /**
