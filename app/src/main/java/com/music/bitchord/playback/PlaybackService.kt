@@ -3518,7 +3518,6 @@ class PlaybackService : MediaLibraryService() {
                 trackSelectionParameters = trackSelectionParameters.buildUpon()
                     .setAudioOffloadPreferences(offloadPreferences)
                     .build()
-                experimentalSetOffloadSchedulingEnabled(true)
             }
     }
 
