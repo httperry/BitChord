@@ -752,6 +752,8 @@ class TrackAnalyzer(
             mixInTime = entry?.mixInTime ?: 0.0,
             mixInCandidates = entry?.mixInCandidates.orEmpty(),
             headBeats = grid?.let { BeatSide(it.beats, it.downbeats, it.bpm, it.beatConfidence) },
+            vocalWindows = listOfNotNull(head.vocalWindow),
+            levelWindows = listOfNotNull(head.levelWindow),
         )
     }
 
@@ -1360,7 +1362,7 @@ class TrackAnalyzer(
         // process was dying. Same reasoning [derived] already had, one level further out.
         val inputs = regionInputs(stereo, seconds, deriveFeatures)
 
-        val vocalValues = if (features != null) vocalValues(stereo) else null
+        val vocalValues = vocalValues(stereo)
         return Region(
             grid = inputs.forModel?.let { tracker.track(it, offsetSeconds = actualStart) },
             vocalMask = if (features != null && vocalValues != null) vocalMask(vocalValues, features, actualStart) else null,
@@ -1368,7 +1370,7 @@ class TrackAnalyzer(
             features = inputs.derived,
             start = actualStart,
             vocalWindow = vocalValues?.let { CurveWindow(actualStart, VocalSpectrogram.frameRate, it) },
-            levelWindow = if (features != null) levelCurve(stereo, actualStart) else null,
+            levelWindow = levelCurve(stereo, actualStart),
         )
     }
 

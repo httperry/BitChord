@@ -3,6 +3,7 @@ package com.music.bitchord.data.canvas
 import android.content.Context
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
+import com.music.bitchord.playback.MmapDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
@@ -47,7 +48,7 @@ object CanvasCache {
         cache = SimpleCache(
             File(context.cacheDir, "canvas"),
             LeastRecentlyUsedCacheEvictor(CACHE_LIMIT_BYTES),
-            StandaloneDatabaseProvider(context),
+            MmapDatabaseProvider.get(context),
         )
     }
 

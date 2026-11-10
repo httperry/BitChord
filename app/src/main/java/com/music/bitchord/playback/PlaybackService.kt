@@ -6899,6 +6899,7 @@ class PlaybackService : MediaLibraryService() {
                 .setEnableFloatOutput(enableFloatOutput)
                 .setAudioOffloadSupportProvider(DefaultAudioOffloadSupportProvider(context))
                 .setAudioTrackBufferSizeProvider(bufferSizeProvider)
+                .setOffloadMode(DefaultAudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_NOT_REQUIRED)
                 // Speed handled by the AudioTrack itself on a float-capable
                 // route, rather than by Sonic. `DefaultAudioSink.configure`
                 // appends `audioProcessorChain.getAudioProcessors()` — which is

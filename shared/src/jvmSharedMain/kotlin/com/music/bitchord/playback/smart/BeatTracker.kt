@@ -94,6 +94,18 @@ class BeatTracker(
                     // allocating per run is the right trade.
                     setCPUArenaAllocator(false)
                     setMemoryPatternOptimization(false)
+                    runCatching { addConfigEntry("session.intra_op.allow_spinning", "0") }
+                    runCatching {
+                        val method = javaClass.getMethod("addXnnpack", Map::class.java)
+                        method.invoke(this, mapOf("intra_op_num_threads" to threads.toString()))
+                        AnalysisLog.warn("BeatTracker: Initialized with XNNPACK acceleration")
+                    }.getOrElse {
+                        runCatching {
+                            val method = javaClass.getMethod("addXnnpack")
+                            method.invoke(this)
+                            AnalysisLog.warn("BeatTracker: Initialized with XNNPACK acceleration")
+                        }
+                    }
                     // Hardware Acceleration via NNAPI (NPU / DSP) with FP16 relaxation
                     runCatching {
                         val flagsClass = Class.forName("ai.onnxruntime.providers.NNAPIFlags")

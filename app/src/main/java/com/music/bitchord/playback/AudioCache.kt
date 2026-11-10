@@ -11,6 +11,7 @@ import com.music.bitchord.data.TrackLog
 import com.music.bitchord.playback.smart.AutomixAnalysisSource
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.database.DatabaseProvider
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -238,7 +239,7 @@ object AudioCache {
         appContext = context.applicationContext
         evictor.maxBytes = AppSettings.audioCacheLimitBytes.value
         val dir = File(context.noBackupFilesDir, CACHE_DIR_NAME)
-        val databaseProvider = StandaloneDatabaseProvider(context)
+        val databaseProvider = MmapDatabaseProvider.get(context)
         migrateFromCacheDir(File(context.cacheDir, LEGACY_CACHE_DIR_NAME), dir, databaseProvider)
         cache = SimpleCache(dir, evictor, databaseProvider)
         // Builds before album/explicit/video-aware and credit-aware matching
@@ -287,7 +288,7 @@ object AudioCache {
      * the uid file inside the directory. Should the rename fail, the old copy
      * is deleted rather than left for the system to find.
      */
-    private fun migrateFromCacheDir(legacy: File, dir: File, databaseProvider: StandaloneDatabaseProvider) {
+    private fun migrateFromCacheDir(legacy: File, dir: File, databaseProvider: DatabaseProvider) {
         if (!legacy.isDirectory) return
         if (!dir.exists()) {
             dir.parentFile?.mkdirs()

@@ -179,11 +179,17 @@ object LoopMix {
         val outCount = Rejections()
         val inCount = Rejections()
 
-        // outgoing: the latest instrumental loop that ends before the song does
+        // outgoing: search around musical outro, avoiding 1-bar loops in the last 8 seconds
         val outEnd = outDuration - 0.5
         val outFirst = max(earliestOutSec, outDuration - OUT_SEARCH_SEC)
+        val targetOutSec = out.outroStartTime.takeIf { it > 0 && it in outFirst..outEnd - 12 }
+            ?: (outDuration - 35.0).coerceIn(outFirst, outEnd - 12)
         val outPick = firstClean(
-            candidates = { bars -> loopsBetween(out.tailBeats, outGrid, outFirst, outEnd, bars).asReversed() },
+            candidates = { bars ->
+                val raw = loopsBetween(out.tailBeats, outGrid, outFirst, outEnd, bars)
+                val filtered = if (bars <= 1) raw.filter { it.start <= outDuration - 8.0 } else raw
+                filtered.sortedBy { abs(it.start - targetOutSec) }
+            },
             analysis = out,
             sung = sungOut,
             beatSec = outGrid.beatSec,
@@ -350,7 +356,7 @@ object LoopMix {
                     }
                     if (touching.isEmpty()) return Clean(loop.start, loop.end, bars, 0.0, Check.LYRICS)
                     // Only the guessed tails of open lines reach it: the mask decides those.
-                    val mask = maskStats(analysis.vocalWindows, loop.start - beatSec, loop.end)
+                    val mask = maskStatsFromAnalysis(analysis, loop.start - beatSec, loop.end)
                     if (mask == null) {
                         count.unmasked++
                         continue
@@ -361,7 +367,7 @@ object LoopMix {
                     }
                     return Clean(loop.start, loop.end, bars, mask.share, Check.LYRICS_AND_MASK)
                 }
-                val mask = maskStats(analysis.vocalWindows, loop.start - beatSec, loop.end)
+                val mask = maskStatsFromAnalysis(analysis, loop.start - beatSec, loop.end)
                 if (mask == null) {
                     count.unmasked++
                     continue
@@ -440,6 +446,37 @@ object LoopMix {
         } else {
             null
         }
+    }
+
+    /**
+     * Computes mask stats using vocal windows when present, or falls back to
+     * analysis.vocalActivityMask and energyCurve for provisional/cached analyses.
+     */
+    fun maskStatsFromAnalysis(analysis: TrackAnalysis, from: Double, to: Double): MaskStats? {
+        val windowResult = maskStats(analysis.vocalWindows, from, to)
+        if (windowResult != null) return windowResult
+        val mask = analysis.vocalActivityMask
+        val curve = analysis.energyCurve
+        if (mask.isEmpty() || mask.size != curve.size || to <= from) return null
+        var sung = 0
+        var total = 0
+        var run = 0
+        var longest = 0
+        for (i in mask.indices) {
+            val t = curve[i].time
+            if (t < from || t > to) continue
+            total++
+            if (mask[i] > VOCAL_ACTIVE_THRESHOLD) {
+                sung++
+                run++
+                longest = max(longest, run)
+            } else {
+                run = 0
+            }
+        }
+        if (total == 0) return null
+        val sampleDuration = (curve.last().time - curve.first().time) / (curve.size - 1).coerceAtLeast(1)
+        return MaskStats(sung.toDouble() / total, longest * sampleDuration)
     }
 
     /**

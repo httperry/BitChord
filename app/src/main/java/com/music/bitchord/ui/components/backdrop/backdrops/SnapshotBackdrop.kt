@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -48,6 +50,7 @@ import kotlin.math.roundToInt
 class SnapshotBackdrop internal constructor() : Backdrop {
 
     internal var image: ImageBitmap? by mutableStateOf(null)
+    internal var graphicsLayer: GraphicsLayer? by mutableStateOf(null)
     internal var sourceCoordinates: LayoutCoordinates? = null
     /** Read while drawing, so bumping it is what asks for a frame to record. */
     internal var requests by mutableIntStateOf(0)
@@ -63,11 +66,12 @@ class SnapshotBackdrop internal constructor() : Backdrop {
     }
 
     /** Whether a still is in — for a panel that would rather not open on none. */
-    val hasStill: Boolean get() = image != null
+    val hasStill: Boolean get() = graphicsLayer != null || image != null
 
     /** Lets the still go; until the next [capture] this draws nothing. */
     fun release() {
         image = null
+        graphicsLayer = null
         generation++
     }
 
@@ -78,7 +82,9 @@ class SnapshotBackdrop internal constructor() : Backdrop {
         coordinates: LayoutCoordinates?,
         layerBlock: (GraphicsLayerScope.() -> Unit)?,
     ) {
-        val image = image ?: return
+        val layer = graphicsLayer
+        val image = image
+        if (layer == null && image == null) return
         val coordinates = coordinates ?: return
         val source = sourceCoordinates?.takeIf { it.isAttached } ?: return
         withTransform({
@@ -101,7 +107,11 @@ class SnapshotBackdrop internal constructor() : Backdrop {
             if (panelScale != null && panelScale != 1f) scale(1f / panelScale, pivot = Offset.Zero)
             translate(-offset.x, -offset.y)
         }) {
-            scale(1f / SNAPSHOT_SCALE, pivot = Offset.Zero) { drawImage(image) }
+            if (layer != null) {
+                scale(1f / SNAPSHOT_SCALE, pivot = Offset.Zero) { drawLayer(layer) }
+            } else if (image != null) {
+                scale(1f / SNAPSHOT_SCALE, pivot = Offset.Zero) { drawImage(image) }
+            }
         }
     }
 
@@ -143,14 +153,12 @@ fun Modifier.snapshotBackdropSource(backdrop: SnapshotBackdrop, floor: Color = C
                 scale(SNAPSHOT_SCALE, pivot = Offset.Zero) { this@drawWithContent.drawContent() }
             }
             val generation = backdrop.generation
-            scope.launch {
-                try {
-                    // Only if nothing asked again, or let go, in the meantime.
-                    val still = layer.toImageBitmap()
-                    if (backdrop.handled == request && backdrop.generation == generation) backdrop.image = still
-                } finally {
-                    graphicsContext.releaseGraphicsLayer(layer)
-                }
+            if (backdrop.handled == request && backdrop.generation == generation) {
+                val old = backdrop.graphicsLayer
+                backdrop.graphicsLayer = layer
+                if (old != null) graphicsContext.releaseGraphicsLayer(old)
+            } else {
+                graphicsContext.releaseGraphicsLayer(layer)
             }
         }
 }

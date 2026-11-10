@@ -122,6 +122,12 @@ private const val HEURISTIC_VOCAL_THRESHOLD = 0.6
 const val MAX_DISCARDED_MUSIC_SECONDS = 12.0
 
 /**
+ * How much music a transition may bridge across an identified musical outro
+ * or energy cliff. Musical outros naturally extend 25-45s before track end.
+ */
+const val MAX_OUTRO_DISCARDED_MUSIC_SECONDS = 48.0
+
+/**
  * Fraction of a track's own loud-end reference below which a sample counts as
  * silence rather than music, so a genuine gap costs nothing against the budget.
  */
@@ -396,6 +402,16 @@ private fun mixOutCandidatesOf(analysis: TrackAnalysis, contentEnd: Double): Lis
             candidates += MixCandidate(outroStart, 0.9, "outro_start")
         }
     }
+    // Fallback for provisional analysis or unsegmented tracks:
+    // 16 to 32 bars before content end (approx 30-40s) on a downbeat
+    if (candidates.none { it.type == "outro_start" || it.type == "energy_cliff" }) {
+        val bpm = analysis.bpm.takeIf { it.isFinite() && it > 0 } ?: 120.0
+        val beatSec = 60.0 / bpm
+        val estimatedOutro = (contentEnd - 32 * beatSec).coerceAtLeast(contentEnd * 0.70)
+        if (estimatedOutro > 0 && estimatedOutro < contentEnd - 8.0) {
+            candidates += MixCandidate(estimatedOutro, 0.88, "outro_start")
+        }
+    }
     // Vocals describe how the overlap should be shaped, not where the outgoing song stops. The
     // incoming instrumental runway can begin under an outgoing vocal; promoting vocal boundaries
     // to exit anchors waits for the easy gap (or skips the vocal tail entirely) instead of asking
@@ -445,7 +461,13 @@ fun rankMixOutCandidates(
                 measured = measured != null,
             )
         }
-        .filter { it.discardedMusicSeconds <= MAX_DISCARDED_MUSIC_SECONDS }
+        .filter { candidate ->
+            val maxAllowed = when (candidate.type) {
+                "outro_start", "energy_cliff" -> max(MAX_OUTRO_DISCARDED_MUSIC_SECONDS, min(end * 0.35, 60.0))
+                else -> MAX_DISCARDED_MUSIC_SECONDS
+            }
+            candidate.discardedMusicSeconds <= maxAllowed
+        }
         .sortedWith(compareByDescending<RankedMixCandidate> { it.rankScore }.thenByDescending { it.time })
 }
 

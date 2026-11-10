@@ -2478,8 +2478,10 @@ class CrossfadeController(
         askLyrics(next, nextDurationMs)
         val outLyrics = lyricSpans[current.mediaId]
         val inLyrics = lyricSpans[next.mediaId]
-        val needsLyricsOut = currentAnalysis.vocalWindows.isEmpty() && outLyrics == null
-        val needsLyricsIn = nextAnalysis.vocalWindows.isEmpty() && inLyrics == null
+        val hasVocalDataOut = currentAnalysis.vocalWindows.isNotEmpty() || currentAnalysis.vocalActivityMask.isNotEmpty()
+        val hasVocalDataIn = nextAnalysis.vocalWindows.isNotEmpty() || nextAnalysis.vocalActivityMask.isNotEmpty()
+        val needsLyricsOut = !hasVocalDataOut && outLyrics == null
+        val needsLyricsIn = !hasVocalDataIn && inLyrics == null
         if (needsLyricsOut || needsLyricsIn) {
             noteLoopVerdict(pair, null, "waiting on lyrics")
             return null
