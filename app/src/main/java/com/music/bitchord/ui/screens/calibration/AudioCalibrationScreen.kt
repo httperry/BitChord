@@ -616,7 +616,7 @@ fun AudioCalibrationScreen(
                     isPhoneSpeaker -> stringResource(R.string.disabled_on_phone_speaker)
                     selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
                     modelName != null -> "${modelBrand ?: ""} $modelName".trim()
-                    outputStatus.activeDeviceName != null -> outputStatus.activeDeviceName!!
+                    outputStatus.deviceName.isNotBlank() -> outputStatus.deviceName
                     else -> "No Device Selected"
                 }
 
