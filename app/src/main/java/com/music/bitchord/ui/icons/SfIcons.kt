@@ -132,9 +132,11 @@ object SfIcons {
     val Appearance: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPaintbrushPointed) }
     val Apps: ImageVector by lazy { bold(SfSymbols.Monochrome.SFSquareGrid2x2) }
     val ArrowBack: ImageVector by lazy { bold(SfSymbols.Monochrome.SFChevronBackward) }
+    val ChevronLeft: ImageVector by lazy { bold(SfSymbols.Monochrome.SFChevronBackward) }
     val AutoAwesome: ImageVector by lazy { bold(SfSymbols.Monochrome.SFSparkles) }
     val BarChart: ImageVector by lazy { bold(SfSymbols.Monochrome.SFChartBar) }
     val Bluetooth: ImageVector by lazy { bold(SfSymbols.Monochrome.SFHeadphones) }
+    val Headphones: ImageVector by lazy { bold(SfSymbols.Monochrome.SFHeadphones) }
     val BlurOff: ImageVector by lazy { bold(SfSymbols.Monochrome.SFDrop) }
     val BlurOn: ImageVector by lazy { bold(SfSymbols.Monochrome.SFDropHalffull) }
     val Brightness: ImageVector by lazy { bold(SfSymbols.Monochrome.SFSunMax) }
