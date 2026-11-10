@@ -7447,7 +7447,7 @@ class PlaybackService : MediaLibraryService() {
             ) { }.collect { applyEqualizer() }
         }
         scope.launch {
-            combine<Any, Unit>(
+            combine<Any?, Unit>(
                 AppSettings.audioCalibrationEnabled,
                 AppSettings.calibrationModelId,
                 AppSettings.calibrationTarget,
