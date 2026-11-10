@@ -2478,11 +2478,15 @@ class CrossfadeController(
         askLyrics(next, nextDurationMs)
         val outLyrics = lyricSpans[current.mediaId]
         val inLyrics = lyricSpans[next.mediaId]
-        if (outLyrics == null || inLyrics == null) {
+        val needsLyricsOut = currentAnalysis.vocalWindows.isEmpty() && outLyrics == null
+        val needsLyricsIn = nextAnalysis.vocalWindows.isEmpty() && inLyrics == null
+        if (needsLyricsOut || needsLyricsIn) {
             noteLoopVerdict(pair, null, "waiting on lyrics")
             return null
         }
-        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}"
+        val hasLyricsOut = outLyrics?.spans != null
+        val hasLyricsIn = inLyrics?.spans != null
+        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}|$hasLyricsOut|$hasLyricsIn"
         val cached = loopPlanned
         // Kept while its loop is still far enough ahead to set up; a seek past
         // that plans again from the new playhead.
@@ -2496,13 +2500,13 @@ class CrossfadeController(
             inn = nextAnalysis,
             inDuration = nextDurationMs / 1000.0,
             earliestOutSec = player.currentPosition / 1000.0 + LOOP_SETUP_SECONDS,
-            sungOut = outLyrics.spans,
-            sungIn = inLyrics.spans,
+            sungOut = outLyrics?.spans,
+            sungIn = inLyrics?.spans,
             why = why,
         )
         loopPlanKey = key
         loopPlanned = plan
-        val lyricsNote = "lyrics ${if (outLyrics.spans != null) "out" else "-"}/${if (inLyrics.spans != null) "in" else "-"}"
+        val lyricsNote = "lyrics ${if (outLyrics?.spans != null) "out" else "-"}/${if (inLyrics?.spans != null) "in" else "-"}"
         noteLoopVerdict(pair, plan, if (plan == null) "$why; $lyricsNote" else null)
         return plan
     }
