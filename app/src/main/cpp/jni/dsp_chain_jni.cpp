@@ -96,6 +96,31 @@ Java_com_music_bitchord_playback_audio_NativeDspChain_nativeSetEqualizer(
 }
 
 JNIEXPORT void JNICALL
+Java_com_music_bitchord_playback_audio_NativeDspChain_nativeSetDualEqualizer(
+    JNIEnv* env, jclass, jlong handle, jboolean enabled,
+    jfloatArray gainsDbL, jfloatArray qsL,
+    jfloatArray gainsDbR, jfloatArray qsR,
+    jfloat preampDb, jfloat balance) {
+  auto* ctx = FromHandle(handle);
+  if (ctx == nullptr) return;
+
+  if (!enabled || gainsDbL == nullptr || qsL == nullptr || gainsDbR == nullptr || qsR == nullptr) {
+    ctx->equalizer.SetDualTuning(false, nullptr, nullptr, nullptr, nullptr, 0.0f, 0.0f);
+    return;
+  }
+
+  float g_buf_l[10];
+  float q_buf_l[10];
+  float g_buf_r[10];
+  float q_buf_r[10];
+  env->GetFloatArrayRegion(gainsDbL, 0, 10, g_buf_l);
+  env->GetFloatArrayRegion(qsL, 0, 10, q_buf_l);
+  env->GetFloatArrayRegion(gainsDbR, 0, 10, g_buf_r);
+  env->GetFloatArrayRegion(qsR, 0, 10, q_buf_r);
+  ctx->equalizer.SetDualTuning(true, g_buf_l, q_buf_l, g_buf_r, q_buf_r, preampDb, balance);
+}
+
+JNIEXPORT void JNICALL
 Java_com_music_bitchord_playback_audio_NativeDspChain_nativeSetBassSwapShelf(
     JNIEnv*, jclass, jlong handle, jboolean enabled, jfloat attenuationDb, jfloat cutoffHz) {
   auto* ctx = FromHandle(handle);

@@ -7015,6 +7015,8 @@ class PlaybackService : MediaLibraryService() {
 
         val activeDevice = resolveActiveOutputDevice()
         val routeKind = resolveActiveRouteKind(activeDevice)
+        equalizerProcessorA.setOutputRoute(routeKind)
+        equalizerProcessorB.setOutputRoute(routeKind)
 
         val format = currentAudioInputFormat
         val measured by lazy(LazyThreadSafetyMode.NONE) { format?.measure() }
@@ -7444,6 +7446,18 @@ class PlaybackService : MediaLibraryService() {
                 AppSettings.equalizerBands,
             ) { }.collect { applyEqualizer() }
         }
+        scope.launch {
+            combine<Any, Unit>(
+                AppSettings.audioCalibrationEnabled,
+                AppSettings.calibrationModelId,
+                AppSettings.calibrationTarget,
+                AppSettings.personalizationLeftGains,
+                AppSettings.personalizationRightGains,
+                AppSettings.personalizationCompleted,
+                AppSettings.previewUncalibrated,
+                AudioOutputStatus.current,
+            ) { }.collect { applyCalibration() }
+        }
     }
 
     /**
@@ -7472,6 +7486,87 @@ class PlaybackService : MediaLibraryService() {
         val balance = AppSettings.equalizerBalance.value
         equalizerProcessorA.setTuning(enabled, curve, balance)
         equalizerProcessorB.setTuning(enabled, curve, balance)
+    }
+
+    /**
+     * Combines Hardware Model biquads + Personalization Left/Right gains and
+     * engages dual-channel calibrated DSP across both player sinks.
+     *
+     * Enforces the Speaker Fallback Rule: if output route is PHONE speaker or live
+     * A/B preview is engaged, calibration is immediately bypassed without resetting state.
+     */
+    private fun applyCalibration() {
+        val calibrationEnabled = AppSettings.audioCalibrationEnabled.value
+        val previewUncalibrated = AppSettings.previewUncalibrated.value
+        val snapshot = AudioOutputStatus.current.value
+        val routeKind = snapshot.routeKind
+        val activeDeviceId = snapshot.activeDeviceId
+
+        // Device profile mapping auto-recall:
+        if (activeDeviceId != null) {
+            val deviceKey = activeDeviceId.toString()
+            val mappedModelId = AppSettings.calibrationDeviceProfiles.value[deviceKey]
+            if (mappedModelId != null && mappedModelId != AppSettings.calibrationModelId.value) {
+                val model = com.music.bitchord.playback.calibration.AcousticModelCatalog.getModelById(mappedModelId)
+                if (model != null) {
+                    AppSettings.setCalibrationModel(mappedModelId, model.name, model.brand)
+                }
+            }
+        }
+
+        // Speaker Fallback Rule: if routed to PHONE speaker, bypass DSP!
+        // Live A/B Preview: if previewUncalibrated is true, temporarily bypass calibration!
+        val shouldBypass = !calibrationEnabled || previewUncalibrated || routeKind == AudioRouting.Kind.PHONE
+
+        equalizerProcessorA.setOutputRoute(routeKind)
+        equalizerProcessorB.setOutputRoute(routeKind)
+
+        if (shouldBypass) {
+            equalizerProcessorA.setDualTuning(
+                enabled = false,
+                leftCurve = EqCurve.FLAT,
+                rightCurve = EqCurve.FLAT,
+                isPersonalization = true,
+            )
+            equalizerProcessorB.setDualTuning(
+                enabled = false,
+                leftCurve = EqCurve.FLAT,
+                rightCurve = EqCurve.FLAT,
+                isPersonalization = true,
+            )
+            return
+        }
+
+        // Combine Hardware Model biquads + Personalization Left/Right gains
+        val modelId = AppSettings.calibrationModelId.value
+        val model = modelId?.let { com.music.bitchord.playback.calibration.AcousticModelCatalog.getModelById(it) }
+        val target = com.music.bitchord.playback.calibration.CalibrationCombiner.parseTarget(AppSettings.calibrationTarget.value)
+        val leftGains = AppSettings.personalizationLeftGains.value
+        val rightGains = AppSettings.personalizationRightGains.value
+        val personalizationCompleted = AppSettings.personalizationCompleted.value
+
+        val (leftCurve, rightCurve) = com.music.bitchord.playback.calibration.CalibrationCombiner.combineModelAndPersonalization(
+            model = model,
+            target = target,
+            leftGains = leftGains,
+            rightGains = rightGains,
+            personalizationCompleted = personalizationCompleted,
+        )
+
+        equalizerProcessorA.setDualTuning(
+            enabled = true,
+            leftCurve = leftCurve,
+            rightCurve = rightCurve,
+            balance = AppSettings.equalizerBalance.value,
+            isPersonalization = true,
+        )
+        equalizerProcessorB.setDualTuning(
+            enabled = true,
+            leftCurve = leftCurve,
+            rightCurve = rightCurve,
+            balance = AppSettings.equalizerBalance.value,
+            isPersonalization = true,
+        )
     }
 
     /**

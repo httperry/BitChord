@@ -408,6 +408,39 @@ object AppSettings {
      */
     val equalizerPreset = MutableStateFlow(EqualizerPreset.FLAT)
 
+    /** Audio Calibration & Hearing Personalization Studio settings */
+    const val CALIBRATION_TARGET_HARMAN_IN_EAR = "Harman In-Ear"
+    const val CALIBRATION_TARGET_IEF_NEUTRAL = "IEF Neutral"
+    val DEFAULT_PERSONALIZATION_GAINS = List(7) { 0f }
+
+    val audioCalibrationEnabled = MutableStateFlow(false)
+    val calibrationModelId = MutableStateFlow<String?>(null)
+    val calibrationModelName = MutableStateFlow<String?>(null)
+    val calibrationModelBrand = MutableStateFlow<String?>(null)
+    val calibrationTarget = MutableStateFlow(CALIBRATION_TARGET_HARMAN_IN_EAR)
+    val personalizationLeftGains = MutableStateFlow<List<Float>>(DEFAULT_PERSONALIZATION_GAINS)
+    val personalizationRightGains = MutableStateFlow<List<Float>>(DEFAULT_PERSONALIZATION_GAINS)
+    val personalizationCompleted = MutableStateFlow(false)
+    val personalizationModelIdSnapshot = MutableStateFlow<String?>(null)
+    val calibrationDeviceProfiles = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * Live A/B preview toggle: when true, temporarily bypasses calibration
+     * in the audio pipeline without resetting user state.
+     */
+    val previewUncalibrated = MutableStateFlow(false)
+
+    /**
+     * Whether the hearing personalization test was completed on a model different from
+     * the currently selected calibration model, indicating a re-test is recommended.
+     */
+    fun isPersonalizationRetestNeeded(): Boolean {
+        val completed = personalizationCompleted.value
+        val currentModel = calibrationModelId.value
+        val snapshot = personalizationModelIdSnapshot.value
+        return completed && currentModel != null && snapshot != null && currentModel != snapshot
+    }
+
     val playbackSpeed = MutableStateFlow(1.0f)
     val themeMode = MutableStateFlow(ThemeMode.DARK)
     val appFont = MutableStateFlow(AppFont.DEFAULT)
@@ -1007,6 +1040,16 @@ object AppSettings {
         equalizerBalance.value = prefs.getFloat(KEY_EQ_BALANCE, 0f).coerceIn(-1f, 1f)
         equalizerBands.value = readEqualizerBands()
         equalizerPreset.value = EqualizerPreset.matching(equalizerBands.value)
+        audioCalibrationEnabled.value = prefs.getBoolean(KEY_AUDIO_CALIBRATION_ENABLED, false)
+        calibrationModelId.value = prefs.getString(KEY_CALIBRATION_MODEL_ID, null)
+        calibrationModelName.value = prefs.getString(KEY_CALIBRATION_MODEL_NAME, null)
+        calibrationModelBrand.value = prefs.getString(KEY_CALIBRATION_MODEL_BRAND, null)
+        calibrationTarget.value = prefs.getString(KEY_CALIBRATION_TARGET, CALIBRATION_TARGET_HARMAN_IN_EAR) ?: CALIBRATION_TARGET_HARMAN_IN_EAR
+        personalizationLeftGains.value = readCalibrationGains(KEY_PERSONALIZATION_LEFT_GAINS)
+        personalizationRightGains.value = readCalibrationGains(KEY_PERSONALIZATION_RIGHT_GAINS)
+        personalizationCompleted.value = prefs.getBoolean(KEY_PERSONALIZATION_COMPLETED, false)
+        personalizationModelIdSnapshot.value = prefs.getString(KEY_PERSONALIZATION_MODEL_ID_SNAPSHOT, null)
+        calibrationDeviceProfiles.value = readCalibrationDeviceProfiles()
         playbackSpeed.value = prefs.getFloat(KEY_SPEED, 1.0f)
         themeMode.value = runCatching {
             ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "DARK")
@@ -1384,6 +1427,119 @@ object AppSettings {
         return List(EqLayout.MANUAL_COUNT) {
             stored.getOrElse(it) { 0f }.coerceIn(-EqLayout.MANUAL_RANGE_DB, EqLayout.MANUAL_RANGE_DB)
         }
+    }
+
+    fun setAudioCalibrationEnabled(value: Boolean) {
+        audioCalibrationEnabled.value = value
+        prefs.edit().putBoolean(KEY_AUDIO_CALIBRATION_ENABLED, value).apply()
+    }
+
+    fun setCalibrationModel(id: String?, name: String?, brand: String?) {
+        calibrationModelId.value = id
+        calibrationModelName.value = name
+        calibrationModelBrand.value = brand
+        prefs.edit()
+            .putString(KEY_CALIBRATION_MODEL_ID, id)
+            .putString(KEY_CALIBRATION_MODEL_NAME, name)
+            .putString(KEY_CALIBRATION_MODEL_BRAND, brand)
+            .apply()
+    }
+
+    fun setCalibrationTarget(target: String) {
+        calibrationTarget.value = target
+        prefs.edit().putString(KEY_CALIBRATION_TARGET, target).apply()
+    }
+
+    fun setPersonalizationLeftGains(gains: List<Float>) {
+        val clamped = List(7) { gains.getOrElse(it) { 0f }.coerceIn(-15f, 15f) }
+        personalizationLeftGains.value = clamped
+        prefs.edit().putString(KEY_PERSONALIZATION_LEFT_GAINS, clamped.joinToString(",")).apply()
+    }
+
+    fun setPersonalizationRightGains(gains: List<Float>) {
+        val clamped = List(7) { gains.getOrElse(it) { 0f }.coerceIn(-15f, 15f) }
+        personalizationRightGains.value = clamped
+        prefs.edit().putString(KEY_PERSONALIZATION_RIGHT_GAINS, clamped.joinToString(",")).apply()
+    }
+
+    fun setPersonalizationGains(
+        left: List<Float>,
+        right: List<Float>,
+        completed: Boolean = true,
+        modelIdSnapshot: String? = calibrationModelId.value,
+    ) {
+        val clampedLeft = List(7) { left.getOrElse(it) { 0f }.coerceIn(-15f, 15f) }
+        val clampedRight = List(7) { right.getOrElse(it) { 0f }.coerceIn(-15f, 15f) }
+        personalizationLeftGains.value = clampedLeft
+        personalizationRightGains.value = clampedRight
+        personalizationCompleted.value = completed
+        personalizationModelIdSnapshot.value = modelIdSnapshot
+        prefs.edit()
+            .putString(KEY_PERSONALIZATION_LEFT_GAINS, clampedLeft.joinToString(","))
+            .putString(KEY_PERSONALIZATION_RIGHT_GAINS, clampedRight.joinToString(","))
+            .putBoolean(KEY_PERSONALIZATION_COMPLETED, completed)
+            .putString(KEY_PERSONALIZATION_MODEL_ID_SNAPSHOT, modelIdSnapshot)
+            .apply()
+    }
+
+    fun setPersonalizationCompleted(completed: Boolean) {
+        personalizationCompleted.value = completed
+        prefs.edit().putBoolean(KEY_PERSONALIZATION_COMPLETED, completed).apply()
+    }
+
+    fun setPersonalizationModelIdSnapshot(modelId: String?) {
+        personalizationModelIdSnapshot.value = modelId
+        prefs.edit().putString(KEY_PERSONALIZATION_MODEL_ID_SNAPSHOT, modelId).apply()
+    }
+
+    fun setCalibrationDeviceProfile(deviceId: String, modelId: String) {
+        val updated = calibrationDeviceProfiles.value.toMutableMap()
+        updated[deviceId] = modelId
+        calibrationDeviceProfiles.value = updated
+        writeCalibrationDeviceProfiles(updated)
+    }
+
+    fun removeCalibrationDeviceProfile(deviceId: String) {
+        val updated = calibrationDeviceProfiles.value.toMutableMap()
+        updated.remove(deviceId)
+        calibrationDeviceProfiles.value = updated
+        writeCalibrationDeviceProfiles(updated)
+    }
+
+    fun setPreviewUncalibrated(value: Boolean) {
+        previewUncalibrated.value = value
+    }
+
+    private fun readCalibrationGains(key: String): List<Float> {
+        val stored = prefs.getString(key, null)
+            ?.split(",")
+            ?.mapNotNull { it.trim().toFloatOrNull() }
+            .orEmpty()
+        return List(7) {
+            stored.getOrElse(it) { 0f }.coerceIn(-15f, 15f)
+        }
+    }
+
+    private fun readCalibrationDeviceProfiles(): Map<String, String> {
+        val raw = prefs.getString(KEY_CALIBRATION_DEVICE_PROFILES, null) ?: return emptyMap()
+        return try {
+            val json = org.json.JSONObject(raw)
+            val result = mutableMapOf<String, String>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                result[key] = json.getString(key)
+            }
+            result
+        } catch (_: Throwable) {
+            emptyMap()
+        }
+    }
+
+    private fun writeCalibrationDeviceProfiles(profiles: Map<String, String>) {
+        val json = org.json.JSONObject()
+        profiles.forEach { (k, v) -> json.put(k, v) }
+        prefs.edit().putString(KEY_CALIBRATION_DEVICE_PROFILES, json.toString()).apply()
     }
 
     fun setPlaybackSpeed(value: Float) {
@@ -2276,6 +2432,16 @@ object AppSettings {
     private const val KEY_EQ_FOCUSED = "equalizer_focused"
     private const val KEY_EQ_BALANCE = "equalizer_balance"
     private const val KEY_EQ_BANDS = "equalizer_bands"
+    private const val KEY_AUDIO_CALIBRATION_ENABLED = "audio_calibration_enabled"
+    private const val KEY_CALIBRATION_MODEL_ID = "calibration_model_id"
+    private const val KEY_CALIBRATION_MODEL_NAME = "calibration_model_name"
+    private const val KEY_CALIBRATION_MODEL_BRAND = "calibration_model_brand"
+    private const val KEY_CALIBRATION_TARGET = "calibration_target"
+    private const val KEY_PERSONALIZATION_LEFT_GAINS = "personalization_left_gains"
+    private const val KEY_PERSONALIZATION_RIGHT_GAINS = "personalization_right_gains"
+    private const val KEY_PERSONALIZATION_COMPLETED = "personalization_completed"
+    private const val KEY_PERSONALIZATION_MODEL_ID_SNAPSHOT = "personalization_model_id_snapshot"
+    private const val KEY_CALIBRATION_DEVICE_PROFILES = "calibration_device_profiles"
     private const val KEY_SPEED = "playback_speed"
     private const val KEY_THEME = "theme_mode"
     private const val KEY_APP_FONT = "app_font"

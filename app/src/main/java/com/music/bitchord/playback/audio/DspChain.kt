@@ -38,6 +38,12 @@ class DspChain(
     val loudness: LoudnessProcessor = LoudnessProcessor(),
 ) : FloatAudioProcessor {
 
+    var activeRouteKind: com.music.bitchord.playback.AudioRouting.Kind = com.music.bitchord.playback.AudioRouting.Kind.PHONE
+        set(value) {
+            field = value
+            equalizer.setOutputRoute(value)
+        }
+
     private var currentSampleRate: Int = 0
     private var processCounter: Long = 0L
 

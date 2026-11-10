@@ -78,10 +78,22 @@ object AudioRouting {
         val isActive: Boolean = false,
         /** For a [Kind.BLUETOOTH] device, what it is you listen with — see [formOf]. */
         val form: Form = Form.UNKNOWN,
+        val address: String? = null,
     )
 
     /** What shape of thing a Bluetooth sink is, as far as can be told. */
     enum class Form { UNKNOWN, BUDS, HEADPHONES, SPEAKER, CAR }
+
+    /**
+     * Speaker Fallback Rule:
+     * Only headphones/IEMs (WIRED, USB, BLUETOOTH) are eligible for audio calibration
+     * and per-ear hearing personalization. The built-in device speaker (PHONE) and external
+     * multi-channel outputs (HDMI, OTHER) must IMMEDIATELY bypass calibration.
+     */
+    fun isPersonalizationSupported(kind: Kind): Boolean = when (kind) {
+        Kind.WIRED, Kind.USB, Kind.BLUETOOTH -> true
+        Kind.PHONE, Kind.HDMI, Kind.OTHER -> false
+    }
 
     private val _selectedId = MutableStateFlow<Int?>(null)
 
@@ -116,6 +128,11 @@ object AudioRouting {
             .mapNotNull { info -> kindOf(info.type)?.let { info to it } }
             .map { (info, kind) ->
                 val name = nameOf(info, kind)
+                val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    info.address?.takeIf { it.isNotBlank() }
+                } else {
+                    null
+                }
                 Device(
                     id = info.id,
                     type = info.type,
@@ -123,6 +140,7 @@ object AudioRouting {
                     kind = kind,
                     isActive = info.id == active?.id,
                     form = if (kind == Kind.BLUETOOTH) formOf(info, name) else Form.UNKNOWN,
+                    address = address,
                 )
             }
             // One row per physical device. Several entries under one name is

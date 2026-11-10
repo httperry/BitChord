@@ -59,29 +59,58 @@ import kotlin.math.tan
 class EqualizerProcessor : BaseAudioProcessor() {
 
     /** What the processor is aiming at. Swapped whole, never mutated in place. */
-    private class Tuning(val curve: EqCurve, val balance: Float) {
+    private class Tuning(
+        val leftCurve: EqCurve,
+        val rightCurve: EqCurve,
+        val balance: Float,
+        val isPersonalization: Boolean = false,
+    ) {
+        val isDual: Boolean get() = leftCurve !== rightCurve
         companion object {
-            val OFF = Tuning(EqCurve.FLAT, 0f)
+            val OFF = Tuning(EqCurve.FLAT, EqCurve.FLAT, 0f, false)
+            fun linked(curve: EqCurve, balance: Float, isPersonalization: Boolean = false) =
+                Tuning(curve, curve, balance, isPersonalization)
         }
     }
 
     @Volatile
     private var target: Tuning = Tuning.OFF
 
+    @Volatile
+    private var outputRoute: AudioRouting.Kind = AudioRouting.Kind.PHONE
+
+    /**
+     * Updates active output route.
+     * Enforces Speaker Fallback Rule: if [route] is PHONE, calibration personalization is bypassed.
+     */
+    fun setOutputRoute(route: AudioRouting.Kind) {
+        outputRoute = route
+    }
+
+    val currentRoute: AudioRouting.Kind get() = outputRoute
+
+    private fun effectiveTuning(tuning: Tuning): Tuning {
+        return if (tuning.isPersonalization && outputRoute == AudioRouting.Kind.PHONE) {
+            Tuning.OFF
+        } else {
+            tuning
+        }
+    }
+
     private var channelCount = 0
     private var sampleRate = 0
 
-    private val currentGainDb = FloatArray(EqLayout.SLOTS)
-    private val currentQ = FloatArray(EqLayout.SLOTS) { 0.707f }
+    private val currentGainDb = Array(2) { FloatArray(EqLayout.SLOTS) }
+    private val currentQ = Array(2) { FloatArray(EqLayout.SLOTS) { 0.707f } }
     private var currentPreampDb = 0f
     private var currentBalance = 0f
 
-    private val coeffA1 = FloatArray(EqLayout.SLOTS)
-    private val coeffA2 = FloatArray(EqLayout.SLOTS)
-    private val coeffA3 = FloatArray(EqLayout.SLOTS)
-    private val mixInput = FloatArray(EqLayout.SLOTS)
-    private val mixBand = FloatArray(EqLayout.SLOTS)
-    private val mixLow = FloatArray(EqLayout.SLOTS)
+    private val coeffA1 = Array(2) { FloatArray(EqLayout.SLOTS) }
+    private val coeffA2 = Array(2) { FloatArray(EqLayout.SLOTS) }
+    private val coeffA3 = Array(2) { FloatArray(EqLayout.SLOTS) }
+    private val mixInput = Array(2) { FloatArray(EqLayout.SLOTS) { 1f } }
+    private val mixBand = Array(2) { FloatArray(EqLayout.SLOTS) }
+    private val mixLow = Array(2) { FloatArray(EqLayout.SLOTS) }
     private val precomputedBaseTan = FloatArray(EqLayout.SLOTS)
 
     /** Which sections are worth running this sub-block, and how many. */
@@ -140,11 +169,33 @@ class EqualizerProcessor : BaseAudioProcessor() {
      * playing track.
      */
     fun setTuning(enabled: Boolean, curve: EqCurve, balance: Float) {
-        target = if (enabled) Tuning(curve, balance.coerceIn(-1f, 1f)) else Tuning.OFF
+        target = if (enabled) Tuning.linked(curve, balance.coerceIn(-1f, 1f), false) else Tuning.OFF
+    }
+
+    /**
+     * Independent dual-channel tuning for per-ear calibration.
+     * When [isPersonalization] is true, the Speaker Fallback Rule is enforced:
+     * if routed to built-in phone speaker, personalization is immediately bypassed.
+     */
+    fun setDualTuning(
+        enabled: Boolean,
+        leftCurve: EqCurve,
+        rightCurve: EqCurve,
+        balance: Float = 0f,
+        isPersonalization: Boolean = true,
+    ) {
+        target = if (enabled) {
+            Tuning(leftCurve, rightCurve, balance.coerceIn(-1f, 1f), isPersonalization)
+        } else {
+            Tuning.OFF
+        }
     }
 
     val isEnabled: Boolean
-        get() = target !== Tuning.OFF
+        get() {
+            val t = effectiveTuning(target)
+            return t !== Tuning.OFF
+        }
 
     /**
      * Engages or disengages low-shelf crossover attenuation (<150Hz) for the downbeat bass swap.
@@ -207,7 +258,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val frameCount = block.frameCount
         if (frameCount == 0 || channelCount < 1 || sampleRate <= 0) return
 
-        val tuning = target
+        val tuning = effectiveTuning(target)
         val bassSwapActiveOrShaping = bassSwapShelfEnabled || abs(currentBassSwapGainDb) >= SETTLED_DB || abs(targetBassSwapAttenuationDb) >= SETTLED_DB
         if (isFlat(tuning) && isSettled(tuning) && !bassSwapActiveOrShaping) {
             isShaping = false
@@ -308,7 +359,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
         if (frameCount == 0) return
         val outputBuffer = replaceOutputBuffer(frameCount * bytesPerFrame)
 
-        val tuning = target
+        val tuning = effectiveTuning(target)
         val bassSwapActiveOrShaping = bassSwapShelfEnabled || abs(currentBassSwapGainDb) >= SETTLED_DB || abs(targetBassSwapAttenuationDb) >= SETTLED_DB
         if (isFlat(tuning) && isSettled(tuning) && !bassSwapActiveOrShaping) {
             limiter.reset()
@@ -371,20 +422,26 @@ class EqualizerProcessor : BaseAudioProcessor() {
     // ---- Gliding -----------------------------------------------------------
 
     private fun snapToTarget() {
-        val tuning = target
-        tuning.curve.gainsDb.copyInto(currentGainDb)
-        tuning.curve.qs.copyInto(currentQ)
-        currentPreampDb = tuning.curve.preampDb
+        val tuning = effectiveTuning(target)
+        tuning.leftCurve.gainsDb.copyInto(currentGainDb[0])
+        tuning.rightCurve.gainsDb.copyInto(currentGainDb[1])
+        tuning.leftCurve.qs.copyInto(currentQ[0])
+        tuning.rightCurve.qs.copyInto(currentQ[1])
+        currentPreampDb = minOf(tuning.leftCurve.preampDb, tuning.rightCurve.preampDb)
         currentBalance = tuning.balance
     }
 
     private fun glideTowards(tuning: Tuning) {
+        val eff = effectiveTuning(tuning)
         for (slot in 0 until EqLayout.SLOTS) {
-            currentGainDb[slot] = linearGlide(currentGainDb[slot], tuning.curve.gainsDb[slot])
-            currentQ[slot] = geometricGlide(currentQ[slot], tuning.curve.qs[slot])
+            currentGainDb[0][slot] = linearGlide(currentGainDb[0][slot], eff.leftCurve.gainsDb[slot])
+            currentGainDb[1][slot] = linearGlide(currentGainDb[1][slot], eff.rightCurve.gainsDb[slot])
+            currentQ[0][slot] = geometricGlide(currentQ[0][slot], eff.leftCurve.qs[slot])
+            currentQ[1][slot] = geometricGlide(currentQ[1][slot], eff.rightCurve.qs[slot])
         }
-        currentPreampDb = linearGlide(currentPreampDb, tuning.curve.preampDb)
-        currentBalance = linearGlide(currentBalance, tuning.balance)
+        val targetPreamp = minOf(eff.leftCurve.preampDb, eff.rightCurve.preampDb)
+        currentPreampDb = linearGlide(currentPreampDb, targetPreamp)
+        currentBalance = linearGlide(currentBalance, eff.balance)
     }
 
     private fun linearGlide(current: Float, target: Float): Float =
@@ -396,16 +453,23 @@ class EqualizerProcessor : BaseAudioProcessor() {
         return exp(from + (to - from) * GLIDE_RATE)
     }
 
-    private fun isFlat(tuning: Tuning): Boolean =
-        abs(tuning.balance) < SETTLED_BALANCE &&
-            abs(tuning.curve.preampDb) < SETTLED_DB &&
-            tuning.curve.gainsDb.all { abs(it) < SETTLED_DB }
+    private fun isFlat(tuning: Tuning): Boolean {
+        val eff = effectiveTuning(tuning)
+        if (abs(eff.balance) >= SETTLED_BALANCE) return false
+        val targetPreamp = minOf(eff.leftCurve.preampDb, eff.rightCurve.preampDb)
+        if (abs(targetPreamp) >= SETTLED_DB) return false
+        return eff.leftCurve.gainsDb.all { abs(it) < SETTLED_DB } &&
+            eff.rightCurve.gainsDb.all { abs(it) < SETTLED_DB }
+    }
 
     private fun isSettled(tuning: Tuning): Boolean {
-        if (abs(currentBalance - tuning.balance) >= SETTLED_BALANCE) return false
-        if (abs(currentPreampDb - tuning.curve.preampDb) >= SETTLED_DB) return false
+        val eff = effectiveTuning(tuning)
+        if (abs(currentBalance - eff.balance) >= SETTLED_BALANCE) return false
+        val targetPreamp = minOf(eff.leftCurve.preampDb, eff.rightCurve.preampDb)
+        if (abs(currentPreampDb - targetPreamp) >= SETTLED_DB) return false
         for (slot in 0 until EqLayout.SLOTS) {
-            if (abs(currentGainDb[slot] - tuning.curve.gainsDb[slot]) >= SETTLED_DB) return false
+            if (abs(currentGainDb[0][slot] - eff.leftCurve.gainsDb[slot]) >= SETTLED_DB) return false
+            if (abs(currentGainDb[1][slot] - eff.rightCurve.gainsDb[slot]) >= SETTLED_DB) return false
         }
         return true
     }
@@ -415,8 +479,11 @@ class EqualizerProcessor : BaseAudioProcessor() {
     private fun prepareSections(): Int {
         var active = 0
         for (slot in 0 until EqLayout.SLOTS) {
-            if (abs(currentGainDb[slot]) >= SETTLED_DB) {
-                updateCoefficients(slot)
+            val activeL = abs(currentGainDb[0][slot]) >= SETTLED_DB
+            val activeR = abs(currentGainDb[1][slot]) >= SETTLED_DB
+            if (activeL || activeR) {
+                updateCoefficients(slot, 0)
+                updateCoefficients(slot, 1)
                 activeSlots[active++] = slot
                 running[slot] = true
             } else if (running[slot]) {
@@ -427,11 +494,11 @@ class EqualizerProcessor : BaseAudioProcessor() {
         return active
     }
 
-    private fun updateCoefficients(slot: Int) {
+    private fun updateCoefficients(slot: Int, ch: Int) {
         if (sampleRate <= 0) return
         val spec = EqLayout.slots[slot]
-        val a = 10f.pow(currentGainDb[slot] / 40f)
-        val q = currentQ[slot].coerceAtLeast(MIN_Q)
+        val a = 10f.pow(currentGainDb[ch][slot] / 40f)
+        val q = currentQ[ch][slot].coerceAtLeast(MIN_Q)
         val base = precomputedBaseTan[slot]
         val g: Float
         val k: Float
@@ -439,29 +506,29 @@ class EqualizerProcessor : BaseAudioProcessor() {
             FilterKind.BELL -> {
                 g = base
                 k = 1f / (q * a)
-                mixInput[slot] = 1f
-                mixBand[slot] = k * (a * a - 1f)
-                mixLow[slot] = 0f
+                mixInput[ch][slot] = 1f
+                mixBand[ch][slot] = k * (a * a - 1f)
+                mixLow[ch][slot] = 0f
             }
             FilterKind.LOW_SHELF -> {
                 g = base / sqrt(a)
                 k = 1f / q
-                mixInput[slot] = 1f
-                mixBand[slot] = k * (a - 1f)
-                mixLow[slot] = a * a - 1f
+                mixInput[ch][slot] = 1f
+                mixBand[ch][slot] = k * (a - 1f)
+                mixLow[ch][slot] = a * a - 1f
             }
             FilterKind.HIGH_SHELF -> {
                 g = base * sqrt(a)
                 k = 1f / q
-                mixInput[slot] = a * a
-                mixBand[slot] = k * (1f - a) * a
-                mixLow[slot] = 1f - a * a
+                mixInput[ch][slot] = a * a
+                mixBand[ch][slot] = k * (1f - a) * a
+                mixLow[ch][slot] = 1f - a * a
             }
         }
         val d = 1f / (1f + g * (g + k))
-        coeffA1[slot] = d
-        coeffA2[slot] = g * d
-        coeffA3[slot] = g * (g * d)
+        coeffA1[ch][slot] = d
+        coeffA2[ch][slot] = g * d
+        coeffA3[ch][slot] = g * (g * d)
     }
 
     private fun usableFrequency(hz: Float): Float =
@@ -480,15 +547,16 @@ class EqualizerProcessor : BaseAudioProcessor() {
     // ---- Filter ------------------------------------------------------------
 
     private fun section(slot: Int, channel: Int, input: Float): Float {
+        val chCoeff = if (channel < 2) channel else 0
         val i = (channel * EqLayout.SLOTS + slot) * 2
         val ic1 = state[i]
         val ic2 = state[i + 1]
         val v3 = input - ic2
-        val v1 = coeffA1[slot] * ic1 + coeffA2[slot] * v3
-        val v2 = ic2 + coeffA2[slot] * ic1 + coeffA3[slot] * v3
+        val v1 = coeffA1[chCoeff][slot] * ic1 + coeffA2[chCoeff][slot] * v3
+        val v2 = ic2 + coeffA2[chCoeff][slot] * ic1 + coeffA3[chCoeff][slot] * v3
         state[i] = 2f * v1 - ic1
         state[i + 1] = 2f * v2 - ic2
-        return mixInput[slot] * input + mixBand[slot] * v1 + mixLow[slot] * v2
+        return mixInput[chCoeff][slot] * input + mixBand[chCoeff][slot] * v1 + mixLow[chCoeff][slot] * v2
     }
 
     private fun clearState(slot: Int) {

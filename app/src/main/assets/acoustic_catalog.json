@@ -1,0 +1,5038 @@
+[
+  {
+    "id": "moondrop_chu",
+    "name": "Chu",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 12000.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          3.9,
+          2.9,
+          0.6,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.5,
+          -1.3,
+          -0.9
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.1,
+          0.2,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.5,
+          -0.9,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_chu_ii",
+    "name": "Chu II",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4500.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -3.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.2,
+          -0.8,
+          -1.2,
+          -0.3,
+          -0.1,
+          -0.2,
+          -2.2,
+          -3.2,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4500.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.0,
+          -1.7,
+          -0.6,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -1.9,
+          -0.2,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_aria",
+    "name": "Aria",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 75.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 250.0,
+            "gainDb": -1.0,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          2.4,
+          1.6,
+          0.0,
+          -1.0,
+          -0.2,
+          -0.1,
+          -0.1,
+          -0.4,
+          -1.2,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.2,
+          -0.8,
+          -1.2,
+          -0.3,
+          -0.1,
+          -0.1,
+          -0.5,
+          -1.5,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_kato",
+    "name": "Kato",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 85.0,
+            "gainDb": 2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          2.0,
+          1.5,
+          0.3,
+          0.0,
+          -0.0,
+          -0.1,
+          -0.4,
+          -1.0,
+          -0.9,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.1,
+          -0.5,
+          -0.8,
+          -0.2,
+          -0.1,
+          -0.1,
+          -0.7,
+          -1.1,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_blessing_2",
+    "name": "Blessing 2",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -3.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.5,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 12000.0,
+            "gainDb": -2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          3.5,
+          3.1,
+          1.2,
+          0.1,
+          0.0,
+          0.0,
+          0.0,
+          0.4,
+          0.1,
+          -1.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          1.0,
+          0.7,
+          0.1,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.4,
+          0.6,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_blessing_3",
+    "name": "Blessing 3",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.2,
+          0.3,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.3,
+          -0.4,
+          0.6,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.4,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.4,
+          -0.7,
+          0.5,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_variations",
+    "name": "Variations",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": 1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.1,
+          0.6,
+          1.2,
+          0.2,
+          0.0,
+          -0.2,
+          -1.4,
+          -1.5,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.5,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": 1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.1,
+          -0.1,
+          1.1,
+          0.2,
+          0.0,
+          -0.2,
+          -1.2,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_starfield",
+    "name": "Starfield",
+    "brand": "Moondrop",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": 1.5,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          2.4,
+          1.8,
+          0.4,
+          0.0,
+          0.0,
+          0.0,
+          0.1,
+          1.1,
+          -0.5,
+          -0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": 1.0,
+            "q": 1.8
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.2,
+          -0.8,
+          -1.2,
+          -0.3,
+          -0.0,
+          0.1,
+          1.0,
+          0.1,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "moondrop_space_travel",
+    "name": "Space Travel",
+    "brand": "Moondrop",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.9,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 150.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 3.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.4,
+          -1.8,
+          -0.9,
+          -0.2,
+          -0.1,
+          -0.3,
+          -0.0,
+          0.9,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          -0.0,
+          0.0,
+          0.1,
+          0.5,
+          0.8,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "tangzu_waner_sg",
+    "name": "Wan'er S.G",
+    "brand": "Tangzu",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.1,
+          -0.6,
+          -1.2,
+          -0.2,
+          -0.1,
+          -0.4,
+          -1.1,
+          -1.0,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.2
+          }
+        ],
+        "bandOffsets10": [
+          -1.5,
+          -1.4,
+          -1.1,
+          -1.2,
+          -0.2,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "tangzu_fudu",
+    "name": "Fudu",
+    "brand": "Tangzu",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.4,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.3,
+          -1.3,
+          -1.4,
+          -0.3,
+          -0.0,
+          0.2,
+          1.2,
+          -2.3,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.4,
+          -1.7,
+          -1.1,
+          -0.2,
+          -0.1,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "tangzu_zetian_wu",
+    "name": "Zetian Wu",
+    "brand": "Tangzu",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7500.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.1,
+          0.2,
+          0.0,
+          0.0,
+          0.1,
+          1.0,
+          0.3,
+          -2.5,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7500.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.1,
+          0.7,
+          0.1,
+          -2.6,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "truthear_zero",
+    "name": "Zero",
+    "brand": "Truthear",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -1.5,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5500.0,
+            "gainDb": 2.0,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 9000.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.9,
+          0.0,
+          -1.3,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -1.5,
+            "q": 1.8
+          }
+        ],
+        "bandOffsets10": [
+          -3.0,
+          -2.8,
+          -1.4,
+          -0.2,
+          -0.0,
+          -0.1,
+          -0.9,
+          -0.4,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "truthear_zero_red",
+    "name": "Zero:RED",
+    "brand": "Truthear",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          2.5,
+          2.2,
+          0.8,
+          0.1,
+          0.0,
+          0.1,
+          0.4,
+          1.0,
+          0.7,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.2,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 0.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          0.5,
+          0.5,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "truthear_hexa",
+    "name": "Hexa",
+    "brand": "Truthear",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -3.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -1.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          3.5,
+          3.1,
+          1.2,
+          0.1,
+          0.0,
+          0.1,
+          0.4,
+          0.4,
+          -0.6,
+          -0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 0.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          1.0,
+          0.7,
+          0.1,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          0.3,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "truthear_nova",
+    "name": "Nova",
+    "brand": "Truthear",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 250.0,
+            "gainDb": 1.0,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.0,
+          0.2,
+          1.0,
+          0.2,
+          0.0,
+          -0.4,
+          -0.4,
+          0.4,
+          0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          -0.0,
+          -0.1,
+          -0.4,
+          -0.6,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "truthear_hola",
+    "name": "Hola",
+    "brand": "Truthear",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.2,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": 1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.2,
+          -1.0,
+          -1.7,
+          -0.4,
+          0.0,
+          0.5,
+          1.9,
+          1.4,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.0,
+          -1.7,
+          -0.6,
+          -0.0,
+          0.0,
+          0.1,
+          0.4,
+          1.3,
+          0.2,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "truthear_gate",
+    "name": "Gate",
+    "brand": "Truthear",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.2,
+          0.3,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -1.1,
+          -2.8,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -1.1,
+          -2.8,
+          -0.3
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "7hz_zero",
+    "name": "Zero",
+    "brand": "7Hz",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -3.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.5,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 12000.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          3.0,
+          2.7,
+          1.0,
+          0.1,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          -0.1,
+          -0.8
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          1.0,
+          0.7,
+          0.1,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          0.3,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "7hz_zero_2",
+    "name": "Zero 2",
+    "brand": "7Hz",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.0,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": -1.0,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.1,
+          -0.4,
+          -0.8,
+          -0.1,
+          -0.1,
+          -0.3,
+          -0.8,
+          -1.6,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": -1.0,
+            "q": 1.8
+          }
+        ],
+        "bandOffsets10": [
+          -2.0,
+          -1.7,
+          -0.6,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -0.6,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "7hz_timeless",
+    "name": "Timeless",
+    "brand": "7Hz",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2200.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -4.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.2,
+          -0.8,
+          -1.2,
+          -0.2,
+          0.2,
+          1.8,
+          0.2,
+          -3.9,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -4.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          -3.0,
+          -2.6,
+          -0.9,
+          -0.1,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -4.0,
+          -0.2
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "7hz_legato",
+    "name": "Legato",
+    "brand": "7Hz",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -3.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 150.0,
+            "gainDb": -6.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 300.0,
+            "gainDb": -3.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 3.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -6.0,
+          -6.0,
+          -4.7,
+          -3.8,
+          -1.6,
+          -0.2,
+          1.1,
+          1.7,
+          0.2,
+          0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -3.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 150.0,
+            "gainDb": -8.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 300.0,
+            "gainDb": -4.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 3.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -8.5,
+          -8.4,
+          -6.5,
+          -4.6,
+          -1.9,
+          -0.2,
+          1.1,
+          1.7,
+          0.2,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "kiwi_ears_cadenza",
+    "name": "Cadenza",
+    "brand": "Kiwi Ears",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.9,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.1,
+          -0.5,
+          -0.8,
+          -0.2,
+          -0.1,
+          -0.3,
+          -0.0,
+          0.8,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -1.5,
+          -1.3,
+          -0.4,
+          -0.0,
+          0.0,
+          0.0,
+          0.1,
+          0.4,
+          0.6,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "kiwi_ears_quintet",
+    "name": "Quintet",
+    "brand": "Kiwi Ears",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -3.0,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 10000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.2,
+          0.3,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.7,
+          -2.2,
+          -0.5
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -3.0,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 10000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.7,
+          -2.2,
+          -0.5
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "kiwi_ears_orchestra_lite",
+    "name": "Orchestra Lite",
+    "brand": "Kiwi Ears",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -1.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          4.0,
+          3.6,
+          1.3,
+          0.1,
+          0.0,
+          0.1,
+          0.7,
+          0.2,
+          -1.0,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 0.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.1,
+          0.2,
+          0.0,
+          0.0,
+          0.0,
+          0.3,
+          0.2,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "sennheiser_hd600",
+    "name": "HD600",
+    "brand": "Sennheiser",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -5.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 5.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3300.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          5.4,
+          4.7,
+          1.1,
+          -1.1,
+          -0.3,
+          -0.1,
+          -0.3,
+          -0.8,
+          0.7,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3300.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          2.4,
+          1.8,
+          0.4,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -0.6,
+          0.6,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sennheiser_hd650",
+    "name": "HD650",
+    "brand": "Sennheiser",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -6.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 6.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 220.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 3.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          5.9,
+          5.1,
+          1.2,
+          -1.7,
+          -0.5,
+          -0.1,
+          -0.3,
+          -0.3,
+          0.9,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 220.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          2.4,
+          1.7,
+          -0.3,
+          -1.4,
+          -0.3,
+          -0.1,
+          0.0,
+          0.5,
+          0.8,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sennheiser_hd560s",
+    "name": "HD560S",
+    "brand": "Sennheiser",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -3.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          3.5,
+          2.8,
+          0.7,
+          0.1,
+          0.1,
+          0.6,
+          0.8,
+          -1.1,
+          -0.3,
+          -0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          1.0,
+          0.7,
+          0.1,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -1.2,
+          -0.4,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sennheiser_hd800s",
+    "name": "HD800S",
+    "brand": "Sennheiser",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -6.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 6.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5800.0,
+            "gainDb": -5.0,
+            "q": 3.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 9500.0,
+            "gainDb": -2.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          6.4,
+          5.7,
+          2.2,
+          0.2,
+          0.1,
+          0.8,
+          1.1,
+          -0.6,
+          -2.0,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5800.0,
+            "gainDb": -5.0,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          2.4,
+          1.8,
+          0.4,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.6,
+          -0.8,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sennheiser_ie200",
+    "name": "IE200",
+    "brand": "Sennheiser",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          2.0,
+          1.6,
+          0.4,
+          0.0,
+          -0.0,
+          -0.1,
+          -0.6,
+          -1.1,
+          -2.2,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -3.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.6,
+          -1.1,
+          -2.2,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "sennheiser_ie600",
+    "name": "IE600",
+    "brand": "Sennheiser",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": 1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.1,
+          0.6,
+          1.2,
+          0.2,
+          -0.0,
+          -0.4,
+          -0.9,
+          -1.3,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.3,
+          -1.2,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "sennheiser_momentum_4",
+    "name": "Momentum 4",
+    "brand": "Sennheiser",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -2.5,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -3.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 2.5,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -3.6,
+          -3.6,
+          -3.1,
+          -2.7,
+          -0.5,
+          -0.0,
+          0.7,
+          1.0,
+          -1.2,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -6.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -3.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 2.5,
+            "q": 1.8
+          }
+        ],
+        "bandOffsets10": [
+          -6.1,
+          -6.0,
+          -4.6,
+          -3.2,
+          -0.7,
+          -0.0,
+          0.7,
+          1.2,
+          0.1,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sony_wh1000xm4",
+    "name": "WH-1000XM4",
+    "brand": "Sony",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.8,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -5.5,
+            "q": 0.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 750.0,
+            "gainDb": 2.0,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 4.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": 3.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.3,
+          -1.1,
+          -4.0,
+          -4.0,
+          -0.1,
+          1.3,
+          2.0,
+          2.9,
+          3.9,
+          0.4
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -4.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -6.0,
+            "q": 0.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 4.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -3.3,
+          -3.8,
+          -5.3,
+          -4.7,
+          -1.3,
+          -0.1,
+          1.7,
+          2.5,
+          0.4,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sony_wh1000xm5",
+    "name": "WH-1000XM5",
+    "brand": "Sony",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.4,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 150.0,
+            "gainDb": -4.0,
+            "q": 0.9
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1000.0,
+            "gainDb": 1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": 4.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7500.0,
+            "gainDb": 2.5,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.2,
+          -1.0,
+          -3.6,
+          -2.0,
+          -0.1,
+          1.6,
+          1.7,
+          3.1,
+          2.7,
+          0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 150.0,
+            "gainDb": -4.5,
+            "q": 0.9
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3200.0,
+            "gainDb": 4.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.7,
+          -3.3,
+          -4.8,
+          -2.4,
+          -0.5,
+          0.1,
+          1.3,
+          2.7,
+          0.4,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "sony_wf1000xm4",
+    "name": "WF-1000XM4",
+    "brand": "Sony",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -3.4,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -3.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 3.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.4,
+          -1.9,
+          -2.1,
+          -0.4,
+          0.2,
+          1.8,
+          1.6,
+          1.4,
+          0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -3.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.1,
+          -2.1,
+          -2.5,
+          -2.1,
+          -0.4,
+          0.1,
+          1.7,
+          0.8,
+          0.1,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "sony_wf1000xm5",
+    "name": "WF-1000XM5",
+    "brand": "Sony",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 160.0,
+            "gainDb": -2.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7500.0,
+            "gainDb": -1.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.4,
+          -2.0,
+          -1.3,
+          -0.3,
+          0.0,
+          0.7,
+          1.0,
+          -1.2,
+          -0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          0.0,
+          0.1,
+          0.8,
+          1.1,
+          0.2,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "sony_ier_m9",
+    "name": "IER-M9",
+    "brand": "Sony",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.8,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 2.0,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          2.0,
+          1.6,
+          0.4,
+          0.0,
+          0.0,
+          0.1,
+          0.7,
+          1.4,
+          0.9,
+          0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.3,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 1.5,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.1,
+          0.5,
+          1.1,
+          0.7,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "apple_airpods_pro",
+    "name": "AirPods Pro",
+    "brand": "Apple",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -3.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 10000.0,
+            "gainDb": 2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          2.9,
+          2.2,
+          0.4,
+          0.0,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.3,
+          0.5,
+          0.4
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          1.0,
+          0.7,
+          0.1,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.4,
+          -0.6,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "apple_airpods_pro_2",
+    "name": "AirPods Pro 2",
+    "brand": "Apple",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 50.0,
+            "gainDb": 2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          1.7,
+          0.6,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -0.7,
+          -0.5,
+          -2.1,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": -1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -1.5,
+          -1.1,
+          -0.2,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -2.0,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "apple_airpods_max",
+    "name": "AirPods Max",
+    "brand": "Apple",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -2.9,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": 3.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.2,
+          -0.8,
+          -1.2,
+          -0.3,
+          -0.0,
+          0.3,
+          2.8,
+          -2.2,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -3.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": 3.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -2.0,
+          -1.7,
+          -0.6,
+          -0.0,
+          0.0,
+          0.1,
+          0.3,
+          3.0,
+          0.3,
+          0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "apple_airpods_3",
+    "name": "AirPods 3",
+    "brand": "Apple",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -5.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": 5.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": -2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          5.0,
+          4.7,
+          2.3,
+          0.3,
+          -0.0,
+          -0.1,
+          -0.5,
+          -2.2,
+          -1.0,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": -2.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          2.5,
+          2.2,
+          0.7,
+          0.1,
+          -0.0,
+          -0.1,
+          -0.5,
+          -1.7,
+          -0.2,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "apple_airpods_4",
+    "name": "AirPods 4",
+    "brand": "Apple",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 110.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          4.0,
+          3.6,
+          1.5,
+          0.1,
+          -0.0,
+          -0.1,
+          -0.6,
+          -1.1,
+          -1.5,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          1.5,
+          1.2,
+          0.3,
+          0.0,
+          -0.0,
+          -0.1,
+          -0.6,
+          -0.8,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "samsung_galaxy_buds_2_pro",
+    "name": "Galaxy Buds 2 Pro",
+    "brand": "Samsung",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.4,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 1.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.1,
+          -0.5,
+          -0.8,
+          -0.2,
+          -0.1,
+          -0.4,
+          -0.3,
+          0.4,
+          0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          -0.0,
+          -0.1,
+          -0.4,
+          -0.6,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "samsung_galaxy_buds_fe",
+    "name": "Galaxy Buds FE",
+    "brand": "Samsung",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 150.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": -1.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": 2.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.4,
+          -1.8,
+          -0.9,
+          -0.2,
+          -0.1,
+          -0.2,
+          -1.0,
+          1.9,
+          0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 150.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          }
+        ],
+        "bandOffsets10": [
+          -3.0,
+          -2.9,
+          -2.2,
+          -0.8,
+          -0.2,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "samsung_galaxy_buds_pro",
+    "name": "Galaxy Buds Pro",
+    "brand": "Samsung",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -2.0,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": 2.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 10000.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -1.2,
+          -0.0,
+          -0.3,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -2.0,
+            "q": 1.8
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          -0.0,
+          -0.1,
+          -1.2,
+          -0.5,
+          -0.1,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "nothing_ear",
+    "name": "Nothing Ear",
+    "brand": "Nothing",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 150.0,
+            "gainDb": -2.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -3.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.5,
+          -2.2,
+          -1.1,
+          -0.1,
+          0.7,
+          1.1,
+          -0.3,
+          -1.6,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6500.0,
+            "gainDb": -3.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -3.5,
+          -3.0,
+          -1.0,
+          -0.1,
+          0.1,
+          0.8,
+          1.1,
+          -0.3,
+          -1.6,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "nothing_ear_2",
+    "name": "Ear (2)",
+    "brand": "Nothing",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": 1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5500.0,
+            "gainDb": -4.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          2.0,
+          1.6,
+          0.9,
+          1.2,
+          0.2,
+          0.0,
+          -0.1,
+          -0.8,
+          -0.6,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": 1.5,
+            "q": 1.2
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5500.0,
+            "gainDb": -4.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          0.0,
+          0.1,
+          0.6,
+          1.2,
+          0.2,
+          0.0,
+          -0.1,
+          -0.8,
+          -0.6,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "nothing_ear_a",
+    "name": "Ear (a)",
+    "brand": "Nothing",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -1.5,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -3.0,
+          -2.8,
+          -1.4,
+          -0.1,
+          0.0,
+          0.1,
+          0.5,
+          0.6,
+          -1.6,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -5.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -5.5,
+          -5.1,
+          -2.5,
+          -0.3,
+          0.0,
+          0.1,
+          0.6,
+          0.8,
+          0.1,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "cmf_buds",
+    "name": "CMF Buds",
+    "brand": "CMF",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 150.0,
+            "gainDb": -5.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 250.0,
+            "gainDb": -2.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          -5.0,
+          -5.0,
+          -4.1,
+          -3.1,
+          -0.8,
+          -0.0,
+          0.9,
+          1.4,
+          0.2,
+          0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 150.0,
+            "gainDb": -7.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 250.0,
+            "gainDb": -3.0,
+            "q": 1.0
+          }
+        ],
+        "bandOffsets10": [
+          -7.5,
+          -7.5,
+          -5.9,
+          -3.9,
+          -1.0,
+          -0.2,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "cmf_buds_pro_2",
+    "name": "CMF Buds Pro 2",
+    "brand": "CMF",
+    "type": "TWS",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -3.5,
+          -3.5,
+          -2.6,
+          -1.8,
+          -0.4,
+          -0.1,
+          -0.1,
+          -0.5,
+          -0.8,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 120.0,
+            "gainDb": -6.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -2.0,
+            "q": 1.0
+          }
+        ],
+        "bandOffsets10": [
+          -6.0,
+          -5.8,
+          -3.8,
+          -2.0,
+          -0.4,
+          -0.1,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "audiotechnica_ath_m50x",
+    "name": "ATH-M50x",
+    "brand": "Audio-Technica",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -2.5,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -4.0,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 500.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3500.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 9000.0,
+            "gainDb": -5.0,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.5,
+          -2.5,
+          -2.4,
+          1.4,
+          0.3,
+          0.6,
+          2.0,
+          -2.7,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -4.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 9000.0,
+            "gainDb": -5.0,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.6,
+          -2.8,
+          -3.6,
+          -3.2,
+          -0.7,
+          -0.2,
+          -0.1,
+          -0.1,
+          -3.0,
+          -0.3
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "audiotechnica_ath_r70x",
+    "name": "ATH-R70x",
+    "brand": "Audio-Technica",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 4.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -1.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          4.4,
+          3.6,
+          1.0,
+          0.1,
+          0.1,
+          0.4,
+          0.5,
+          -0.1,
+          -1.0,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 70.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -1.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          1.4,
+          0.9,
+          0.1,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -1.0,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "beyerdynamic_dt_770_pro",
+    "name": "DT 770 Pro",
+    "brand": "Beyerdynamic",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -3.3,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 180.0,
+            "gainDb": -2.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 3.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5800.0,
+            "gainDb": -5.5,
+            "q": 3.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8500.0,
+            "gainDb": -4.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.3,
+          -1.6,
+          -1.7,
+          -0.3,
+          0.1,
+          1.2,
+          1.1,
+          -4.6,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -3.4,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 3.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5800.0,
+            "gainDb": -5.5,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.0,
+          0.0,
+          0.2,
+          1.3,
+          1.3,
+          -0.6,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "beyerdynamic_dt_990_pro",
+    "name": "DT 990 Pro",
+    "brand": "Beyerdynamic",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5800.0,
+            "gainDb": -6.5,
+            "q": 3.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8500.0,
+            "gainDb": -6.0,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          3.9,
+          3.2,
+          0.9,
+          0.1,
+          0.1,
+          1.0,
+          1.3,
+          -0.8,
+          -6.1,
+          -0.4
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 70.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5800.0,
+            "gainDb": -6.5,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          1.4,
+          0.9,
+          0.1,
+          0.0,
+          0.1,
+          0.8,
+          1.0,
+          -0.7,
+          -1.1,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "beyerdynamic_dt_1990_pro",
+    "name": "DT 1990 Pro",
+    "brand": "Beyerdynamic",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -3.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 85.0,
+            "gainDb": 3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8200.0,
+            "gainDb": -7.0,
+            "q": 4.0
+          }
+        ],
+        "bandOffsets10": [
+          3.4,
+          2.7,
+          0.6,
+          0.1,
+          0.1,
+          0.6,
+          0.8,
+          -0.1,
+          -6.7,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 70.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8200.0,
+            "gainDb": -7.0,
+            "q": 4.0
+          }
+        ],
+        "bandOffsets10": [
+          1.0,
+          0.6,
+          0.1,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -6.7,
+          -0.2
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "hifiman_sundara",
+    "name": "Sundara",
+    "brand": "Hifiman",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 4.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1800.0,
+            "gainDb": 2.0,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 9000.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          4.4,
+          3.3,
+          0.7,
+          0.1,
+          0.1,
+          0.3,
+          1.7,
+          0.1,
+          -2.0,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 60.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1800.0,
+            "gainDb": 1.5,
+            "q": 1.8
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 9000.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          1.4,
+          0.7,
+          0.1,
+          0.0,
+          0.0,
+          0.2,
+          1.3,
+          0.0,
+          -2.0,
+          -0.2
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "hifiman_edition_xs",
+    "name": "Edition XS",
+    "brand": "Hifiman",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -3.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 75.0,
+            "gainDb": 3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1800.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7500.0,
+            "gainDb": -2.5,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          3.4,
+          2.4,
+          0.4,
+          0.0,
+          0.1,
+          0.6,
+          2.2,
+          0.1,
+          -2.2,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 60.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1800.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          }
+        ],
+        "bandOffsets10": [
+          0.9,
+          0.5,
+          0.1,
+          0.0,
+          0.1,
+          0.4,
+          1.8,
+          0.2,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "hifiman_arya",
+    "name": "Arya",
+    "brand": "Hifiman",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -3.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 75.0,
+            "gainDb": 3.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2000.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5000.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          3.4,
+          2.4,
+          0.4,
+          0.0,
+          0.1,
+          0.4,
+          2.4,
+          -0.7,
+          -0.2,
+          -0.0
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -2.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 60.0,
+            "gainDb": 1.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2000.0,
+            "gainDb": 2.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 5000.0,
+            "gainDb": -3.0,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          0.9,
+          0.5,
+          0.1,
+          0.0,
+          0.1,
+          0.3,
+          1.9,
+          -0.7,
+          -0.3,
+          -0.0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "kz_zsn_pro_x",
+    "name": "ZSN Pro X",
+    "brand": "KZ",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -2.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -3.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -7.0,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.3,
+          -1.3,
+          -2.1,
+          -0.5,
+          -0.3,
+          -2.0,
+          -1.0,
+          -7.1,
+          -0.3
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -3.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": -3.5,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -7.0,
+            "q": 3.5
+          }
+        ],
+        "bandOffsets10": [
+          -3.0,
+          -2.6,
+          -0.9,
+          -0.1,
+          -0.0,
+          -0.2,
+          -2.0,
+          -1.0,
+          -7.1,
+          -0.3
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "kz_castor",
+    "name": "Castor",
+    "brand": "KZ",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -1.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": -1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -3.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.2,
+          -0.8,
+          -1.3,
+          -0.3,
+          -0.1,
+          -0.5,
+          -0.9,
+          -2.1,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": -3.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -2.5,
+          -2.2,
+          -0.7,
+          -0.1,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.3,
+          -2.1,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "kz_pr2",
+    "name": "PR2",
+    "brand": "KZ",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -2.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 80.0,
+            "gainDb": 2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 3000.0,
+            "gainDb": 1.0,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 10000.0,
+            "gainDb": -5.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          2.0,
+          1.5,
+          0.3,
+          0.0,
+          0.0,
+          0.1,
+          0.4,
+          0.4,
+          -1.9,
+          -0.6
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 10000.0,
+            "gainDb": -5.5,
+            "q": 3.0
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.1,
+          -2.0,
+          -0.6
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "shure_se215",
+    "name": "SE215",
+    "brand": "Shure",
+    "type": "IEM",
+    "targetProfiles": {
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -6.1,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -3.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 2500.0,
+            "gainDb": 2.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": 5.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "HIGH_SHELF",
+            "frequencyHz": 10000.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          }
+        ],
+        "bandOffsets10": [
+          -0.1,
+          -0.4,
+          -1.8,
+          -2.9,
+          -0.6,
+          0.1,
+          1.8,
+          1.7,
+          5.2,
+          3.9
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -5.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 100.0,
+            "gainDb": -2.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 200.0,
+            "gainDb": -3.5,
+            "q": 1.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 7000.0,
+            "gainDb": 5.0,
+            "q": 2.0
+          }
+        ],
+        "bandOffsets10": [
+          -2.1,
+          -2.1,
+          -2.4,
+          -2.9,
+          -0.7,
+          -0.1,
+          0.1,
+          0.8,
+          3.9,
+          0.4
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_IN_EAR_2019"
+  },
+  {
+    "id": "shure_aonic_50",
+    "name": "AONIC 50",
+    "brand": "Shure",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 1500.0,
+            "gainDb": 1.5,
+            "q": 1.5
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          3.9,
+          3.2,
+          0.9,
+          0.1,
+          0.1,
+          0.6,
+          0.8,
+          -0.3,
+          -0.6,
+          -0.1
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": -1.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 70.0,
+            "gainDb": 1.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 6000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          1.4,
+          0.9,
+          0.1,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.4,
+          -0.6,
+          -0.1
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "shure_srh840",
+    "name": "SRH840",
+    "brand": "Shure",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -2.6,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 90.0,
+            "gainDb": 2.5,
+            "q": 0.71
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          2.5,
+          2.0,
+          0.5,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -2.1,
+          -2.2,
+          -0.2
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 4000.0,
+            "gainDb": -2.0,
+            "q": 2.0
+          },
+          {
+            "filterType": "PEAKING",
+            "frequencyHz": 8000.0,
+            "gainDb": -2.0,
+            "q": 2.5
+          }
+        ],
+        "bandOffsets10": [
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.2,
+          -2.1,
+          -2.2,
+          -0.2
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  },
+  {
+    "id": "universal_studio_neutral",
+    "name": "Universal Studio Neutral",
+    "brand": "BitChord Reference",
+    "type": "OVER_EAR",
+    "targetProfiles": {
+      "HARMAN_OVER_EAR_2018": {
+        "target": "HARMAN_OVER_EAR_2018",
+        "preampDb": -4.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 4.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "HIGH_SHELF",
+            "frequencyHz": 10000.0,
+            "gainDb": -1.5,
+            "q": 0.71
+          }
+        ],
+        "bandOffsets10": [
+          4.0,
+          3.6,
+          1.3,
+          0.1,
+          0.0,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.4,
+          -1.3
+        ]
+      },
+      "HARMAN_IN_EAR_2019": {
+        "target": "HARMAN_IN_EAR_2019",
+        "preampDb": -6.1,
+        "biquadBands": [
+          {
+            "filterType": "LOW_SHELF",
+            "frequencyHz": 105.0,
+            "gainDb": 6.0,
+            "q": 0.71
+          },
+          {
+            "filterType": "HIGH_SHELF",
+            "frequencyHz": 10000.0,
+            "gainDb": -1.0,
+            "q": 0.71
+          }
+        ],
+        "bandOffsets10": [
+          6.0,
+          5.3,
+          2.0,
+          0.2,
+          0.0,
+          0.0,
+          -0.0,
+          -0.0,
+          -0.3,
+          -0.9
+        ]
+      },
+      "IEF_NEUTRAL": {
+        "target": "IEF_NEUTRAL",
+        "preampDb": 0.0,
+        "biquadBands": [],
+        "bandOffsets10": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "defaultTarget": "HARMAN_OVER_EAR_2018"
+  }
+]

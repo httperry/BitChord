@@ -1332,4 +1332,38 @@
     <string name="diwali_title" translatable="false">BitChord wishes you a Happy Diwali</string>
     <string name="diwali_subtitle" translatable="false">May this festival of lights fill your home with joy and your days with music.</string>
     <string name="diwali_cta" translatable="false">Let\'s Celebrate</string>
+    <!-- Audio Calibration -->
+    <string name="audio_calibration">Audio Calibration</string>
+    <string name="audio_calibration_subtitle">Hardware baseline matching and dual-ear hearing compensation</string>
+    <string name="hardware_model">Hardware Model</string>
+    <string name="target_baseline">Target Baseline</string>
+    <string name="audio_personalization">Audio Personalization</string>
+    <string name="dual_ear_calibrated">Dual-Ear Calibrated</string>
+    <string name="not_calibrated">Not Calibrated</string>
+    <string name="start_personalization">Start Personalization</string>
+    <string name="retake_personalization">Retake Hearing Test</string>
+    <string name="hold_to_preview_uncalibrated">Hold to preview uncalibrated</string>
+    <string name="hardware_baseline_updated_notice">Hardware baseline updated. Retake Audio Personalization to optimize for your new device.</string>
+    <string name="model_catalog_title">Headphone &amp; IEM Catalog</string>
+    <string name="model_catalog_subtitle">Select your device to load verified acoustic target curves</string>
+    <string name="search_models_hint">Search models or brands…</string>
+    <string name="personalization_wizard_title">Audio Personalization Studio</string>
+    <string name="personalization_onboarding_subtitle">Measure and balance your personal hearing threshold across frequency bands</string>
+    <string name="instruction_quiet_title">Quiet Space</string>
+    <string name="instruction_quiet_desc">Ensure you are in a quiet room with minimal background noise.</string>
+    <string name="instruction_beeps_title">Count the Beeps</string>
+    <string name="instruction_beeps_desc">Listen carefully for 1 to 3 soft beeps played at hearing threshold.</string>
+    <string name="instruction_replay_title">Replay Anytime</string>
+    <string name="instruction_replay_desc">If distracted, tap Replay Audio to listen to the test tones again.</string>
+    <string name="begin_calibration">Begin Calibration</string>
+    <string name="replay_audio">Replay Audio</string>
+    <string name="did_you_hear_beeps">Did you hear any beeps?</string>
+    <string name="how_many_beeps">How many beeps did you hear?</string>
+    <string name="channel_left_ear">Left Ear</string>
+    <string name="channel_right_ear">Right Ear</string>
+    <string name="calibration_complete">Calibration Complete</string>
+    <string name="calibration_complete_subtitle">Dual-ear frequency response curve calibrated and ready to apply.</string>
+    <string name="save_and_apply">Save and Apply</string>
+    <string name="uncalibrated_preview_label">Previewing Uncalibrated Audio</string>
+    <string name="calibrated_active_label">BitChord Studio Calibration Active</string>
 </resources>

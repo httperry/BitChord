@@ -38,6 +38,20 @@ class NativeDspChain(sampleRate: Int, channelCount: Int) : AutoCloseable {
         }
     }
 
+    fun setDualEqualizer(
+        enabled: Boolean,
+        gainsDbL: FloatArray?,
+        qsL: FloatArray?,
+        gainsDbR: FloatArray?,
+        qsR: FloatArray?,
+        preampDb: Float,
+        balance: Float,
+    ) {
+        if (nativeHandle != 0L) {
+            nativeSetDualEqualizer(nativeHandle, enabled, gainsDbL, qsL, gainsDbR, qsR, preampDb, balance)
+        }
+    }
+
     fun setBassSwapShelf(enabled: Boolean, attenuationDb: Float = -24.0f, cutoffHz: Float = 150.0f) {
         if (nativeHandle != 0L) {
             nativeSetBassSwapShelf(nativeHandle, enabled, attenuationDb, cutoffHz)
@@ -95,6 +109,12 @@ class NativeDspChain(sampleRate: Int, channelCount: Int) : AutoCloseable {
         @JvmStatic private external fun nativeSetSpatializer(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetEqualizer(
             handle: Long, enabled: Boolean, gainsDb: FloatArray?, qs: FloatArray?, preampDb: Float, balance: Float
+        )
+        @JvmStatic private external fun nativeSetDualEqualizer(
+            handle: Long, enabled: Boolean,
+            gainsDbL: FloatArray?, qsL: FloatArray?,
+            gainsDbR: FloatArray?, qsR: FloatArray?,
+            preampDb: Float, balance: Float
         )
         @JvmStatic private external fun nativeSetBassSwapShelf(
             handle: Long, enabled: Boolean, attenuationDb: Float, cutoffHz: Float

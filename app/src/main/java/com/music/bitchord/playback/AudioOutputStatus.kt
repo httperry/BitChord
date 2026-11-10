@@ -115,6 +115,10 @@ object AudioOutputStatus {
         val loudnessGainDb: Float? = null,
         /** YouTube's own normalization figure for the playing track, in dB, when known. */
         val loudnessLufs: Float? = null,
+        val deviceAddress: String? = null,
+        val calibrationAllowed: Boolean = false,
+        val calibrationBypassed: Boolean = false,
+        val calibrationBypassReason: String? = null,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -156,7 +160,11 @@ object AudioOutputStatus {
                 outputExact == other.outputExact &&
                 outputExactDetail == other.outputExactDetail &&
                 loudnessGainDb == other.loudnessGainDb &&
-                loudnessLufs == other.loudnessLufs
+                loudnessLufs == other.loudnessLufs &&
+                deviceAddress == other.deviceAddress &&
+                calibrationAllowed == other.calibrationAllowed &&
+                calibrationBypassed == other.calibrationBypassed &&
+                calibrationBypassReason == other.calibrationBypassReason
         }
 
         override fun hashCode(): Int {
@@ -198,6 +206,10 @@ object AudioOutputStatus {
             result = 31 * result + (outputExactDetail?.hashCode() ?: 0)
             result = 31 * result + (loudnessGainDb?.hashCode() ?: 0)
             result = 31 * result + (loudnessLufs?.hashCode() ?: 0)
+            result = 31 * result + (deviceAddress?.hashCode() ?: 0)
+            result = 31 * result + calibrationAllowed.hashCode()
+            result = 31 * result + calibrationBypassed.hashCode()
+            result = 31 * result + (calibrationBypassReason?.hashCode() ?: 0)
             return result
         }
     }
@@ -275,10 +287,25 @@ object AudioOutputStatus {
                 Pair(FallbackReason.NONE, null)
         }
 
+        val deviceAddress = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            device?.address?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+        val calAllowed = AudioRouting.isPersonalizationSupported(computedRouteKind)
+        val calBypassed = !calAllowed
+        val calReason = when (computedRouteKind) {
+            AudioRouting.Kind.PHONE -> "Calibration bypassed on device speaker"
+            AudioRouting.Kind.HDMI -> "Calibration bypassed on HDMI output"
+            AudioRouting.Kind.OTHER -> "Calibration bypassed on unsupported output"
+            else -> null
+        }
+
         val baseSnapshot = current.value.copy(
             requestedPcmMode = requestedPcmMode,
             deviceName = device?.productName?.toString()?.ifBlank { null } ?: "System default",
             activeDeviceId = device?.id,
+            deviceAddress = deviceAddress,
             sampleRatesHz = device?.sampleRates ?: IntArray(0),
             encodings = device?.encodings ?: IntArray(0),
             isUsb = isUsbDevice,
@@ -295,11 +322,23 @@ object AudioOutputStatus {
             directPlaybackSelected = isDirectAudioTrack,
             directPlaybackDetail = directSupport?.description,
             bluetoothTelemetry = bluetoothTelemetry,
+            calibrationAllowed = calAllowed,
+            calibrationBypassed = calBypassed,
+            calibrationBypassReason = calReason,
         )
         current.value = evaluateActualPath(baseSnapshot)
     }
 
     fun publishNegotiation(result: OutputNegotiationResult) {
+        val calAllowed = AudioRouting.isPersonalizationSupported(result.route.kind)
+        val calBypassed = !calAllowed
+        val calReason = when (result.route.kind) {
+            AudioRouting.Kind.PHONE -> "Calibration bypassed on device speaker"
+            AudioRouting.Kind.HDMI -> "Calibration bypassed on HDMI output"
+            AudioRouting.Kind.OTHER -> "Calibration bypassed on unsupported output"
+            else -> null
+        }
+
         val baseSnapshot = current.value.copy(
             negotiationResult = result,
             routeKind = result.route.kind,
@@ -326,6 +365,9 @@ object AudioOutputStatus {
             fallbackReason = result.output.fallbackReason,
             fallbackDetail = result.output.fallbackDetail,
             systemMixerRateHz = result.output.systemMixerRateHz,
+            calibrationAllowed = calAllowed,
+            calibrationBypassed = calBypassed,
+            calibrationBypassReason = calReason,
             // decoderOutputEncoding and dspFormat are deliberately not taken from
             // the negotiation. The negotiator predicts a route; it never sees a
             // decoder buffer, so both of those fields are constants there

@@ -176,6 +176,10 @@ import com.music.bitchord.ui.player.fullBleedArtworkAvailable
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import java.util.Locale
+import com.music.bitchord.ui.screens.calibration.AudioCalibrationSection
+import com.music.bitchord.ui.screens.calibration.AudioCalibrationManager
+import com.music.bitchord.ui.screens.calibration.ModelCatalogPickerSheet
+import com.music.bitchord.ui.screens.calibration.AudioPersonalizationWizard
 
 /**
  * Grouped settings, in the shape phones have taught people to expect: inset
@@ -405,6 +409,8 @@ fun SettingsScreen(
     }
     var showListenBrainzTokenDialog by remember { mutableStateOf(false) }
     var showLastfmLoginDialog by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
+    var showCalibrationWizard by remember { mutableStateOf(false) }
     val scrobbleScope = rememberCoroutineScope()
 
     val version = remember(context) {
@@ -903,6 +909,16 @@ fun SettingsScreen(
                         title = equalizerTitle,
                         subtitle = stringResource(R.string.equalizer_subtitle),
                         onClick = onEqualizer,
+                    )
+                }
+            }
+            val audioCalibrationTitle = stringResource(R.string.audio_calibration)
+            row(audioCalibrationTitle, "calibration", "headphone", "iem", "harman", "curve", "baseline", "ear", "tuning") {
+                BypassedByBitPerfect(bitPerfectReady) {
+                    AudioCalibrationSection(
+                        outputStatus = outputStatus,
+                        onOpenModelPicker = { showModelPicker = true },
+                        onOpenWizard = { showCalibrationWizard = true },
                     )
                 }
             }
@@ -2030,6 +2046,25 @@ fun SettingsScreen(
                     Text(stringResource(R.string.cancel))
                 }
             },
+        )
+    }
+
+    val selectedCalibrationModel by AudioCalibrationManager.selectedModel.collectAsStateWithLifecycle()
+
+    if (showModelPicker) {
+        ModelCatalogPickerSheet(
+            selectedModel = selectedCalibrationModel,
+            onSelectModel = { model ->
+                AudioCalibrationManager.selectModel(model)
+                showModelPicker = false
+            },
+            onDismiss = { showModelPicker = false },
+        )
+    }
+
+    if (showCalibrationWizard) {
+        AudioPersonalizationWizard(
+            onDismiss = { showCalibrationWizard = false },
         )
     }
 
