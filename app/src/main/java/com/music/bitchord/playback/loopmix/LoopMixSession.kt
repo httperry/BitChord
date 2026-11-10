@@ -24,8 +24,8 @@ class LoopMixSession private constructor(
     val renderer: LoopMixRenderer,
     val sampleRate: Int,
 ) {
-    /** Track microseconds of the outgoing loop start: where the sink splices. */
-    val takeoverUs: Long = (plan.out.loopStart * 1_000_000).roundToLong()
+    /** Track microseconds of the outgoing takeover start: where the sink splices. */
+    val takeoverUs: Long = (plan.out.takeoverStart * 1_000_000).roundToLong()
 
     /** Track second the incoming player becomes audible at. */
     val handoverTrack: Double = clock.elementTrackTime
@@ -57,7 +57,7 @@ class LoopMixSession private constructor(
      * listener is hearing); null before it has a reading.
      */
     fun mixSeconds(nowNanos: Long, playing: Boolean): Double? =
-        outPort.presentedSeconds(nowNanos, playing)?.let { it - plan.out.loopStart }
+        outPort.presentedSeconds(nowNanos, playing)?.let { it - plan.out.takeoverStart }
 
     /**
      * Where the incoming player has to start: [STARTUP_LEAD] into the mix,

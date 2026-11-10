@@ -17,6 +17,7 @@ void NeonBiquadEq::Configure(int sample_rate, int channel_count) {
   channel_count_ = channel_count;
   const size_t state_size = static_cast<size_t>(channel_count * kEqSlots * 2);
   state_.assign(state_size, 0.0f);
+  bass_swap_state_.assign(static_cast<size_t>(channel_count * 2), 0.0f);
   channel_gain_.assign(static_cast<size_t>(channel_count), 1.0f);
 
   if (sample_rate > 0) {
@@ -24,25 +25,46 @@ void NeonBiquadEq::Configure(int sample_rate, int channel_count) {
       const float hz = UsableFrequency(kEqLayoutSlots[slot].frequencyHz);
       precomputed_base_tan_[slot] = std::tan(kPi * hz / static_cast<float>(sample_rate));
     }
+    const float hz = UsableFrequency(target_bass_swap_hz_);
+    bass_swap_base_tan_ = std::tan(kPi * hz / static_cast<float>(sample_rate));
   }
   std::fill(std::begin(running_), std::end(running_), false);
+  bass_swap_running_ = false;
   SnapToTarget();
 }
 
 void NeonBiquadEq::Reset() {
   state_.clear();
+  bass_swap_state_.clear();
   channel_gain_.clear();
   std::fill(std::begin(precomputed_base_tan_), std::end(precomputed_base_tan_), 0.0f);
   std::fill(std::begin(running_), std::end(running_), false);
   is_shaping_ = false;
+  bass_swap_shelf_enabled_ = false;
+  bass_swap_running_ = false;
+  target_bass_swap_db_ = 0.0f;
+  current_bass_swap_db_ = 0.0f;
   channel_count_ = 0;
   sample_rate_ = 0;
 }
 
 void NeonBiquadEq::Flush() {
   std::fill(state_.begin(), state_.end(), 0.0f);
+  std::fill(bass_swap_state_.begin(), bass_swap_state_.end(), 0.0f);
   std::fill(std::begin(running_), std::end(running_), false);
+  current_bass_swap_db_ = target_bass_swap_db_;
+  bass_swap_running_ = false;
   SnapToTarget();
+}
+
+void NeonBiquadEq::SetBassSwapShelf(bool enabled, float attenuation_db, float cutoff_hz) {
+  bass_swap_shelf_enabled_ = enabled;
+  target_bass_swap_db_ = enabled ? std::clamp(attenuation_db, -96.0f, 0.0f) : 0.0f;
+  target_bass_swap_hz_ = cutoff_hz;
+  if (sample_rate_ > 0) {
+    const float hz = UsableFrequency(target_bass_swap_hz_);
+    bass_swap_base_tan_ = std::tan(kPi * hz / static_cast<float>(sample_rate_));
+  }
 }
 
 void NeonBiquadEq::SetTuning(bool enabled, const float* gains_db, const float* qs, float preamp_db, float balance) {
@@ -65,6 +87,8 @@ void NeonBiquadEq::SnapToTarget() {
   std::memcpy(current_qs_, target_qs_, sizeof(current_qs_));
   current_preamp_db_ = target_preamp_db_;
   current_balance_ = target_balance_;
+  current_bass_swap_db_ = target_bass_swap_db_;
+  current_bass_swap_hz_ = target_bass_swap_hz_;
 }
 
 float NeonBiquadEq::UsableFrequency(float hz) const {
@@ -75,6 +99,7 @@ float NeonBiquadEq::UsableFrequency(float hz) const {
 bool NeonBiquadEq::IsFlat() const {
   if (std::abs(target_balance_) >= kSettledBalance) return false;
   if (std::abs(target_preamp_db_) >= kSettledDb) return false;
+  if (bass_swap_shelf_enabled_ || std::abs(target_bass_swap_db_) >= kSettledDb) return false;
   for (int i = 0; i < kEqSlots; ++i) {
     if (std::abs(target_gains_db_[i]) >= kSettledDb) return false;
   }
@@ -84,6 +109,7 @@ bool NeonBiquadEq::IsFlat() const {
 bool NeonBiquadEq::IsSettled() const {
   if (std::abs(current_balance_ - target_balance_) >= kSettledBalance) return false;
   if (std::abs(current_preamp_db_ - target_preamp_db_) >= kSettledDb) return false;
+  if (std::abs(current_bass_swap_db_ - target_bass_swap_db_) >= kSettledDb) return false;
   for (int i = 0; i < kEqSlots; ++i) {
     if (std::abs(current_gains_db_[i] - target_gains_db_[i]) >= kSettledDb) return false;
   }
@@ -99,6 +125,7 @@ void NeonBiquadEq::GlideTowards() {
   }
   current_preamp_db_ += (target_preamp_db_ - current_preamp_db_) * kGlideRate;
   current_balance_ += (target_balance_ - current_balance_) * kGlideRate;
+  current_bass_swap_db_ += (target_bass_swap_db_ - current_bass_swap_db_) * kGlideRate;
 }
 
 int NeonBiquadEq::PrepareSections() {
@@ -119,6 +146,22 @@ int NeonBiquadEq::PrepareSections() {
     }
   }
   return active;
+}
+
+void NeonBiquadEq::UpdateBassSwapCoefficients() {
+  if (sample_rate_ <= 0) return;
+  const float a = std::pow(10.0f, current_bass_swap_db_ / 40.0f);
+  const float q = 0.707f;
+  const float base = bass_swap_base_tan_;
+  const float g = base / std::sqrt(a);
+  const float k = 1.0f / q;
+  bass_swap_mix_in_ = 1.0f;
+  bass_swap_mix_band_ = k * (a - 1.0f);
+  bass_swap_mix_low_ = a * a - 1.0f;
+  const float d = 1.0f / (1.0f + g * (g + k));
+  bass_swap_a1_ = d;
+  bass_swap_a2_ = g * d;
+  bass_swap_a3_ = g * (g * d);
 }
 
 void NeonBiquadEq::UpdateCoefficients(int slot) {
@@ -172,7 +215,12 @@ void NeonBiquadEq::PrepareChannelGains() {
 void NeonBiquadEq::Process(float* samples, int frame_count) {
   if (frame_count <= 0 || channel_count_ < 1 || sample_rate_ <= 0) return;
 
-  if (IsFlat() && IsSettled()) {
+  const bool bass_swap_active_or_shaping =
+      bass_swap_shelf_enabled_ ||
+      std::abs(current_bass_swap_db_) >= kSettledDb ||
+      std::abs(target_bass_swap_db_) >= kSettledDb;
+
+  if (IsFlat() && IsSettled() && !bass_swap_active_or_shaping) {
     is_shaping_ = false;
     return;
   }
@@ -187,6 +235,15 @@ void NeonBiquadEq::Process(float* samples, int frame_count) {
     GlideTowards();
     const int active_count = PrepareSections();
     PrepareChannelGains();
+
+    const bool bass_swap_active = std::abs(current_bass_swap_db_) >= kSettledDb;
+    if (bass_swap_active) {
+      UpdateBassSwapCoefficients();
+      bass_swap_running_ = true;
+    } else if (bass_swap_running_) {
+      std::fill(bass_swap_state_.begin(), bass_swap_state_.end(), 0.0f);
+      bass_swap_running_ = false;
+    }
 
 #if defined(__ARM_NEON) || defined(__aarch64__)
     // High-performance vectorized stereo path (channel_count == 2)
@@ -231,6 +288,22 @@ void NeonBiquadEq::Process(float* samples, int frame_count) {
           state_[i_r] = 2.0f * v1_r - ic1_r;
           state_[i_r + 1] = 2.0f * v2_r - ic2_r;
           r = m_in * r + m_band * v1_r + m_low * v2_r;
+        }
+
+        if (bass_swap_active) {
+          const float v3_l = l - bass_swap_state_[1];
+          const float v1_l = bass_swap_a1_ * bass_swap_state_[0] + bass_swap_a2_ * v3_l;
+          const float v2_l = bass_swap_state_[1] + bass_swap_a2_ * bass_swap_state_[0] + bass_swap_a3_ * v3_l;
+          bass_swap_state_[0] = 2.0f * v1_l - bass_swap_state_[0];
+          bass_swap_state_[1] = 2.0f * v2_l - bass_swap_state_[1];
+          l = bass_swap_mix_in_ * l + bass_swap_mix_band_ * v1_l + bass_swap_mix_low_ * v2_l;
+
+          const float v3_r = r - bass_swap_state_[3];
+          const float v1_r = bass_swap_a1_ * bass_swap_state_[2] + bass_swap_a2_ * v3_r;
+          const float v2_r = bass_swap_state_[3] + bass_swap_a2_ * bass_swap_state_[2] + bass_swap_a3_ * v3_r;
+          bass_swap_state_[2] = 2.0f * v1_r - bass_swap_state_[2];
+          bass_swap_state_[3] = 2.0f * v2_r - bass_swap_state_[3];
+          r = bass_swap_mix_in_ * r + bass_swap_mix_band_ * v1_r + bass_swap_mix_low_ * v2_r;
         }
 
         block_ptr[f * 2] = l * gain_l;
@@ -292,6 +365,43 @@ void NeonBiquadEq::Process(float* samples, int frame_count) {
           x = vfmaq_f32(y, m_low, v2);
         }
 
+        if (bass_swap_active) {
+          const float32x4_t bs_a1 = vdupq_n_f32(bass_swap_a1_);
+          const float32x4_t bs_a2 = vdupq_n_f32(bass_swap_a2_);
+          const float32x4_t bs_a3 = vdupq_n_f32(bass_swap_a3_);
+          const float32x4_t bs_in = vdupq_n_f32(bass_swap_mix_in_);
+          const float32x4_t bs_band = vdupq_n_f32(bass_swap_mix_band_);
+          const float32x4_t bs_low = vdupq_n_f32(bass_swap_mix_low_);
+
+          float32x4_t bs_ic1 = {bass_swap_state_[0], bass_swap_state_[2], bass_swap_state_[4], bass_swap_state_[6]};
+          float32x4_t bs_ic2 = {bass_swap_state_[1], bass_swap_state_[3], bass_swap_state_[5], bass_swap_state_[7]};
+
+          const float32x4_t bs_v3 = vsubq_f32(x, bs_ic2);
+          float32x4_t bs_v1 = vmulq_f32(bs_a1, bs_ic1);
+          bs_v1 = vfmaq_f32(bs_v1, bs_a2, bs_v3);
+
+          float32x4_t bs_v2 = bs_ic2;
+          bs_v2 = vfmaq_f32(bs_v2, bs_a2, bs_ic1);
+          bs_v2 = vfmaq_f32(bs_v2, bs_a3, bs_v3);
+
+          bs_ic1 = vfmaq_n_f32(vnegq_f32(bs_ic1), bs_v1, 2.0f);
+          bs_ic2 = vfmaq_n_f32(vnegq_f32(bs_ic2), bs_v2, 2.0f);
+
+          bass_swap_state_[0] = vgetq_lane_f32(bs_ic1, 0);
+          bass_swap_state_[2] = vgetq_lane_f32(bs_ic1, 1);
+          bass_swap_state_[4] = vgetq_lane_f32(bs_ic1, 2);
+          bass_swap_state_[6] = vgetq_lane_f32(bs_ic1, 3);
+
+          bass_swap_state_[1] = vgetq_lane_f32(bs_ic2, 0);
+          bass_swap_state_[3] = vgetq_lane_f32(bs_ic2, 1);
+          bass_swap_state_[5] = vgetq_lane_f32(bs_ic2, 2);
+          bass_swap_state_[7] = vgetq_lane_f32(bs_ic2, 3);
+
+          float32x4_t bs_y = vmulq_f32(bs_in, x);
+          bs_y = vfmaq_f32(bs_y, bs_band, bs_v1);
+          x = vfmaq_f32(bs_y, bs_low, bs_v2);
+        }
+
         x = vmulq_f32(x, v_gains);
         vst1q_f32(block_ptr + f * 4, x);
       }
@@ -313,6 +423,17 @@ void NeonBiquadEq::Process(float* samples, int frame_count) {
             state_[i] = 2.0f * v1 - ic1;
             state_[i + 1] = 2.0f * v2 - ic2;
             sample = mix_in_[slot] * sample + mix_band_[slot] * v1 + mix_low_[slot] * v2;
+          }
+          if (bass_swap_active) {
+            const size_t bs_i = static_cast<size_t>(ch * 2);
+            const float bs_ic1 = bass_swap_state_[bs_i];
+            const float bs_ic2 = bass_swap_state_[bs_i + 1];
+            const float bs_v3 = sample - bs_ic2;
+            const float bs_v1 = bass_swap_a1_ * bs_ic1 + bass_swap_a2_ * bs_v3;
+            const float bs_v2 = bs_ic2 + bass_swap_a2_ * bs_ic1 + bass_swap_a3_ * bs_v3;
+            bass_swap_state_[bs_i] = 2.0f * bs_v1 - bs_ic1;
+            bass_swap_state_[bs_i + 1] = 2.0f * bs_v2 - bs_ic2;
+            sample = bass_swap_mix_in_ * sample + bass_swap_mix_band_ * bs_v1 + bass_swap_mix_low_ * bs_v2;
           }
           samples[base_idx + ch] = sample * channel_gain_[ch];
         }

@@ -89,12 +89,6 @@ private const val MIN_SMART_DURATION_SECONDS = 45.0
 /** Leave enough incoming material after a calibrated handoff to avoid landing in its outro. */
 private const val MIN_INCOMING_CLEARANCE_SECONDS = 5.0
 
-private val KEY_INDEX = mapOf(
-    "C" to 0, "C♯" to 1, "D♭" to 1, "D" to 2, "D♯" to 3, "E♭" to 3,
-    "E" to 4, "F" to 5, "F♯" to 6, "G♭" to 6, "G" to 7, "G♯" to 8,
-    "A♭" to 8, "A" to 9, "A♯" to 10, "B♭" to 10, "B" to 11,
-)
-
 /** Spoken word, in any of a track's title, artist or album: mixing it is never wanted. */
 private val SPOKEN_TEXT = Regex(
     """\b(podcast|episode|audiobook|concert)\b""",
@@ -278,9 +272,7 @@ private fun isUnmixablePair(analysis: TrackAnalysis, nextAnalysis: TrackAnalysis
     val nextBpm = nextAnalysis.bpm.orZero()
     if (currentBpm <= 0 || nextBpm <= 0) return false
     if (stretchReachable(currentBpm, nextBpm)) return false
-    val left = trustedKey(analysis)
-    val right = trustedKey(nextAnalysis)
-    val keyClash = left.isNotEmpty() && right.isNotEmpty() && !harmonicallyCompatible(left, right)
+    val keyClash = CamelotHarmonics.isClash(analysis, nextAnalysis)
     val vocalConflict = analysis.vocalProbability >= VOCAL_CONFLICT_PROBABILITY &&
         nextAnalysis.vocalProbability >= VOCAL_CONFLICT_PROBABILITY
     return keyClash || vocalConflict
@@ -337,27 +329,18 @@ private fun normalizedTempoRatio(currentBpm: Double, nextBpm: Double): Double {
     return ratio
 }
 
-private fun splitKey(key: String): Pair<Int?, String?> {
-    val parts = key.trim().split(' ')
-    return KEY_INDEX[parts.firstOrNull()] to parts.getOrNull(1)
-}
-
 private fun keyDistance(left: String, right: String): Int? {
-    val (leftIndex, leftMode) = splitKey(left)
-    val (rightIndex, rightMode) = splitKey(right)
-    if (leftIndex == null || rightIndex == null) return null
-    val pitchDistance = min((leftIndex - rightIndex + 12) % 12, (rightIndex - leftIndex + 12) % 12)
-    return pitchDistance + if (leftMode != null && rightMode != null && leftMode != rightMode) 1 else 0
+    val idA = CamelotHarmonics.parseKeyId(left)
+    val idB = CamelotHarmonics.parseKeyId(right)
+    if (idA < 0 || idB < 0) return null
+    return CamelotHarmonics.wheelDistance(idA, idB)
 }
 
 private fun harmonicallyCompatible(left: String, right: String): Boolean {
-    val (leftIndex, leftMode) = splitKey(left)
-    val (rightIndex, rightMode) = splitKey(right)
-    if (leftIndex == null || rightIndex == null) return false
-    val distance = min((leftIndex - rightIndex + 12) % 12, (rightIndex - leftIndex + 12) % 12)
-    if (leftMode != null && rightMode != null && leftMode != rightMode) return distance <= 1
-    // A fifth is as close as a second here: it is the move every DJ makes.
-    return distance <= 2 || distance == 5
+    val idA = CamelotHarmonics.parseKeyId(left)
+    val idB = CamelotHarmonics.parseKeyId(right)
+    if (idA < 0 || idB < 0) return false
+    return CamelotHarmonics.isHarmonicallyCompatible(idA, idB)
 }
 
 /** A key the analyzer was not confident about is no key at all. */
@@ -369,22 +352,117 @@ private fun nearestTimedValue(
     target: Double,
     tolerance: Double = Double.POSITIVE_INFINITY,
     minimum: Double = 0.0,
-): Double? = values
-    .filter { it.isFinite() && it >= minimum && abs(it - target) <= tolerance }
-    .minByOrNull { abs(it - target) }
+): Double? {
+    if (values.isEmpty()) return null
+    var low = 0
+    var high = values.size - 1
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        val v = values[mid]
+        if (v < target) low = mid + 1 else high = mid - 1
+    }
+    var best: Double? = null
+    var bestDist = Double.POSITIVE_INFINITY
+    val start = (high - 1).coerceAtLeast(0)
+    val end = (low + 1).coerceAtMost(values.size - 1)
+    for (i in start..end) {
+        val v = values[i]
+        if (v.isFinite() && v >= minimum) {
+            val dist = abs(v - target)
+            if (dist <= tolerance && dist < bestDist) {
+                bestDist = dist
+                best = v
+            }
+        }
+    }
+    return best
+}
 
 private fun timedValueNearOrBefore(
     values: List<Double>,
     target: Double,
     tolerance: Double = Double.POSITIVE_INFINITY,
     minimum: Double = 0.0,
-): Double? = values
-    .filter { it.isFinite() && it >= minimum && it <= target && target - it <= tolerance }
-    .maxOrNull()
+): Double? {
+    if (values.isEmpty()) return null
+    var low = 0
+    var high = values.size - 1
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        val v = values[mid]
+        if (v <= target) low = mid + 1 else high = mid - 1
+    }
+    for (i in high downTo 0) {
+        val v = values[i]
+        if (!v.isFinite()) continue
+        if (v < minimum) break
+        if (target - v <= tolerance) return v
+    }
+    return null
+}
 
 /**
- * Snaps a transition start onto the outgoing track's grid: a phrase boundary
- * if one is near, a downbeat otherwise, and the raw target when neither is.
+ * Searches strictly for 4-bar (16 beats), 8-bar (32 beats), or 16-bar (64 beats)
+ * phrase downbeats in [downbeats] around [target] using binary search with zero heap churn.
+ */
+private fun findPhraseDownbeat(
+    downbeats: List<Double>,
+    target: Double,
+    tolerance: Double,
+    minimum: Double,
+    preferEarlier: Boolean,
+): Double? {
+    if (downbeats.isEmpty()) return null
+    var low = 0
+    var high = downbeats.size - 1
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        val v = downbeats[mid]
+        if (v <= target) low = mid + 1 else high = mid - 1
+    }
+    if (preferEarlier) {
+        var i = (high / 4) * 4
+        if (i >= downbeats.size) i = ((downbeats.size - 1) / 4) * 4
+        while (i >= 0) {
+            val v = downbeats[i]
+            if (v < minimum) break
+            if (target - v <= tolerance) {
+                val i16 = i - (i % 16)
+                if (i16 >= 0 && downbeats[i16] >= minimum && target - downbeats[i16] <= tolerance) return downbeats[i16]
+                val i8 = i - (i % 8)
+                if (i8 >= 0 && downbeats[i8] >= minimum && target - downbeats[i8] <= tolerance) return downbeats[i8]
+                return v
+            }
+            i -= 4
+        }
+        return null
+    } else {
+        var best: Double? = null
+        var bestDist = Double.POSITIVE_INFINITY
+        val candLow = ((high / 4) * 4).coerceAtLeast(0)
+        val candHigh = (((low + 3) / 4) * 4).coerceAtMost(downbeats.size - 1)
+        for (i in candLow..candHigh step 4) {
+            val v = downbeats[i]
+            if (v >= minimum) {
+                val dist = abs(v - target)
+                if (dist <= tolerance) {
+                    val priority = if (i % 16 == 0) -2.0 else if (i % 8 == 0) -1.0 else 0.0
+                    val score = dist + priority * 0.001
+                    if (score < bestDist) {
+                        bestDist = score
+                        best = v
+                    }
+                }
+            }
+        }
+        return best
+    }
+}
+
+/**
+ * Snaps a transition start onto the outgoing track's grid: strictly on a
+ * 4-bar (16 beats), 8-bar (32 beats), or 16-bar (64 beats) phrase downbeat derived
+ * from phraseBoundaries or downbeats, falling back to constant grid in O(1).
  */
 private fun alignedTransitionStart(
     analysis: TrackAnalysis,
@@ -396,18 +474,34 @@ private fun alignedTransitionStart(
     val interval = analysis.beatInterval.orZero().takeIf { it > 0 }
         ?: if (analysis.bpm.orZero() > 0) 60 / analysis.bpm else 0.0
     val phraseTolerance = max(1.0, interval * 4)
-    val downbeatTolerance = max(0.75, interval * 2)
+
     val phrase = if (preferEarlier) {
         timedValueNearOrBefore(analysis.phraseBoundaries, target, phraseTolerance, minimum)
     } else {
         nearestTimedValue(analysis.phraseBoundaries, target, phraseTolerance, minimum)
     }
-    val downbeat = if (preferEarlier) {
-        timedValueNearOrBefore(analysis.downbeats, target, downbeatTolerance, minimum)
-    } else {
-        nearestTimedValue(analysis.downbeats, target, downbeatTolerance, minimum)
+    if (phrase != null) return clamp(phrase, minimum, end)
+
+    val phraseDownbeat = findPhraseDownbeat(analysis.downbeats, target, phraseTolerance, minimum, preferEarlier)
+    if (phraseDownbeat != null) return clamp(phraseDownbeat, minimum, end)
+
+    // Fallback: snap onto 4-bar phrase downbeats on the constant grid in O(1)
+    if (interval > 0) {
+        val anchor = analysis.downbeats.firstOrNull { it.isFinite() }
+            ?: analysis.firstBeat.takeIf { it.isFinite() } ?: 0.0
+        val phraseSec = 16 * interval
+        val k = if (preferEarlier) {
+            floor((target - anchor) / phraseSec)
+        } else {
+            round((target - anchor) / phraseSec)
+        }
+        val gridTarget = anchor + k * phraseSec
+        if (gridTarget >= minimum) {
+            return clamp(gridTarget, minimum, end)
+        }
     }
-    return clamp(phrase ?: downbeat ?: target, minimum, end)
+
+    return clamp(target, minimum, end)
 }
 
 /**
@@ -427,8 +521,12 @@ fun latestIncomingCue(length: Double): Double =
  * track should be gone by. Never later than [latest]; a candidate past it is
  * passed over for the best one before it.
  */
- fun incomingCuePoint(analysis: TrackAnalysis, latest: Double = Double.POSITIVE_INFINITY): Double {
-    rankMixInCandidates(analysis).firstOrNull { it.time <= latest }?.let { return it.time }
+ fun incomingCuePoint(
+    analysis: TrackAnalysis,
+    latest: Double = Double.POSITIVE_INFINITY,
+    outgoingAnalysis: TrackAnalysis? = null,
+): Double {
+    rankMixInCandidates(analysis, outgoingAnalysis).firstOrNull { it.time <= latest }?.let { return it.time }
 
     val interval = analysis.beatInterval.orZero().takeIf { it > 0 }
         ?: if (analysis.bpm.orZero() > 0) 60 / analysis.bpm else 0.0
@@ -850,8 +948,21 @@ private fun plannedVocalOverlap(
     ) ?: 0.0
 }
 
-private fun nearestAtOrBefore(values: List<Double>, target: Double): Double? =
-    values.filter { it.isFinite() && it >= 0 && it <= target }.maxOrNull()
+private fun nearestAtOrBefore(values: List<Double>, target: Double): Double? {
+    if (values.isEmpty()) return null
+    var low = 0
+    var high = values.size - 1
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        val v = values[mid]
+        if (v <= target) low = mid + 1 else high = mid - 1
+    }
+    for (i in high downTo 0) {
+        val v = values[i]
+        if (v.isFinite() && v >= 0) return v
+    }
+    return null
+}
 
 /**
  * The outcome of planning one beat-matched transition.
@@ -891,12 +1002,16 @@ sealed interface WsolaPlanResult {
  * Where the incoming track takes over: the best-ranked mix-in candidate no
  * later than [latest], snapped to a downbeat.
  */
-fun incomingMixInPoint(analysis: TrackAnalysis, latest: Double = Double.POSITIVE_INFINITY): Double? {
+fun incomingMixInPoint(
+    analysis: TrackAnalysis,
+    latest: Double = Double.POSITIVE_INFINITY,
+    outgoingAnalysis: TrackAnalysis? = null,
+): Double? {
     val beatSeconds = analysis.beatInterval.orZero().takeIf { it > 0 }
         ?: if (analysis.bpm.orZero() > 0) 60 / analysis.bpm else 0.0
     val tolerance = max(0.5, beatSeconds * 2)
     val target = listOfNotNull(
-        rankMixInCandidates(analysis).firstOrNull { it.time <= latest }?.time,
+        rankMixInCandidates(analysis, outgoingAnalysis).firstOrNull { it.time <= latest }?.time,
         analysis.mixInTime,
     )
         .firstOrNull { it.isFinite() && it > 0 && it <= latest }
@@ -1013,7 +1128,13 @@ fun planWsolaTransition(
     if (incomingCueTime < audibleStart - 0.05) return WsolaPlanResult.Refused("incoming-no-runway")
 
     val startTarget = overlapEndTarget - outgoingOverlapSeconds
-    val transitionStart = nearestAtOrBefore(analysis.downbeats, startTarget) ?: startTarget
+    val transitionStart = findPhraseDownbeat(
+        analysis.downbeats,
+        startTarget,
+        tolerance = 4 * outgoingBeatSeconds,
+        minimum = MIN_CLEARANCE_SECONDS,
+        preferEarlier = true,
+    ) ?: (nearestAtOrBefore(analysis.downbeats, startTarget) ?: startTarget)
     if (transitionStart < MIN_CLEARANCE_SECONDS) return WsolaPlanResult.Refused("outgoing-too-short")
     val transitionEnd = transitionStart + outgoingOverlapSeconds
     if (transitionEnd > outgoingLength + 0.05) return WsolaPlanResult.Refused("outgoing-overlap-overruns")
@@ -1069,7 +1190,7 @@ private fun phraseSwitch(
     nextLength: Double,
     advanced: Boolean,
 ): TransitionPlan? {
-    if (!harmonicallyCompatible(trustedKey(analysis), trustedKey(nextAnalysis))) return null
+    if (!CamelotHarmonics.isHarmonicallyCompatible(analysis, nextAnalysis)) return null
 
     val planned = planWsolaTransition(
         analysis = analysis,
@@ -1198,11 +1319,8 @@ private class PairTraits(analysis: TrackAnalysis, nextAnalysis: TrackAnalysis) {
 
     /** Too far apart for either to be sped up to the other, so both kicks would flam. */
     val tempoFar = currentBpm > 0 && nextBpm > 0 && !stretchReachable(currentBpm, nextBpm)
-    val keyClash: Boolean = run {
-        val left = trustedKey(analysis)
-        val right = trustedKey(nextAnalysis)
-        left.isNotEmpty() && right.isNotEmpty() && !harmonicallyCompatible(left, right)
-    }
+    val keyClash: Boolean = CamelotHarmonics.isClash(analysis, nextAnalysis)
+    val harmonicScore: Double = CamelotHarmonics.confidenceWeightedHarmonicScore(analysis, nextAnalysis)
     val vocalConflict = analysis.vocalProbability >= VOCAL_CONFLICT_PROBABILITY &&
         nextAnalysis.vocalProbability >= VOCAL_CONFLICT_PROBABILITY
 
@@ -1264,9 +1382,12 @@ private fun wholeBars(seconds: Double, beatSeconds: Double, maximum: Double): Do
     return if (bars >= 1) bars * bar else seconds
 }
 
-/** The outgoing downbeat at or up to [tolerance] before [time], so an exit lands on the one. */
-private fun onDownbeatBefore(analysis: TrackAnalysis, time: Double, tolerance: Double): Double =
-    timedValueNearOrBefore(analysis.downbeats, time, tolerance) ?: time
+/** The outgoing phrase downbeat at or up to [tolerance] before [time], so an exit lands on the one. */
+private fun onDownbeatBefore(analysis: TrackAnalysis, time: Double, tolerance: Double): Double {
+    val phrase = findPhraseDownbeat(analysis.downbeats, time, tolerance, minimum = 0.0, preferEarlier = true)
+    if (phrase != null) return phrase
+    return timedValueNearOrBefore(analysis.downbeats, time, tolerance) ?: time
+}
 
 /**
  * How long a mix should run when the tracks are related but not phrase-switchable.
@@ -1292,10 +1413,10 @@ private fun adaptiveOverlap(
 
     val ratio = normalizedTempoRatio(currentBpm, nextBpm)
     val transitionBeats = if (traits == null) {
-        val distance = keyDistance(trustedKey(analysis), trustedKey(nextAnalysis))
+        val clash = CamelotHarmonics.isClash(analysis, nextAnalysis)
         val vocalConflict = analysis.vocalProbability >= VOCAL_CONFLICT_PROBABILITY &&
             nextAnalysis.vocalProbability >= VOCAL_CONFLICT_PROBABILITY
-        if (!vocalConflict && (abs(1 - ratio) > 0.07 || (distance != null && distance > 4))) 16 else 8
+        if (!vocalConflict && (abs(1 - ratio) > 0.07 || clash)) 16 else 8
     } else {
         // Tempo alone keeps the long ride: the one-kick bass handover is what
         // stops two unmatched grids flamming. Unmatched fallbacks deliberately
@@ -1503,7 +1624,7 @@ private fun planTransitionInner(
     }
     // Ranked once and kept: the best is the anchor (what [resolveMixOutAnchor]
     // answers), and the rest are where an advanced plan looks for a vocal-free exit.
-    val rankedMixOuts = rankMixOutCandidates(analysis, finalMixAnchor, length)
+    val rankedMixOuts = rankMixOutCandidates(analysis, finalMixAnchor, length, nextAnalysis)
     val mixOutAnchor = rankedMixOuts.firstOrNull()
         ?.let { MixOutAnchor(it.time, it.type, it.discardedMusicSeconds) }
         ?: MixOutAnchor(finalMixAnchor, "content_end", 0.0)
@@ -1648,7 +1769,7 @@ private fun planTransitionInner(
     // collision. Only planned while it could still be taken: once the playhead
     // is past a start, that plan has already been armed or lost.
     val plan = if (traits != null &&
-        primary.vocalOverlap > VOCAL_REROUTE_OVERLAP &&
+        (primary.vocalOverlap > VOCAL_REROUTE_OVERLAP || traits.keyClash) &&
         playbackTime < primary.transitionStart
     ) {
         rankedMixOuts.asSequence()
@@ -1656,8 +1777,13 @@ private fun planTransitionInner(
             .take(MAX_REROUTE_CANDIDATES)
             .map { mixPlan(analysis, nextAnalysis, it.time, it.type, nextLength, traits) }
             .filter { playbackTime < it.transitionStart }
-            .minByOrNull { it.vocalOverlap }
-            ?.takeIf { it.vocalOverlap <= primary.vocalOverlap * VOCAL_REROUTE_GAIN }
+            .minByOrNull { candidatePlan ->
+                candidatePlan.vocalOverlap + if (traits.keyClash) candidatePlan.fadeSeconds * 0.05 else 0.0
+            }
+            ?.takeIf {
+                if (traits.keyClash) true
+                else it.vocalOverlap <= primary.vocalOverlap * VOCAL_REROUTE_GAIN
+            }
             ?: primary
     } else {
         primary
@@ -1756,7 +1882,7 @@ private fun mixPlan(
     } else {
         0.0
     }
-    val incomingDropTime = incomingCuePoint(nextAnalysis, latestIncomingCue(nextLength))
+    val incomingDropTime = incomingCuePoint(nextAnalysis, latestIncomingCue(nextLength), analysis)
     val alignedIncomingBpm = alignTempoOctave(currentBpm, nextBpm)
     val requestedIncomingHandoff =
         if (sameBeatBlend && alignedIncomingBpm > 0) {

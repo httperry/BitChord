@@ -1142,7 +1142,7 @@ class CrossfadeController(
             player, currentItem, nextItem, currentAnalysis, nextAnalysis, duration, nextDuration, analysisState,
         )
         if (loop != null && nextStreamReady(nextItem)) {
-            val loopStartMs = (loop.out.loopStart * 1000).roundToLong()
+            val loopStartMs = (loop.out.takeoverStart * 1000).roundToLong()
             AppSettings.smartTransitionWindow.value = TransitionWindow(
                 start = (loopStartMs.toFloat() / duration).coerceIn(0f, 1f),
                 end = 1f,
@@ -2492,7 +2492,7 @@ class CrossfadeController(
         val cached = loopPlanned
         // Kept while its loop is still far enough ahead to set up; a seek past
         // that plans again from the new playhead.
-        if (key == loopPlanKey && (cached == null || cached.out.loopStart * 1000 - player.currentPosition >= LOOP_MIN_LEAD_MS)) {
+        if (key == loopPlanKey && (cached == null || cached.out.takeoverStart * 1000 - player.currentPosition >= LOOP_MIN_LEAD_MS)) {
             return cached
         }
         val why = StringBuilder()
@@ -2515,7 +2515,7 @@ class CrossfadeController(
 
     private fun noteLoopVerdict(pair: String, plan: LoopMix.Plan?, refusal: String?) {
         loopRefusal = refusal
-        val verdict = "$pair: " + (plan?.let { "loop mix at ${"%.2f".format(Locale.ROOT, it.out.loopStart)}s · ${describeLoop(it)}" } ?: "no loop mix ($refusal)")
+        val verdict = "$pair: " + (plan?.let { "loop mix at ${"%.2f".format(Locale.ROOT, it.out.takeoverStart)}s · ${describeLoop(it)}" } ?: "no loop mix ($refusal)")
         if (verdict == lastLoopVerdict) return
         lastLoopVerdict = verdict
         Log.d(TAG, "loop $verdict")
@@ -2576,7 +2576,7 @@ class CrossfadeController(
         Log.d(
             TAG,
             "loop build ${outItem.mediaId}->${inItem.mediaId} at ${sampleRate}Hz, loop at " +
-                "${"%.2f".format(Locale.ROOT, plan.out.loopStart)}s, playhead ${out.currentPosition}ms",
+                "${"%.2f".format(Locale.ROOT, plan.out.takeoverStart)}s, playhead ${out.currentPosition}ms",
         )
         loopBuildJob = scope.launch {
             val began = SystemClock.elapsedRealtime()
@@ -2835,7 +2835,7 @@ class CrossfadeController(
             session == null -> null
             wasHandedOff -> m?.let { LoopMix.positionAt(session.clock, LoopMix.Side.IN, it) }?.let { (it * 1000).roundToLong() }
             tookOver -> (m?.takeIf { it >= 0 }?.let { LoopMix.positionAt(session.clock, LoopMix.Side.OUT, it) }
-                ?: session.plan.out.loopStart).let { (it * 1000).roundToLong() }
+                ?: session.plan.out.takeoverStart).let { (it * 1000).roundToLong() }
             else -> null
         }
         finish()
@@ -2901,7 +2901,7 @@ class CrossfadeController(
         val next = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
         val planned = loopPlanned
         if (planned != null && next != null && loopPlanKey?.startsWith("${item.mediaId}->${next.mediaId}|") == true) {
-            val inSeconds = (planned.out.loopStart - player.currentPosition / 1000.0).coerceAtLeast(0.0)
+            val inSeconds = (planned.out.takeoverStart - player.currentPosition / 1000.0).coerceAtLeast(0.0)
             return "Automix · loop mix in ${ceil(inSeconds).toInt()} s · ${describeLoop(planned)}"
         }
         val plan = lastSmartPlan
@@ -3128,6 +3128,16 @@ class CrossfadeController(
                 filters.incomingEcho(delaySeconds, send, dry)
             }
         }
+
+        override fun incomingBassCut(cut: Boolean) {
+            if (!aimIncoming) return
+            if (handedOff) filters.incomingBassCut(cut) else filters.outgoingBassCut(cut)
+        }
+
+        override fun outgoingBassCut(cut: Boolean) {
+            if (!aimOutgoing) return
+            if (handedOff) filters.outgoingBassCut(cut) else filters.incomingBassCut(cut)
+        }
     }
 
     /**
@@ -3220,8 +3230,10 @@ class CrossfadeController(
      */
     private fun rideEchoOut(progress: Float) {
         val p = progress.toDouble()
-        val handover = ((p - (render.echoAt - render.swapWidth)) / render.swapWidth).coerceIn(0.0, 1.0)
+        val swapTriggered = p >= render.echoAt
+        val handover = if (swapTriggered) 1.0 else 0.0
         tracks.outgoing(TransitionFilterProcessor.OPEN_HZ, bassCutoff(handover))
+        tracks.outgoingBassCut(swapTriggered)
         if (p < render.echoFrom) return
         val send = if (p >= render.echoAt) 0.0 else (p - render.echoFrom) / (render.echoAt - render.echoFrom)
         tracks.outgoingEcho(render.echoSecondsF, send.toFloat(), echoDry(progress))
@@ -3335,12 +3347,13 @@ class CrossfadeController(
             glide(ENTRY_HIGH_PASS_HZ, VOCAL_SAFE_ENTRY_HIGH_PASS_HZ, render.clash),
             render.vocalEntryOpenBy,
         )
-        // Classic and advanced alike: two tempi that don't match are two kicks that flam, and the 300Hz bed
-        // keeps the outgoing kick whole. So the low end still changes hands
-        // once, on a beat — only one kick is ever playing.
-        val handover = ((progress - (render.filterSwapAt - render.swapWidth)) / render.swapWidth).coerceIn(0.0, 1.0)
+        // Instant crossover flip on downbeat: two tempi that don't match are two kicks that flam, and the 300Hz bed
+        // keeps the outgoing kick whole. So the low end changes hands cleanly on the exact downbeat handoff.
+        val swapTriggered = progress >= render.filterSwapAt
+        val handover = if (swapTriggered) 1.0 else 0.0
         tracks.outgoing(cutoff.toFloat(), bassCutoff(handover))
         tracks.incoming(TransitionFilterProcessor.OPEN_HZ, maxOf(entryCorner, bassCutoff(1.0 - handover)))
+        tracks.flipBassSwap(incomingCut = !swapTriggered, outgoingCut = swapTriggered)
     }
 
     /**
@@ -3351,7 +3364,8 @@ class CrossfadeController(
      */
     private fun rideFallbackBassHandoff(progress: Float) {
         val p = progress.toDouble()
-        val handover = ((p - (render.filterSwapAt - render.swapWidth)) / render.swapWidth).coerceIn(0.0, 1.0)
+        val swapTriggered = p >= render.filterSwapAt
+        val handover = if (swapTriggered) 1.0 else 0.0
         val exitAmount = ((p - render.filterSwapAt) / (1.0 - render.filterSwapAt)).coerceIn(0.0, 1.0)
         val handoffTone = glide(
             TransitionFilterProcessor.OPEN_HZ.toDouble(),
@@ -3374,6 +3388,7 @@ class CrossfadeController(
         )
         tracks.outgoing(outgoingTone, bassCutoff(handover))
         tracks.incoming(TransitionFilterProcessor.OPEN_HZ, maxOf(incomingEntry, bassCutoff(1.0 - handover)))
+        tracks.flipBassSwap(incomingCut = !swapTriggered, outgoingCut = swapTriggered)
     }
 
     /**
@@ -3431,19 +3446,10 @@ class CrossfadeController(
      * receding rather than as an effect.
      */
     private fun rideBassSwap(progress: Float) {
-        // 0 before the swap window, 1 after it: how much of the low end has
-        // changed hands. Classically a window centred on the swap; advanced,
-        // half a beat that ends on it, so the new kick arrives on the one.
-        val handover = ((progress - render.swapFrom) / render.swapWidth).coerceIn(0.0, 1.0)
-        // The incoming track's own low end is already being held out by the
-        // swap, so whichever corner sits higher is the one doing the work.
-        // Scaled up by however much the two are actually singing over each other.
-        // A blend is chosen for pairs on a shared grid, which is the case where
-        // nothing about the arrangement separates two lead vocals — they sit in
-        // the same bar and the same range for the whole overlap — so the fixed
-        // corner that was here handled a marginal collision and a head-on one
-        // identically. At full collision the entry corner reaches
-        // [BLEND_ENTRY_CLASH_HIGH_PASS_HZ] and holds longer.
+        // Downbeat instant bass swap (<150Hz crossover flip)
+        val swapTriggered = progress >= render.swapAt
+        val handover = if (swapTriggered) 1.0 else 0.0
+
         val clash = render.vocalOverlap.coerceIn(0.0, 1.0)
         val entry = maxOf(
             bassCutoff(1.0 - handover),
@@ -3456,6 +3462,7 @@ class CrossfadeController(
         )
         tracks.incoming(TransitionFilterProcessor.OPEN_HZ, entry)
         tracks.outgoing(blendExitLowPass(progress, clash), bassCutoff(handover))
+        tracks.flipBassSwap(incomingCut = !swapTriggered, outgoingCut = swapTriggered)
     }
 
     /**
@@ -3973,12 +3980,10 @@ class CrossfadeController(
         const val FILTER_FLOOR_HZ = 300.0
 
         /**
-         * Where the low end is considered to end. Around the fundamental of a
-         * bass guitar's upper register, and the usual corner on a mixer's bass
-         * kill — high enough to clear the kick and the sub, low enough to leave
-         * the body of the vocal alone.
+         * Where the low end is considered to end. Crossover cutoff aligned at
+         * 150 Hz to clear the kick and the sub cleanly without touching the vocal body.
          */
-        const val BASS_SWAP_HZ = 200.0
+        const val BASS_SWAP_HZ = 150.0
 
         /** How much of the fade the low end takes to change hands. */
         const val BASS_SWAP_WIDTH = 0.10

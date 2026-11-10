@@ -1986,6 +1986,12 @@ class PlaybackService : MediaLibraryService() {
                 override fun outgoingEcho(delaySeconds: Float, send: Float, dry: Float) =
                     spareFilter.setEcho(delaySeconds, send, dry)
 
+                override fun incomingBassCut(cut: Boolean) =
+                    activeFilter.setBassCut(cut, instant = true)
+
+                override fun outgoingBassCut(cut: Boolean) =
+                    spareFilter.setBassCut(cut, instant = true)
+
                 override fun parkEchoes() {
                     transitionFilterA.parkEcho()
                     transitionFilterB.parkEcho()

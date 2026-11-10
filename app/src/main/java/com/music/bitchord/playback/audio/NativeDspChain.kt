@@ -38,6 +38,12 @@ class NativeDspChain(sampleRate: Int, channelCount: Int) : AutoCloseable {
         }
     }
 
+    fun setBassSwapShelf(enabled: Boolean, attenuationDb: Float = -24.0f, cutoffHz: Float = 150.0f) {
+        if (nativeHandle != 0L) {
+            nativeSetBassSwapShelf(nativeHandle, enabled, attenuationDb, cutoffHz)
+        }
+    }
+
     fun setLimiter(targetGain: Float, targetTrim: Float, holdLimiter: Boolean, snap: Boolean = false) {
         if (nativeHandle != 0L) {
             nativeSetLimiter(nativeHandle, targetGain, targetTrim, holdLimiter, snap)
@@ -89,6 +95,9 @@ class NativeDspChain(sampleRate: Int, channelCount: Int) : AutoCloseable {
         @JvmStatic private external fun nativeSetSpatializer(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetEqualizer(
             handle: Long, enabled: Boolean, gainsDb: FloatArray?, qs: FloatArray?, preampDb: Float, balance: Float
+        )
+        @JvmStatic private external fun nativeSetBassSwapShelf(
+            handle: Long, enabled: Boolean, attenuationDb: Float, cutoffHz: Float
         )
         @JvmStatic private external fun nativeSetLimiter(
             handle: Long, targetGain: Float, targetTrim: Float, holdLimiter: Boolean, snap: Boolean

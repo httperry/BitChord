@@ -91,6 +91,29 @@ class EqualizerProcessor : BaseAudioProcessor() {
     /** Two integrator states per section, per channel. */
     private var state = FloatArray(0)
 
+    // Low-shelf crossover attenuation (<150Hz) / bass swap shelf support
+    @Volatile
+    private var bassSwapShelfEnabled = false
+
+    @Volatile
+    private var targetBassSwapAttenuationDb = 0f
+
+    @Volatile
+    private var targetBassSwapCutoffHz = BASS_SWAP_SHELF_HZ
+
+    private var currentBassSwapGainDb = 0f
+    private var currentBassSwapCutoffHz = BASS_SWAP_SHELF_HZ
+    private var bassSwapRunning = false
+    private var bassSwapState = FloatArray(0)
+
+    private var bassSwapCoeffA1 = 0f
+    private var bassSwapCoeffA2 = 0f
+    private var bassSwapCoeffA3 = 0f
+    private var bassSwapMixIn = 1f
+    private var bassSwapMixBand = 0f
+    private var bassSwapMixLow = 0f
+    private var bassSwapBaseTan = 0f
+
     /** Output trim per channel: make-up attenuation, and balance where stereo. */
     private var channelGain = FloatArray(0)
 
@@ -124,6 +147,26 @@ class EqualizerProcessor : BaseAudioProcessor() {
         get() = target !== Tuning.OFF
 
     /**
+     * Engages or disengages low-shelf crossover attenuation (<150Hz) for the downbeat bass swap.
+     * When [enabled], attenuates frequencies below [cutoffHz] (<150Hz) by [attenuationDb]
+     * (e.g. -24dB to -48dB) to clear the sub/kick range without phase anomalies or limiter pumping.
+     */
+    fun setBassSwapShelf(
+        enabled: Boolean,
+        attenuationDb: Float = DEFAULT_BASS_SWAP_ATTENUATION_DB,
+        cutoffHz: Float = BASS_SWAP_SHELF_HZ,
+    ) {
+        bassSwapShelfEnabled = enabled
+        targetBassSwapAttenuationDb = if (enabled) attenuationDb.coerceIn(-96f, 0f) else 0f
+        targetBassSwapCutoffHz = cutoffHz.coerceIn(MIN_HZ, if (sampleRate > 0) sampleRate * MAX_FREQUENCY_FRACTION else 20_000f)
+        if (sampleRate > 0) {
+            bassSwapBaseTan = tan(Math.PI * usableFrequency(targetBassSwapCutoffHz) / sampleRate).toFloat()
+        }
+    }
+
+    val isBassSwapShelfEnabled: Boolean get() = bassSwapShelfEnabled
+
+    /**
      * Configures the Float32 DSP engine for [sampleRate] and [channelCount].
      */
     fun configure(sampleRate: Int, channelCount: Int) {
@@ -132,6 +175,10 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val requiredSize = channelCount * EqLayout.SLOTS * 2
         if (state.size != requiredSize) {
             state = FloatArray(requiredSize)
+        }
+        val requiredBassSwapSize = channelCount * 2
+        if (bassSwapState.size != requiredBassSwapSize) {
+            bassSwapState = FloatArray(requiredBassSwapSize)
         }
         if (channelGain.size != channelCount) {
             channelGain = FloatArray(channelCount) { 1f }
@@ -144,8 +191,10 @@ class EqualizerProcessor : BaseAudioProcessor() {
                 val spec = EqLayout.slots[slot]
                 precomputedBaseTan[slot] = tan(Math.PI * usableFrequency(spec.frequencyHz) / sampleRate).toFloat()
             }
+            bassSwapBaseTan = tan(Math.PI * usableFrequency(targetBassSwapCutoffHz) / sampleRate).toFloat()
         }
         running.fill(false)
+        bassSwapRunning = false
         limiter.configure(sampleRate)
         snapToTarget()
     }
@@ -159,7 +208,8 @@ class EqualizerProcessor : BaseAudioProcessor() {
         if (frameCount == 0 || channelCount < 1 || sampleRate <= 0) return
 
         val tuning = target
-        if (isFlat(tuning) && isSettled(tuning)) {
+        val bassSwapActiveOrShaping = bassSwapShelfEnabled || abs(currentBassSwapGainDb) >= SETTLED_DB || abs(targetBassSwapAttenuationDb) >= SETTLED_DB
+        if (isFlat(tuning) && isSettled(tuning) && !bassSwapActiveOrShaping) {
             isShaping = false
             return
         }
@@ -173,6 +223,16 @@ class EqualizerProcessor : BaseAudioProcessor() {
             val active = prepareSections()
             prepareChannelGains()
 
+            currentBassSwapGainDb = linearGlide(currentBassSwapGainDb, targetBassSwapAttenuationDb)
+            val bassSwapActive = abs(currentBassSwapGainDb) >= SETTLED_DB
+            if (bassSwapActive) {
+                updateBassSwapCoefficients()
+                bassSwapRunning = true
+            } else if (bassSwapRunning) {
+                bassSwapState.fill(0f)
+                bassSwapRunning = false
+            }
+
             for (f in 0 until subBlock) {
                 val baseIdx = (frameOffset + f) * channelCount
                 for (channel in 0 until channelCount) {
@@ -180,11 +240,19 @@ class EqualizerProcessor : BaseAudioProcessor() {
                     for (index in 0 until active) {
                         sample = section(activeSlots[index], channel, sample)
                     }
+                    if (bassSwapActive) {
+                        sample = applyBassSwapShelf(channel, sample)
+                    }
                     // Headroom is preserved: sample is stored directly as Float
                     block.samples[baseIdx + channel] = sample * channelGain[channel]
                 }
             }
             flushDenormals(active)
+            if (bassSwapActive) {
+                for (i in 0 until channelCount * 2) {
+                    if (abs(bassSwapState[i]) < DENORMAL_FLOOR) bassSwapState[i] = 0f
+                }
+            }
             frameOffset += subBlock
             remaining -= subBlock
         }
@@ -208,17 +276,25 @@ class EqualizerProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         state.fill(0f)
+        bassSwapState.fill(0f)
         running.fill(false)
+        bassSwapRunning = false
+        currentBassSwapGainDb = targetBassSwapAttenuationDb
         limiter.reset()
         snapToTarget()
     }
 
     override fun onReset() {
         state = FloatArray(0)
+        bassSwapState = FloatArray(0)
         channelGain = FloatArray(0)
         frame = FloatArray(0)
         precomputedBaseTan.fill(0f)
         running.fill(false)
+        bassSwapRunning = false
+        bassSwapShelfEnabled = false
+        targetBassSwapAttenuationDb = 0f
+        currentBassSwapGainDb = 0f
         limiter.reset()
         isShaping = false
         channelCount = 0
@@ -233,7 +309,8 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val outputBuffer = replaceOutputBuffer(frameCount * bytesPerFrame)
 
         val tuning = target
-        if (isFlat(tuning) && isSettled(tuning)) {
+        val bassSwapActiveOrShaping = bassSwapShelfEnabled || abs(currentBassSwapGainDb) >= SETTLED_DB || abs(targetBassSwapAttenuationDb) >= SETTLED_DB
+        if (isFlat(tuning) && isSettled(tuning) && !bassSwapActiveOrShaping) {
             limiter.reset()
             outputBuffer.put(inputBuffer)
             outputBuffer.flip()
@@ -251,12 +328,25 @@ class EqualizerProcessor : BaseAudioProcessor() {
             val active = prepareSections()
             prepareChannelGains()
 
+            currentBassSwapGainDb = linearGlide(currentBassSwapGainDb, targetBassSwapAttenuationDb)
+            val bassSwapActive = abs(currentBassSwapGainDb) >= SETTLED_DB
+            if (bassSwapActive) {
+                updateBassSwapCoefficients()
+                bassSwapRunning = true
+            } else if (bassSwapRunning) {
+                bassSwapState.fill(0f)
+                bassSwapRunning = false
+            }
+
             repeat(block) {
                 var peak = 0f
                 for (channel in 0 until channelCount) {
                     var sample = inputBuffer.short.toFloat() * invScale
                     for (index in 0 until active) {
                         sample = section(activeSlots[index], channel, sample)
+                    }
+                    if (bassSwapActive) {
+                        sample = applyBassSwapShelf(channel, sample)
                     }
                     sample *= channelGain[channel]
                     frame[channel] = sample
@@ -268,6 +358,11 @@ class EqualizerProcessor : BaseAudioProcessor() {
                 }
             }
             flushDenormals(active)
+            if (bassSwapActive) {
+                for (i in 0 until channelCount * 2) {
+                    if (abs(bassSwapState[i]) < DENORMAL_FLOOR) bassSwapState[i] = 0f
+                }
+            }
             remaining -= block
         }
         outputBuffer.flip()
@@ -415,10 +510,44 @@ class EqualizerProcessor : BaseAudioProcessor() {
         }
     }
 
+    private fun updateBassSwapCoefficients() {
+        if (sampleRate <= 0) return
+        val a = 10f.pow(currentBassSwapGainDb / 40f)
+        val q = 0.707f
+        val base = bassSwapBaseTan
+        val g = base / sqrt(a)
+        val k = 1f / q
+        bassSwapMixIn = 1f
+        bassSwapMixBand = k * (a - 1f)
+        bassSwapMixLow = a * a - 1f
+        val d = 1f / (1f + g * (g + k))
+        bassSwapCoeffA1 = d
+        bassSwapCoeffA2 = g * d
+        bassSwapCoeffA3 = g * (g * d)
+    }
+
+    private fun applyBassSwapShelf(channel: Int, input: Float): Float {
+        val i = channel * 2
+        val ic1 = bassSwapState[i]
+        val ic2 = bassSwapState[i + 1]
+        val v3 = input - ic2
+        val v1 = bassSwapCoeffA1 * ic1 + bassSwapCoeffA2 * v3
+        val v2 = ic2 + bassSwapCoeffA2 * ic1 + bassSwapCoeffA3 * v3
+        bassSwapState[i] = 2f * v1 - ic1
+        bassSwapState[i + 1] = 2f * v2 - ic2
+        return bassSwapMixIn * input + bassSwapMixBand * v1 + bassSwapMixLow * v2
+    }
+
     companion object {
         private const val TAG = "BitChordEqualizer"
 
         private const val BYTES_PER_SAMPLE = 2
+
+        /** Crossover cutoff for downbeat bass swap low-shelf attenuation (<150Hz). */
+        const val BASS_SWAP_SHELF_HZ = 150.0f
+
+        /** Default attenuation for bass swap low-shelf cut in dB. */
+        const val DEFAULT_BASS_SWAP_ATTENUATION_DB = -24.0f
 
         /** Frames between coefficient updates. ~1.5 ms at 44.1 kHz. */
         private const val GLIDE_FRAMES = 64

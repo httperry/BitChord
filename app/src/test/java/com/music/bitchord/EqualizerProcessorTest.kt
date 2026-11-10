@@ -219,6 +219,48 @@ class EqualizerProcessorTest {
         }
     }
 
+    @Test
+    fun `bass swap low-shelf attenuates sub-bass below 150 Hz and leaves mids and highs untouched`() {
+        val processor = EqualizerProcessor()
+        processor.setBassSwapShelf(enabled = true, attenuationDb = -24f, cutoffHz = 150f)
+
+        // 50 Hz deep bass/kick range should be strongly attenuated
+        val gainAt50Hz = measure(processor, 50.0)
+        assertTrue("50 Hz should be attenuated by at least 15 dB, was $gainAt50Hz dB", gainAt50Hz < -15.0)
+
+        // 100 Hz bass range should be attenuated
+        val gainAt100Hz = measure(processor, 100.0)
+        assertTrue("100 Hz should be attenuated by at least 6 dB, was $gainAt100Hz dB", gainAt100Hz < -6.0)
+
+        // 1000 Hz mids should remain untouched (< 0.5 dB difference)
+        val gainAt1000Hz = measure(processor, 1_000.0)
+        assertTrue("1000 Hz should be unaffected, was $gainAt1000Hz dB", abs(gainAt1000Hz) < 0.5)
+
+        // 5000 Hz highs should remain untouched (< 0.5 dB difference)
+        val gainAt5000Hz = measure(processor, 5_000.0)
+        assertTrue("5000 Hz should be unaffected, was $gainAt5000Hz dB", abs(gainAt5000Hz) < 0.5)
+    }
+
+    @Test
+    fun `bass swap shelf disabled provides bit-perfect pass-through`() {
+        val processor = EqualizerProcessor()
+        val format = AudioProcessor.AudioFormat(SAMPLE_RATE, 2, C.ENCODING_PCM_16BIT)
+        processor.configure(format)
+        processor.flush()
+
+        val chunk = stereoTone(1_000.0, frames = 4_096)
+        // Engage bass swap shelf
+        processor.setBassSwapShelf(enabled = true, attenuationDb = -24f, cutoffHz = 150f)
+        drain(processor, chunk)
+
+        // Disengage bass swap shelf and allow filter to glide back to 0 dB
+        processor.setBassSwapShelf(enabled = false)
+        repeat(12) { drain(processor, chunk) }
+
+        // Once settled, output should match chunk bit-for-bit
+        assertArrayEqualsShort(chunk, drain(processor, chunk))
+    }
+
     // ---- Harness -----------------------------------------------------------
 
     /** Sets one band and reports what the cascade did at [atHz], net of make-up. */

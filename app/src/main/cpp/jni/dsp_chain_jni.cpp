@@ -96,6 +96,15 @@ Java_com_music_bitchord_playback_audio_NativeDspChain_nativeSetEqualizer(
 }
 
 JNIEXPORT void JNICALL
+Java_com_music_bitchord_playback_audio_NativeDspChain_nativeSetBassSwapShelf(
+    JNIEnv*, jclass, jlong handle, jboolean enabled, jfloat attenuationDb, jfloat cutoffHz) {
+  auto* ctx = FromHandle(handle);
+  if (ctx != nullptr) {
+    ctx->equalizer.SetBassSwapShelf(enabled, attenuationDb, cutoffHz);
+  }
+}
+
+JNIEXPORT void JNICALL
 Java_com_music_bitchord_playback_audio_NativeDspChain_nativeSetLimiter(
     JNIEnv*, jclass, jlong handle, jfloat targetGain, jfloat targetTrim, jboolean holdLimiter, jboolean snap) {
   auto* ctx = FromHandle(handle);

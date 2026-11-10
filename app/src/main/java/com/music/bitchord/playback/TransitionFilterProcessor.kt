@@ -51,6 +51,28 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
     private val highA3 = FloatArray(STAGES)
     private val highK = FloatArray(STAGES)
 
+    // Crossover filter (<150Hz 4th-order Butterworth high-pass)
+    private var crossoverState = FloatArray(0)
+    private val crossoverA1 = FloatArray(STAGES)
+    private val crossoverA2 = FloatArray(STAGES)
+    private val crossoverA3 = FloatArray(STAGES)
+    private val crossoverK = FloatArray(STAGES)
+
+    @Volatile
+    private var targetBassCut = false
+    private var currentBassCut = false
+
+    // Zero-crossing window state (2-5ms / ~128-256 samples, e.g. 192 samples)
+    private var flipWindowLength = DEFAULT_WINDOW_FRAMES
+    private val windowGains = FloatArray(MAX_WINDOW_SAMPLES)
+    private var flipInProgress = false
+    private var flipSampleIndex = 0
+    private var flipFromBassCut = false
+    private var flipToBassCut = false
+    private var flipPendingZeroCross = false
+    private var zeroCrossSearchFramesLeft = 0
+    private var prevSample = 0f
+
     /** Whether the integrators hold anything since they were last cleared. */
     private var filterStateDirty = false
 
@@ -120,12 +142,43 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         targetHighPassHz = highPassHz.coerceIn(OFF_HZ, MAX_HIGH_PASS_HZ)
     }
 
-    /** Parks both filters. Glided, not snapped. */
-    fun open() = setCutoffs(OPEN_HZ, OFF_HZ)
+    /**
+     * Arms or performs an instant downbeat low-end crossover flip (<150Hz).
+     * When [instant] is true, triggers a smooth zero-crossing crossfade window (2-5ms)
+     * preventing dual-kick collision, clicks, DC offset, and limiter pumping.
+     */
+    fun setBassCut(cut: Boolean, instant: Boolean = true) {
+        if (targetBassCut == cut && (!instant || !flipInProgress)) return
+        targetBassCut = cut
+        if (instant && sampleRate > 0) {
+            flipPendingZeroCross = true
+            zeroCrossSearchFramesLeft = MAX_ZERO_CROSS_SEARCH_FRAMES
+            flipFromBassCut = currentBassCut
+            flipToBassCut = cut
+            flipInProgress = false
+            flipSampleIndex = 0
+        } else {
+            currentBassCut = cut
+            flipInProgress = false
+            flipPendingZeroCross = false
+        }
+    }
+
+    /** Instant downbeat bass swap convenience flip. */
+    fun flipBass(cut: Boolean) = setBassCut(cut, instant = true)
+
+    val isBassCut: Boolean get() = targetBassCut || currentBassCut || flipInProgress
+
+    /** Parks both filters and disengages bass cut. Glided, not snapped. */
+    fun open() {
+        setCutoffs(OPEN_HZ, OFF_HZ)
+        setBassCut(false, instant = false)
+    }
 
     val isFiltering: Boolean
         get() = targetLowPassHz < OPEN_HZ || targetHighPassHz > OFF_HZ ||
             currentLowPassHz < OPEN_HZ - SETTLED_HZ || currentHighPassHz > OFF_HZ + SETTLED_HZ ||
+            targetBassCut || currentBassCut || flipInProgress ||
             echoEngaged
 
     /**
@@ -172,9 +225,21 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         if (lowState.size != requiredSize) {
             lowState = FloatArray(requiredSize)
             highState = FloatArray(requiredSize)
+            crossoverState = FloatArray(requiredSize)
         }
         currentLowPassHz = targetLowPassHz
         currentHighPassHz = targetHighPassHz
+        updateCrossoverCoefficients()
+
+        flipWindowLength = (sampleRate * FLIP_WINDOW_DURATION_SEC).toInt().coerceIn(MIN_WINDOW_SAMPLES, MAX_WINDOW_SAMPLES)
+        val invW = 1.0 / flipWindowLength
+        for (i in 0 until flipWindowLength) {
+            windowGains[i] = (0.5 * (1.0 - kotlin.math.cos(Math.PI * (i + 0.5) * invW))).toFloat()
+        }
+        flipInProgress = false
+        flipPendingZeroCross = false
+        currentBassCut = targetBassCut
+
         if (echoLow.size != channelCount) {
             echoLow = FloatArray(channelCount)
             echoHigh = FloatArray(channelCount)
@@ -202,7 +267,8 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         val targetLow = targetLowPassHz
         val targetHigh = targetHighPassHz
         val parked = targetLow >= OPEN_HZ && targetHigh <= OFF_HZ &&
-            currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ
+            currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ &&
+            !targetBassCut && !currentBassCut && !flipInProgress
         if (parked) {
             clearStateIfNeeded()
             return
@@ -222,12 +288,57 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
 
             for (f in 0 until subBlock) {
                 val baseIdx = (frameOffset + f) * channelCount
-                for (channel in 0 until channelCount) {
-                    var sample = block.samples[baseIdx + channel]
-                    if (lowOn) sample = lowPass(channel, sample)
-                    if (highOn) sample = highPass(channel, sample)
-                    // Headroom preserved: no clamping to [-1.0f, +1.0f]
-                    block.samples[baseIdx + channel] = sample
+
+                if (flipPendingZeroCross) {
+                    val s0 = block.samples[baseIdx]
+                    val cross = (prevSample * s0 <= 0f) || kotlin.math.abs(s0) < ZERO_CROSS_EPSILON || zeroCrossSearchFramesLeft <= 0
+                    if (cross) {
+                        flipPendingZeroCross = false
+                        flipInProgress = true
+                        flipSampleIndex = 0
+                    } else {
+                        zeroCrossSearchFramesLeft--
+                    }
+                    prevSample = s0
+                }
+
+                if (flipInProgress) {
+                    val gain = windowGains[flipSampleIndex]
+                    for (channel in 0 until channelCount) {
+                        var sample = block.samples[baseIdx + channel]
+                        if (lowOn) sample = lowPass(channel, sample)
+                        val hp = crossoverHighPass(channel, sample)
+                        sample = if (flipFromBassCut) {
+                            (1f - gain) * hp + gain * sample
+                        } else {
+                            (1f - gain) * sample + gain * hp
+                        }
+                        // Headroom preserved: no clamping to [-1.0f, +1.0f]
+                        block.samples[baseIdx + channel] = sample
+                    }
+                    flipSampleIndex++
+                    if (flipSampleIndex >= flipWindowLength) {
+                        flipInProgress = false
+                        currentBassCut = flipToBassCut
+                        if (!currentBassCut) {
+                            crossoverState.fill(0f)
+                        }
+                    }
+                } else if (currentBassCut) {
+                    for (channel in 0 until channelCount) {
+                        var sample = block.samples[baseIdx + channel]
+                        if (lowOn) sample = lowPass(channel, sample)
+                        sample = crossoverHighPass(channel, sample)
+                        block.samples[baseIdx + channel] = sample
+                    }
+                } else {
+                    for (channel in 0 until channelCount) {
+                        var sample = block.samples[baseIdx + channel]
+                        if (lowOn) sample = lowPass(channel, sample)
+                        if (highOn) sample = highPass(channel, sample)
+                        // Headroom preserved: no clamping to [-1.0f, +1.0f]
+                        block.samples[baseIdx + channel] = sample
+                    }
                 }
             }
             frameOffset += subBlock
@@ -254,8 +365,12 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
     override fun onFlush() {
         lowState.fill(0f)
         highState.fill(0f)
+        crossoverState.fill(0f)
         currentLowPassHz = targetLowPassHz
         currentHighPassHz = targetHighPassHz
+        flipInProgress = false
+        flipPendingZeroCross = false
+        currentBassCut = targetBassCut
         // Whatever the ring holds is from before the seek; start it clean.
         echoSeenGeneration = echoGeneration - 1
     }
@@ -265,8 +380,13 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         echoSeenGeneration = echoGeneration - 1
         targetLowPassHz = OPEN_HZ
         targetHighPassHz = OFF_HZ
+        targetBassCut = false
+        currentBassCut = false
         lowState = FloatArray(0)
         highState = FloatArray(0)
+        crossoverState = FloatArray(0)
+        flipInProgress = false
+        flipPendingZeroCross = false
         channelCount = 0
         sampleRate = 0
     }
@@ -281,7 +401,8 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         val targetLow = targetLowPassHz
         val targetHigh = targetHighPassHz
         val parked = targetLow >= OPEN_HZ && targetHigh <= OFF_HZ &&
-            currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ
+            currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ &&
+            !targetBassCut && !currentBassCut && !flipInProgress
         if (parked) {
             clearStateIfNeeded()
             outputBuffer.put(inputBuffer)
@@ -305,11 +426,57 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
             if (highOn) updateHighCoefficients()
 
             repeat(subBlock) {
-                for (channel in 0 until channelCount) {
-                    var sample = inputBuffer.short.toFloat() * invScale
-                    if (lowOn) sample = lowPass(channel, sample)
-                    if (highOn) sample = highPass(channel, sample)
-                    outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
+                val basePos = inputBuffer.position()
+                val s0Short = inputBuffer.getShort(basePos)
+                val s0 = s0Short.toFloat() * invScale
+
+                if (flipPendingZeroCross) {
+                    val cross = (prevSample * s0 <= 0f) || kotlin.math.abs(s0) < ZERO_CROSS_EPSILON || zeroCrossSearchFramesLeft <= 0
+                    if (cross) {
+                        flipPendingZeroCross = false
+                        flipInProgress = true
+                        flipSampleIndex = 0
+                    } else {
+                        zeroCrossSearchFramesLeft--
+                    }
+                    prevSample = s0
+                }
+
+                if (flipInProgress) {
+                    val gain = windowGains[flipSampleIndex]
+                    for (channel in 0 until channelCount) {
+                        var sample = inputBuffer.short.toFloat() * invScale
+                        if (lowOn) sample = lowPass(channel, sample)
+                        val hp = crossoverHighPass(channel, sample)
+                        sample = if (flipFromBassCut) {
+                            (1f - gain) * hp + gain * sample
+                        } else {
+                            (1f - gain) * sample + gain * hp
+                        }
+                        outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
+                    }
+                    flipSampleIndex++
+                    if (flipSampleIndex >= flipWindowLength) {
+                        flipInProgress = false
+                        currentBassCut = flipToBassCut
+                        if (!currentBassCut) {
+                            crossoverState.fill(0f)
+                        }
+                    }
+                } else if (currentBassCut) {
+                    for (channel in 0 until channelCount) {
+                        var sample = inputBuffer.short.toFloat() * invScale
+                        if (lowOn) sample = lowPass(channel, sample)
+                        sample = crossoverHighPass(channel, sample)
+                        outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
+                    }
+                } else {
+                    for (channel in 0 until channelCount) {
+                        var sample = inputBuffer.short.toFloat() * invScale
+                        if (lowOn) sample = lowPass(channel, sample)
+                        if (highOn) sample = highPass(channel, sample)
+                        outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
+                    }
                 }
             }
             remaining -= subBlock
@@ -330,6 +497,7 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         if (!filterStateDirty) return
         lowState.fill(0f)
         highState.fill(0f)
+        crossoverState.fill(0f)
         filterStateDirty = false
     }
 
@@ -450,6 +618,35 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         }
     }
 
+    private fun updateCrossoverCoefficients() {
+        if (sampleRate <= 0) return
+        val g = tan(Math.PI * usableCutoff(CROSSOVER_HZ) / sampleRate).toFloat()
+        for (stage in 0 until STAGES) {
+            val k = 1f / BUTTERWORTH_Q[stage]
+            val a1 = 1f / (1f + g * (g + k))
+            crossoverA1[stage] = a1
+            crossoverA2[stage] = g * a1
+            crossoverA3[stage] = g * (g * a1)
+            crossoverK[stage] = k
+        }
+    }
+
+    private fun crossoverHighPass(channel: Int, input: Float): Float {
+        var value = input
+        for (stage in 0 until STAGES) {
+            val i = (channel * STAGES + stage) * 2
+            val ic1 = crossoverState[i]
+            val ic2 = crossoverState[i + 1]
+            val v3 = value - ic2
+            val v1 = crossoverA1[stage] * ic1 + crossoverA2[stage] * v3
+            val v2 = ic2 + crossoverA2[stage] * ic1 + crossoverA3[stage] * v3
+            crossoverState[i] = 2f * v1 - ic1
+            crossoverState[i + 1] = 2f * v2 - ic2
+            value -= crossoverK[stage] * v1 + v2
+        }
+        return value
+    }
+
     private fun lowPass(channel: Int, input: Float): Float {
         var value = input
         for (stage in 0 until STAGES) {
@@ -491,6 +688,9 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         /** A high-pass at or below this is doing nothing audible, so it counts as off. */
         const val OFF_HZ = 20f
 
+        /** Low-end crossover filter cutoff frequency (<150Hz). */
+        const val CROSSOVER_HZ = 150.0f
+
         /** Nothing musical wants the low end lifted above this, and a typo shouldn't be able to. */
         const val MAX_HIGH_PASS_HZ = 2_000f
 
@@ -514,6 +714,14 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
 
         /** Keeps `tan` away from its pole at Nyquist. */
         private const val MAX_CUTOFF_FRACTION = 0.45f
+
+        // Zero-crossing window constants (~2-5ms / ~128-256 samples)
+        private const val MIN_WINDOW_SAMPLES = 128
+        private const val MAX_WINDOW_SAMPLES = 256
+        private const val DEFAULT_WINDOW_FRAMES = 192
+        private const val FLIP_WINDOW_DURATION_SEC = 0.0035f
+        private const val MAX_ZERO_CROSS_SEARCH_FRAMES = 64
+        private const val ZERO_CROSS_EPSILON = 0.005f
 
         /**
          * Echo feedback: each repeat at 40% of the one before, so
@@ -568,6 +776,16 @@ interface TransitionFilters {
     fun incomingEcho(delaySeconds: Float, send: Float, dry: Float) = Unit
     fun outgoingEcho(delaySeconds: Float, send: Float, dry: Float) = Unit
 
+    /** Crossover bass-cut flip (<150Hz) for incoming and outgoing tracks. */
+    fun incomingBassCut(cut: Boolean) = Unit
+    fun outgoingBassCut(cut: Boolean) = Unit
+
+    /** Cleanly flips low-end crossover on the exact downbeat handoff. */
+    fun flipBassSwap(incomingCut: Boolean, outgoingCut: Boolean) {
+        incomingBassCut(incomingCut)
+        outgoingBassCut(outgoingCut)
+    }
+
     /** Drops any echo on either sink. Called whenever a transition ends, however it ended. */
     fun parkEchoes() = Unit
 
@@ -575,6 +793,8 @@ interface TransitionFilters {
     fun open() {
         incoming(TransitionFilterProcessor.OPEN_HZ, TransitionFilterProcessor.OFF_HZ)
         outgoing(TransitionFilterProcessor.OPEN_HZ, TransitionFilterProcessor.OFF_HZ)
+        incomingBassCut(false)
+        outgoingBassCut(false)
     }
 
     /** For callers with no audio sink to filter — tests, and the default wiring. */

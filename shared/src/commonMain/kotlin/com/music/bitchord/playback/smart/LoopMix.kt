@@ -128,6 +128,7 @@ object LoopMix {
         /** Share of the loop that is sung (0..1); 0 when the lyrics vouch for it. */
         val vocal: Double,
         val checkedBy: Check,
+        val takeoverStart: Double = loopStart,
     ) {
         val beats: Int get() = bars * 4
     }
@@ -142,6 +143,7 @@ object LoopMix {
         val exitBars: Int,
         /** Outgoing bars from the outgoing loop's start to the incoming loop's release. */
         val totalBars: Int,
+        val takeoverStart: Double = out.takeoverStart,
     ) {
         /** The tempo the ramp arrives at, in outgoing beats per minute. */
         val targetBpm: Double get() = inn.bpm / fold
@@ -184,7 +186,7 @@ object LoopMix {
         val outFirst = max(earliestOutSec, outDuration - OUT_SEARCH_SEC)
         val targetOutSec = out.outroStartTime.takeIf { it > 0 && it in outFirst..outEnd - 12 }
             ?: (outDuration - 35.0).coerceIn(outFirst, outEnd - 12)
-        val outPick = firstClean(
+        var outPick = firstClean(
             candidates = { bars ->
                 val raw = loopsBetween(out.tailBeats, outGrid, outFirst, outEnd, bars)
                 val filtered = if (bars <= 1) raw.filter { it.start <= outDuration - 8.0 } else raw
@@ -194,7 +196,39 @@ object LoopMix {
             sung = sungOut,
             beatSec = outGrid.beatSec,
             count = outCount,
-        ) ?: return null.also { why?.append("outgoing: ")?.append(outCount) }
+        )
+
+        // Smart Outro Extension (Loop Cushion):
+        // When an outgoing song has vocals until the final 2 seconds (or when no clean loop exists in the normal
+        // outro window due to vocals extending to the end), sample an earlier clean 4-bar instrumental loop from
+        // the intro (between audibleStartTime and introEndTime) or bridge / interior of the track.
+        val maskNearEnd = maskStatsFromAnalysis(out, max(0.0, outDuration - 2.0), outDuration)
+        val vocalsUntilEnd = sungOut?.any { it.end >= outDuration - 2.0 } == true ||
+            (maskNearEnd != null && maskNearEnd.share > MAX_SUNG_SHARE)
+        val needsCushion = outPick == null || vocalsUntilEnd
+
+        if (needsCushion) {
+            val introStart = max(0.0, out.audibleStartTime ?: out.firstBeat.takeIf { it.isFinite() } ?: 0.0)
+            val introEnd = out.introEndTime.takeIf { it.isFinite() && it > introStart + 4 * outGrid.barSec }
+                ?: min(45.0, outDuration * 0.25)
+            var cushion = findClean4BarLoop(out.headBeats, outGrid, introStart, introEnd, out, sungOut, outGrid.beatSec)
+            if (cushion == null && outFirst > introEnd + 4 * outGrid.barSec) {
+                cushion = findClean4BarLoop(null, outGrid, introEnd, outFirst, out, sungOut, outGrid.beatSec)
+            }
+            if (cushion != null) {
+                val takeover = resolveOutroTakeoverStart(out, outGrid, outFirst, outEnd, outDuration, sungOut)
+                outPick = Clean(
+                    start = cushion.start,
+                    end = cushion.end,
+                    bars = 4,
+                    vocal = cushion.vocal,
+                    checkedBy = cushion.checkedBy,
+                    takeoverStart = takeover,
+                )
+            }
+        }
+
+        if (outPick == null) return null.also { why?.append("outgoing: ")?.append(outCount) }
 
         // incoming: the earliest instrumental loop in its opening
         val inEnd = min(IN_SEARCH_SEC + LOOP_BARS * inGrid.barSec, inDuration - 20)
@@ -226,6 +260,7 @@ object LoopMix {
             bpm = bpm,
             vocal = clean.vocal,
             checkedBy = clean.checkedBy,
+            takeoverStart = clean.takeoverStart,
         )
         return Plan(
             out = pick(outPick, outBeat, outBpm),
@@ -254,8 +289,14 @@ object LoopMix {
 
     private open class Loop(val start: Double, val end: Double)
 
-    private class Clean(start: Double, end: Double, val bars: Int, val vocal: Double, val checkedBy: Check) :
-        Loop(start, end)
+    private class Clean(
+        start: Double,
+        end: Double,
+        val bars: Int,
+        val vocal: Double,
+        val checkedBy: Check,
+        val takeoverStart: Double = start,
+    ) : Loop(start, end)
 
     /**
      * [bars]-bar loops lying in [from]..[to]. With the model's downbeats, each
@@ -264,14 +305,25 @@ object LoopMix {
      * end lands more than a quarter beat from [bars] bars on (a missed or
      * misplaced downbeat between) is skipped. Without them (or where the model
      * found too few), the constant grid.
+     * Candidate loop start points land strictly on 4-bar phrase downbeats (indices % 4 == 0
+     * of detected downbeats or 4-bar multiples of grid).
      */
     private fun loopsBetween(side: BeatSide?, grid: Grid, from: Double, to: Double, bars: Int): List<Loop> {
         val loops = ArrayList<Loop>()
         if (side != null && side.bpm > 0 && side.downbeats.size >= bars + 1) {
             val beat = 60 / side.bpm
             val downs = side.downbeats
-            for (start in downs) {
-                if (start < from) continue
+            val step = if (bars >= 4) 4 else 1
+            var low = 0
+            var high = downs.size - 1
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                if (downs[mid] < from) low = mid + 1 else high = mid - 1
+            }
+            val startIdx = if (bars >= 4) ((low + 3) / 4) * 4 else low
+            for (i in startIdx until downs.size step step) {
+                if (bars >= 4 && i % 4 != 0) continue
+                val start = downs[i]
                 val target = start + bars * 4 * beat
                 val end = nearest(downs, target)
                 if (abs(end - target) > beat / 4 || end > to) continue
@@ -282,10 +334,11 @@ object LoopMix {
         if (to < from) return loops
         val bar = grid.barSec
         val length = bars * bar
-        var t = grid.anchor + ceil((from - grid.anchor) / bar) * bar
+        val step = if (bars >= 4) 4 * bar else bar
+        var t = grid.anchor + ceil((from - grid.anchor) / step) * step
         while (t + length <= to) {
             loops += Loop(t, t + length)
-            t += bar
+            t += step
         }
         return loops
     }
@@ -383,16 +436,141 @@ object LoopMix {
     }
 
     /** The RMS of the quietest of a loop's bars, from the level windows; NaN where they don't reach. */
-    private fun quietestBar(windows: List<CurveWindow>, loop: Loop, bars: Int): Double {
+    private fun quietestBar(windows: List<CurveWindow>, start: Double, end: Double, bars: Int): Double {
         if (windows.isEmpty()) return Double.NaN
         var quietest = Double.POSITIVE_INFINITY
-        val bar = (loop.end - loop.start) / bars
+        val bar = (end - start) / bars
         for (b in 0 until bars) {
-            val rms = meanRms(windows, loop.start + b * bar, loop.start + (b + 1) * bar)
+            val rms = meanRms(windows, start + b * bar, start + (b + 1) * bar)
             if (rms.isNaN()) return Double.NaN
             quietest = min(quietest, rms)
         }
         return quietest
+    }
+
+    private fun quietestBar(windows: List<CurveWindow>, loop: Loop, bars: Int): Double =
+        quietestBar(windows, loop.start, loop.end, bars)
+
+    /**
+     * Allocation-free verification of a 4-bar candidate instrumental loop.
+     */
+    private fun checkClean4Bar(
+        start: Double,
+        end: Double,
+        analysis: TrackAnalysis,
+        sung: List<Span>?,
+        beatSec: Double,
+    ): Clean? {
+        val loud = quietestBar(analysis.levelWindows, start, end, 4)
+        if (!loud.isNaN() && loud <= SILENT_RMS) return null
+
+        if (sung != null) {
+            val from = start - LYRIC_GUARD_SEC
+            var touching = 0
+            var certainTouching = false
+            for (i in sung.indices) {
+                val span = sung[i]
+                if (span.start < end && span.end > from) {
+                    touching++
+                    if (span.certainUntil > from) {
+                        certainTouching = true
+                        break
+                    }
+                }
+            }
+            if (certainTouching) return null
+            if (touching == 0) return Clean(start, end, 4, 0.0, Check.LYRICS)
+            val mask = maskStatsFromAnalysis(analysis, start - beatSec, end) ?: return null
+            if (mask.share > MAX_SUNG_SHARE || mask.longestRunSec > MAX_SUNG_RUN_SEC) return null
+            return Clean(start, end, 4, mask.share, Check.LYRICS_AND_MASK)
+        }
+
+        val mask = maskStatsFromAnalysis(analysis, start - beatSec, end) ?: return null
+        if (mask.share > MAX_SUNG_SHARE || mask.longestRunSec > MAX_SUNG_RUN_SEC) return null
+        return Clean(start, end, 4, mask.share, Check.MASK)
+    }
+
+    /**
+     * Fast, allocation-free scan for an earlier clean 4-bar instrumental loop on 4-bar phrase downbeats.
+     */
+    private fun findClean4BarLoop(
+        side: BeatSide?,
+        grid: Grid,
+        from: Double,
+        to: Double,
+        analysis: TrackAnalysis,
+        sung: List<Span>?,
+        beatSec: Double,
+    ): Clean? {
+        if (to <= from) return null
+        if (side != null && side.bpm > 0 && side.downbeats.size >= 5) {
+            val downs = side.downbeats
+            val beat = 60 / side.bpm
+            var low = 0
+            var high = downs.size - 1
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                if (downs[mid] < from) low = mid + 1 else high = mid - 1
+            }
+            val startIdx = ((low + 3) / 4) * 4
+            for (i in startIdx until downs.size - 4 step 4) {
+                val start = downs[i]
+                val target = start + 16 * beat
+                val end = nearest(downs, target)
+                if (abs(end - target) > beat / 4 || end > to) continue
+                val clean = checkClean4Bar(start, end, analysis, sung, beatSec)
+                if (clean != null) return clean
+            }
+        }
+        val step = 4 * grid.barSec
+        var t = grid.anchor + ceil((from - grid.anchor) / step) * step
+        while (t + step <= to) {
+            val clean = checkClean4Bar(t, t + step, analysis, sung, beatSec)
+            if (clean != null) return clean
+            t += step
+        }
+        return null
+    }
+
+    /**
+     * Determines where the outro takeover occurs, strictly on a 4-bar phrase downbeat.
+     */
+    private fun resolveOutroTakeoverStart(
+        out: TrackAnalysis,
+        grid: Grid,
+        outFirst: Double,
+        outEnd: Double,
+        outDuration: Double,
+        sungOut: List<Span>?,
+    ): Double {
+        val lastSung = sungOut?.filter { it.end in outFirst..outDuration }?.maxOfOrNull { it.end }
+        val target = when {
+            lastSung != null && lastSung <= outEnd - 4 * grid.barSec -> lastSung
+            out.outroStartTime > 0 && out.outroStartTime in outFirst..outEnd - 4 * grid.barSec -> out.outroStartTime
+            else -> max(outFirst, outEnd - 4 * grid.barSec)
+        }
+
+        val side = out.tailBeats
+        if (side != null && side.bpm > 0 && side.downbeats.size >= 5) {
+            val downs = side.downbeats
+            var best = -1.0
+            var bestDist = Double.POSITIVE_INFINITY
+            for (i in downs.indices step 4) {
+                val d = downs[i]
+                if (d < outFirst || d > outEnd) continue
+                val dist = abs(d - target)
+                if (dist < bestDist) {
+                    bestDist = dist
+                    best = d
+                }
+            }
+            if (best >= 0.0) return best
+        }
+
+        val step = 4 * grid.barSec
+        val k = round((target - grid.anchor) / step)
+        val snapped = grid.anchor + k * step
+        return snapped.coerceIn(outFirst, outEnd)
     }
 
     private fun meanRms(windows: List<CurveWindow>, from: Double, to: Double): Double {

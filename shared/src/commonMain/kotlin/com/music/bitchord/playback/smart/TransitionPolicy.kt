@@ -348,27 +348,77 @@ fun audibleSecondsBetween(analysis: TrackAnalysis, start: Double, end: Double): 
         .minByOrNull { abs(it - target) }
 
 /**
+ * Confidence-weighted harmonic compatibility score between two analyzed tracks (0.0 to 1.0).
+ * Answers 0.5 (neutral) when either track lacks key analysis or confidence is zero.
+ */
+fun harmonicCompatibilityScore(outgoing: TrackAnalysis, incoming: TrackAnalysis): Double =
+    CamelotHarmonics.confidenceWeightedHarmonicScore(outgoing, incoming)
+
+/**
+ * Whether the two tracks have trusted keys that produce a dissonant collision
+ * (semitone or tritone clash).
+ */
+fun hasKeyClash(outgoing: TrackAnalysis, incoming: TrackAnalysis): Boolean =
+    CamelotHarmonics.isClash(outgoing, incoming)
+
+/**
+ * Applies a penalty to [baseScore] if the two tracks have clashing keys,
+ * or rewards harmonic compatibility.
+ */
+fun penalizeKeyClashes(
+    baseScore: Double,
+    outgoing: TrackAnalysis,
+    incoming: TrackAnalysis,
+): Double {
+    if (hasKeyClash(outgoing, incoming)) {
+        return (baseScore - 0.25).coerceAtLeast(0.0)
+    }
+    val score = harmonicCompatibilityScore(outgoing, incoming)
+    return if (score >= 0.7) {
+        (baseScore + (score - 0.5) * 0.2).coerceAtMost(1.0)
+    } else {
+        baseScore
+    }
+}
+
+/**
  * Ranks a track's analyzed mix-in candidates as entry points for a
  * transition, best first.
  *
  * Selection is a scoring problem, not a type lookup: the analyzer's own
- * score, the candidate type, downbeat alignment, whether there is any intro
- * before the point to bed under the outgoing track, and how vocal that intro
- * is all move a candidate up or down.
+ * score, the candidate type, downbeat alignment, harmonic compatibility with
+ * the outgoing track, whether there is any intro before the point to bed under
+ * the outgoing track, and how vocal that intro is all move a candidate up or down.
  */
-fun rankMixInCandidates(analysis: TrackAnalysis): List<RankedMixCandidate> {
+fun rankMixInCandidates(
+    analysis: TrackAnalysis,
+    outgoingAnalysis: TrackAnalysis? = null,
+): List<RankedMixCandidate> {
     val candidates = analysis.mixInCandidates.filter { it.time.isFinite() && it.time >= 0 }
     if (candidates.isEmpty()) return emptyList()
     val beatSeconds = analysis.beatInterval.orZero()
         .takeIf { it > 0 }
         ?: if (analysis.bpm.orZero() > 0) 60 / analysis.bpm else 0.5
     val audibleStart = audibleStartOf(analysis)
+
+    val keyClash = outgoingAnalysis != null && hasKeyClash(outgoingAnalysis, analysis)
+    val harmonicModifier = if (outgoingAnalysis != null) {
+        val harmScore = harmonicCompatibilityScore(outgoingAnalysis, analysis)
+        if (keyClash) -0.15 else (harmScore - 0.5) * 0.2
+    } else {
+        0.0
+    }
+
     return candidates.map { candidate ->
-        var rankScore = candidate.score.orZero() + (MIX_IN_TYPE_WEIGHT[candidate.type] ?: 0.0)
+        var rankScore = candidate.score.orZero() + (MIX_IN_TYPE_WEIGHT[candidate.type] ?: 0.0) + harmonicModifier
         if (nearestValue(analysis.downbeats, candidate.time, beatSeconds / 2) != null) rankScore += 0.1
         // A cold open: nothing before the point to play underneath the outgoing track, so entering
         // here means starting the blend on the arrangement.
         if (candidate.time - audibleStart < beatSeconds * 4) rankScore -= 0.2
+        // When keys clash, avoid long melodic pre-rolls on phrase boundaries; prefer direct drops
+        if (keyClash && (candidate.type == "phrase" || candidate.type == "pickup")) {
+            rankScore -= 0.15
+        }
         // Prefer entries whose run-up is instrumental; an intro that already sings will sing over
         // the outgoing track for the whole pre-roll.
         val vocal = vocalActivityBetween(
@@ -444,19 +494,28 @@ fun rankMixOutCandidates(
     analysis: TrackAnalysis,
     contentEnd: Double = 0.0,
     duration: Double = 0.0,
+    incomingAnalysis: TrackAnalysis? = null,
 ): List<RankedMixCandidate> {
     val end = resolveContentEnd(analysis, contentEnd, duration)
     if (end <= 0) return emptyList()
+    val keyClash = incomingAnalysis != null && hasKeyClash(analysis, incomingAnalysis)
     return mixOutCandidatesOf(analysis, end)
         .map { candidate ->
             val measured = audibleSecondsBetween(analysis, candidate.time, end)
             // With no energy curve there is no way to tell skipped music from skipped silence, so
             // the raw gap is charged in full and the budget errs toward playing the track.
+            var rankScore = candidate.score + (MIX_OUT_TYPE_SCORE[candidate.type] ?: 0.0)
+            if (keyClash) {
+                // When keys clash, favor early exits at energy cliff or outro start to shorten harmonic clash
+                if (candidate.type == "energy_cliff" || candidate.type == "outro_start") {
+                    rankScore += 0.1
+                }
+            }
             RankedMixCandidate(
                 time = candidate.time,
                 score = candidate.score,
                 type = candidate.type,
-                rankScore = candidate.score + (MIX_OUT_TYPE_SCORE[candidate.type] ?: 0.0),
+                rankScore = rankScore,
                 discardedMusicSeconds = measured ?: max(0.0, end - candidate.time),
                 measured = measured != null,
             )
@@ -480,9 +539,10 @@ fun resolveMixOutAnchor(
     analysis: TrackAnalysis,
     contentEnd: Double = 0.0,
     duration: Double = 0.0,
+    incomingAnalysis: TrackAnalysis? = null,
 ): MixOutAnchor {
     val end = resolveContentEnd(analysis, contentEnd, duration)
-    val best = rankMixOutCandidates(analysis, end, duration).firstOrNull()
+    val best = rankMixOutCandidates(analysis, end, duration, incomingAnalysis).firstOrNull()
     return MixOutAnchor(
         time = best?.time ?: end,
         type = best?.type ?: "content_end",

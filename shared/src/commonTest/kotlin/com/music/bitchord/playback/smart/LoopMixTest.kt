@@ -308,4 +308,90 @@ class LoopMixTest {
     fun noMaskAndNoLyricsMeansNoLoop() {
         assertNull(plan(analysis(120.0, 200.0), analysis(120.0, 180.0), null, null))
     }
+
+    @Test
+    fun smartOutroExtensionSamplesCleanIntroLoopWhenOutroHasVocalsToEnd() {
+        // Outgoing track: 200s duration, 120 BPM.
+        // Intro (0.5 to 20.0s) has clean instrumental audio.
+        // Lyrics extend from 20.0s to 199.0s (vocals until final 2s, no clean outro loop).
+        val sung = listOf(LoopMix.Span(20.0, 199.0))
+        val out = analysis(120.0, 200.0).copy(
+            audibleStartTime = 0.5,
+            introEndTime = 20.0,
+        )
+        val inn = analysis(120.0, 180.0)
+        val plan = assertNotNull(plan(out, inn, sung, clear))
+
+        // Out loop should be a clean 4-bar loop sampled from the intro
+        assertEquals(4, plan.out.bars)
+        assertTrue(plan.out.loopStart >= 0.5, "loopStart must be at or after audible start")
+        assertTrue(plan.out.loopEnd <= 20.5, "loopEnd must be within intro")
+
+        // Outro takeover occurs at the outro
+        assertTrue(plan.out.takeoverStart >= 140.0, "takeover must occur at outro, got ${plan.out.takeoverStart}")
+        assertTrue(plan.out.takeoverStart <= 200.0)
+        assertEquals(plan.out.takeoverStart, plan.takeoverStart)
+        assertTrue(plan.out.takeoverStart != plan.out.loopStart)
+
+        // Phrase-grid alignment: takeoverStart must land on a 4-bar phrase downbeat
+        val bar = 60.0 / 120.0 * 4.0
+        val phraseBars = (plan.out.takeoverStart - 0.5) / bar
+        assertEquals(phraseBars.roundToInt().toDouble(), phraseBars, 1e-6, "takeover must land on 4-bar phrase downbeat")
+    }
+
+    @Test
+    fun smartOutroExtensionSamplesFromBridgeWhenIntroIsSung() {
+        // Intro (0 to 40s) is sung, bridge (60 to 80s) is clean instrumental,
+        // and lyrics continue through the outro to 199.0s.
+        val sung = listOf(
+            LoopMix.Span(0.0, 45.0),
+            LoopMix.Span(85.0, 199.0),
+        )
+        val out = analysis(120.0, 200.0).copy(
+            audibleStartTime = 0.5,
+            introEndTime = 40.0,
+        )
+        val inn = analysis(120.0, 180.0)
+        val plan = assertNotNull(plan(out, inn, sung, clear))
+
+        // Loop should be sampled from bridge (between 45 and 85s)
+        assertEquals(4, plan.out.bars)
+        assertTrue(plan.out.loopStart >= 45.0, "sampled loop must be after intro vocal")
+        assertTrue(plan.out.loopEnd <= 85.0, "sampled loop must be before next vocal")
+        assertTrue(plan.out.takeoverStart >= 140.0, "takeover must be at outro")
+    }
+
+    @Test
+    fun normalOutroLoopKeepsTakeoverStartEqualToLoopStart() {
+        // Song with instrumental outro (no vocals near end)
+        val out = analysis(120.0, 200.0)
+        val inn = analysis(120.0, 180.0)
+        val plan = assertNotNull(plan(out, inn, clear, clear))
+        assertEquals(plan.out.loopStart, plan.out.takeoverStart, 1e-9)
+        assertEquals(plan.out.loopStart, plan.takeoverStart, 1e-9)
+    }
+
+    @Test
+    fun candidateLoopsStrictlySnapTo4BarPhraseDownbeats() {
+        val out = analysis(124.0, 200.0)
+        val inn = analysis(124.0, 180.0)
+        val plan = assertNotNull(plan(out, inn, clear, clear))
+        val bar = 60.0 / 124.0 * 4.0
+        val outBars = (plan.out.loopStart - 0.5) / bar
+        assertEquals(0.0, outBars % 4.0, 1e-6, "outgoing loop start must be on 4-bar phrase downbeat")
+        val inBars = (plan.inn.loopStart - 0.5) / bar
+        assertEquals(0.0, inBars % 4.0, 1e-6, "incoming loop start must be on 4-bar phrase downbeat")
+    }
+
+    @Test
+    fun phraseGridSnappingWithDetectedDownbeats() {
+        val beat = 0.5
+        val downbeats = List(50) { 100.0 + it * 4 * beat }
+        val out = analysis(120.0, 200.0).copy(tailBeats = BeatSide(downbeats, downbeats, 120.0, 0.9))
+        val inn = analysis(120.0, 180.0)
+        val plan = assertNotNull(plan(out, inn, clear, clear))
+        val idx = downbeats.indexOfFirst { abs(it - plan.out.loopStart) < 1e-6 }
+        assertTrue(idx >= 0, "loop start must be a detected downbeat")
+        assertEquals(0, idx % 4, "loop start must be an index % 4 == 0 phrase downbeat")
+    }
 }
