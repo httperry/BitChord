@@ -151,10 +151,10 @@ class LoudnessProcessor {
         val channels = channelCount
         if (frames == 0 || channels < 1 || sampleRate <= 0) return
 
-        val targetGain = targetGain()
+        val effectiveTargetGain = if (offloadedToHardwareVolume) 1.0f else targetGain()
         val targetTrim = trimTarget
         if (snap) {
-            currentGain = targetGain
+            currentGain = effectiveTargetGain
             currentTrim = targetTrim
             snap = false
         }
@@ -167,8 +167,8 @@ class LoudnessProcessor {
         // it a fraction under unity for the rest of the track, and the chain
         // would never be bit-exact again after the EQ or normalization was
         // switched off.
-        if ((offloadedToHardwareVolume || (!holdLimiter && targetGain == 1f)) && targetTrim >= 1f &&
-            (offloadedToHardwareVolume || abs(currentGain - 1f) < SETTLED) && currentTrim >= 1f - SETTLED && reduction >= PARK_REDUCTION
+        if ((!holdLimiter && effectiveTargetGain == 1f) && targetTrim >= 1f &&
+            abs(currentGain - 1f) < SETTLED && currentTrim >= 1f - SETTLED && reduction >= PARK_REDUCTION
         ) {
             currentGain = 1f
             currentTrim = 1f
@@ -182,7 +182,7 @@ class LoudnessProcessor {
         var gr = reduction
         var index = 0
         for (frame in 0 until frames) {
-            gain += (targetGain - gain) * glideCoef
+            gain += (effectiveTargetGain - gain) * glideCoef
             trim += (targetTrim - trim) * glideCoef
             val scale = gain * trim
             var peak = 0f

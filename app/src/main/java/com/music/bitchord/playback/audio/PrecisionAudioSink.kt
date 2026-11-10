@@ -949,7 +949,7 @@ class PrecisionAudioSink(
 
     companion object {
         private const val TAG = "PrecisionAudioSink"
-        const val DEFAULT_CAPACITY_FRAMES: Int = 4096
+        const val DEFAULT_CAPACITY_FRAMES: Int = 16384
 
         /** Song <-> mix crossings: identical audio crossed this quickly is heard as one. */
         private const val HANDOVER_SECONDS = 0.025

@@ -196,7 +196,9 @@ private val seedCache = object : LinkedHashMap<String, Seed>(0, 0.75f, true) {
 /** Deep enough to cover a session's browsing without holding a screenful of colours. */
 private const val SEED_CACHE_ENTRIES = 128
 
-private const val PALETTE_PX = 128
+// 24x24 = 576 pixels (vs 16,384 px). Eliminates Palette.Builder's internal CPU resize
+// (threshold 112x112 = 12,544 px) and drops quantizer execution time by >90%.
+private const val PALETTE_PX = 24
 
 /** Short: this is a surface settling into its colour, not an effect in itself. */
 private const val TINT_FADE_MS = 260

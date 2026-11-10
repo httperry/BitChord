@@ -330,7 +330,9 @@ public:
             if (!state.playing) {
                 // Resuming after a pause restarts the feedback watchdog.
                 started = false;
-                state.changed.wait_for(lock, std::chrono::milliseconds(20));
+                state.changed.wait(lock, [&state] {
+                    return state.playing || state.closed || state.flush != state.flushed || !state.controls.empty();
+                });
                 continue;
             }
             if (!started) {

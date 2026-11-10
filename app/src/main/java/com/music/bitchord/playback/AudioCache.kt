@@ -1046,6 +1046,31 @@ object AudioCache {
         sink: java.io.OutputStream,
         onProgress: (written: Long, total: Long) -> Unit,
     ) = withContext(Dispatchers.IO) {
+        val destChannel = (sink as? java.io.FileOutputStream)?.channel
+        val spans = cache.getCachedSpans(copy.key).filter { it.isCached }.sortedBy { it.position }
+        if (destChannel != null && spans.isNotEmpty() && spans.sumOf { it.length } >= copy.length) {
+            var written = 0L
+            for (span in spans) {
+                ensureActive()
+                val file = span.file ?: continue
+                java.io.FileInputStream(file).use { fis ->
+                    val srcChannel = fis.channel
+                    var transferred = 0L
+                    val spanLength = minOf(span.length, copy.length - written)
+                    while (transferred < spanLength) {
+                        ensureActive()
+                        val bytes = srcChannel.transferTo(transferred, spanLength - transferred, destChannel)
+                        if (bytes <= 0) break
+                        transferred += bytes
+                        written += bytes
+                        onProgress(written, copy.length)
+                    }
+                }
+                if (written >= copy.length) break
+            }
+            if (written >= copy.length) return@withContext
+        }
+
         // No upstream factory, so anything not on disk fails rather than streams.
         val source = CacheDataSource.Factory().setCache(cache).createDataSource()
         val spec = DataSpec.Builder()
