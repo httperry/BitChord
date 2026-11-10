@@ -494,38 +494,8 @@ internal fun Modifier.pillPlacement(center: () -> Offset, size: () -> Size): Mod
         val placeable = measurable.measure(Constraints.fixed(w, h))
         layout(constraints.minWidth, constraints.minHeight) {
             val c = center()
-            placeable.place((c.x - w / 2f).roundToInt(), (c.y - h / 2f).roundToInt())
+            placeable.placeWithLayer((c.x - w / 2f).roundToInt(), (c.y - h / 2f).roundToInt())
         }
-    }
-
-/**
- * Zero-layout GPU placement for the selection pill.
- * Measures the pill ONCE at [baseSize]. All animation (center position, stretch,
- * squash) is executed directly on the GPU RenderNode via translation and scale matrices,
- * eliminating 120 CPU layout and measurement passes per second during drags.
- */
-internal fun Modifier.pillGpuPlacement(
-    baseSize: Size,
-    center: () -> Offset,
-    liveSize: () -> Size,
-): Modifier = this
-    .layout { measurable, constraints ->
-        val w = baseSize.width.roundToInt().coerceAtLeast(1)
-        val h = baseSize.height.roundToInt().coerceAtLeast(1)
-        val placeable = measurable.measure(Constraints.fixed(w, h))
-        layout(constraints.minWidth, constraints.minHeight) {
-            placeable.placeWithLayer(0, 0)
-        }
-    }
-    .graphicsLayer {
-        val c = center()
-        val s = liveSize()
-        val bw = baseSize.width.coerceAtLeast(1f)
-        val bh = baseSize.height.coerceAtLeast(1f)
-        translationX = c.x - bw / 2f
-        translationY = c.y - bh / 2f
-        scaleX = s.width / bw
-        scaleY = s.height / bh
     }
 
 /** The flat pill: a fill and nothing else. */

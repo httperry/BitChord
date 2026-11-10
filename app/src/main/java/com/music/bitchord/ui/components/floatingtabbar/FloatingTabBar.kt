@@ -856,10 +856,9 @@ private fun SharedTransitionScope.ExpandedTabs(
                         color = colors.indicatorColor,
                         modifier = Modifier
                             .matchParentSize()
-                            .pillGpuPlacement(
-                                baseSize = restSize,
+                            .pillPlacement(
                                 center = { pillCenterInRow(pill.position) },
-                                liveSize = { pill.liveSize(restSize, liftedSize) },
+                                size = { pill.liveSize(restSize, liftedSize) },
                             ),
                     )
                 }
@@ -988,10 +987,9 @@ private fun SharedTransitionScope.ExpandedTabs(
                 tabRow = tabRow,
                 modifier = Modifier
                     .matchParentSize()
-                    .pillGpuPlacement(
-                        baseSize = restSize,
+                    .pillPlacement(
                         center = { pillCenterInRow(pill.position) + Offset(padLeftPx, padTopPx) },
-                        liveSize = { pill.liveSize(restSize, liftedSize) },
+                        size = { pill.liveSize(restSize, liftedSize) },
                     ),
             )
         }

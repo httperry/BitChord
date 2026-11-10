@@ -427,9 +427,10 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
     // would leave the still showing through the clip's own fade, so the still
     // steps out as the clip comes in.
     var covered by remember { mutableFloatStateOf(0f) }
+    val coverUrl = url.croppedAt(HEADER_ART_PX)
     Box(modifier.background(Color.Black)) {
         AsyncImage(
-            model = rememberBlurredBackdrop(url.croppedAt(BACKDROP_SOURCE_PX).whenArtworkReady()),
+            model = rememberBlurredBackdrop(coverUrl),
             contentDescription = null,
             contentScale = ContentScale.FillBounds,
             modifier = Modifier
@@ -450,7 +451,7 @@ private fun ReleaseArt(url: String?, modifier: Modifier, motion: CardMotionSourc
                 ),
         )
         AsyncImage(
-            model = url.croppedAt(HEADER_ART_PX).whenArtworkReady(),
+            model = coverUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -512,7 +513,7 @@ private fun CardMotion(
     bottomFade: Float = 0f,
     onCover: (Float) -> Unit = {},
 ) {
-    if (source == null || !LocalArtworkImages.current) return
+    if (source == null) return
     // Looked up whether or not the clip may play yet, so the answer is to hand
     // when it may, and the row knows which cards have one to give the slot to.
     val clip by produceState<CanvasArtwork?>(null, source.key) { value = source.lookup() }
@@ -641,9 +642,8 @@ private fun clipOwner(layout: LazyListLayoutInfo, hasClip: Map<Int, Boolean>): I
  */
 val LocalArtworkImages = compositionLocalOf { true }
 
-/** This image, or nothing yet while [LocalArtworkImages] is holding pictures back. */
-@Composable
-private fun String?.whenArtworkReady(): String? = if (LocalArtworkImages.current) this else null
+/** This image, ready immediately so cached posters paint on frame 1. */
+private fun String?.whenArtworkReady(): String? = this
 
 /** One full breath of the stations' motion. Slow on purpose: it is a cover, not a spinner. */
 private const val STATION_PERIOD_MS = 9_000
