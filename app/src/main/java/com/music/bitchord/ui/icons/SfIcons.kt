@@ -1,9 +1,12 @@
 package com.music.bitchord.ui.icons
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.VectorGroup
 import androidx.compose.ui.graphics.vector.VectorPath
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 import com.composables.sfsymbols.SfSymbols
 import com.composables.sfsymbols.monochrome.SFApplewatch
@@ -165,7 +168,20 @@ object SfIcons {
     val Fullscreen: ImageVector by lazy { bold(SfSymbols.Monochrome.SFArrowUpLeftAndArrowDownRight) }
     val Gradient: ImageVector by lazy { bold(SfSymbols.Monochrome.SFCircleLefthalfFilled) }
     val GraphicEq: ImageVector by lazy { bold(SfSymbols.Monochrome.SFWaveform) }
-    val Hearing: ImageVector get() = androidx.compose.material.icons.Icons.Rounded.Hearing
+    val Hearing: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "SfIcons.Hearing",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).addPath(
+            pathData = addPathNodes(
+                "M7 22q1.425 0 2.5-.85t1.55-2.25q.425-1.25.913-1.85t1.612-1.4q1.675-1.2 2.55-2.988T17 9q0-2.95-2.025-4.975T10 2T5.025 4.025T3 9h2q0-2.125 1.438-3.562T10 4t3.563 1.438T15 9q0 1.475-.7 2.838T12.325 14.1q-1.2.85-1.912 1.638t-1.138 2.137q-.275.875-.837 1.5T7 20q-.8 0-1.4-.587T5 18q0-.65.125-1.287t.4-1.163l1.7 1.35l2.5-4.4q1.525.125 2.65-.913T13.5 9q0-1.45-1.025-2.475T10 5.5q-1.625 0-2.662 1.225t-.788 2.8L2.425 13.1l1.5 1.2q-.5.8-.712 1.763T3 18q0 1.65 1.175 2.825T7 22m10.8-5.25q1.55-1.575 2.375-3.588T21 9q0-2.2-.825-4.212T17.8 1.2l-1.45 1.4q1.275 1.275 1.963 2.925T19 9q0 1.8-.687 3.438T16.35 15.35z"
+            ),
+            fill = SolidColor(Color.White),
+        ).build()
+    }
     val Groups: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPerson2) }
     val History: ImageVector by lazy { bold(SfSymbols.Monochrome.SFClockArrowTriangleheadCounterclockwiseRotate90) }
     val Key: ImageVector by lazy { bold(SfSymbols.Monochrome.SFKey) }

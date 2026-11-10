@@ -56,7 +56,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.VolumeDown
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -401,7 +400,7 @@ private fun WizardOnboardingContent(
 
         // Instruction Item 2: Count beeps
         InstructionCard(
-            icon = Icons.Rounded.Hearing,
+            icon = SfIcons.Hearing,
             title = stringResource(R.string.instruction_beeps_title),
             description = stringResource(R.string.instruction_beeps_desc),
         )
@@ -787,7 +786,7 @@ private fun AudioWaveVisualizer(
         }
 
         Icon(
-            imageVector = Icons.Rounded.Hearing,
+            imageVector = SfIcons.Hearing,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(34.dp),
