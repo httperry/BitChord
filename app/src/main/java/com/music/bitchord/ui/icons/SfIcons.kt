@@ -163,6 +163,7 @@ object SfIcons {
     val Fullscreen: ImageVector by lazy { bold(SfSymbols.Monochrome.SFArrowUpLeftAndArrowDownRight) }
     val Gradient: ImageVector by lazy { bold(SfSymbols.Monochrome.SFCircleLefthalfFilled) }
     val GraphicEq: ImageVector by lazy { bold(SfSymbols.Monochrome.SFWaveform) }
+    val Hearing: ImageVector get() = androidx.compose.material.icons.Icons.Rounded.Hearing
     val Groups: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPerson2) }
     val History: ImageVector by lazy { bold(SfSymbols.Monochrome.SFClockArrowTriangleheadCounterclockwiseRotate90) }
     val Key: ImageVector by lazy { bold(SfSymbols.Monochrome.SFKey) }
