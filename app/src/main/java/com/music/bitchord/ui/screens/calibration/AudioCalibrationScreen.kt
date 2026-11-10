@@ -78,6 +78,7 @@ import com.music.bitchord.ui.components.IosSwitch
 import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
 import com.music.bitchord.ui.components.isGlassSupported
 import com.music.bitchord.ui.components.lightweightLiquidGlass
+import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
 import com.music.bitchord.ui.icons.SfIcons
 import java.util.Locale
@@ -258,7 +259,7 @@ fun AudioCalibrationScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !isPhoneSpeaker) {
-                            haptics.click()
+                            haptics.play(Haptic.Tap)
                             showModelPicker = true
                         }
                         .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -343,7 +344,7 @@ fun AudioCalibrationScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clickable(enabled = !isPhoneSpeaker) {
-                                haptics.click()
+                                haptics.play(Haptic.Tap)
                                 showPersonalizationWizard = true
                             }
                             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -406,7 +407,6 @@ fun AudioCalibrationScreen(
                             checked = personalizationEnabled && personalizationCompleted,
                             enabled = !isPhoneSpeaker,
                             onCheckedChange = { desired ->
-                                haptics.click()
                                 if (desired) {
                                     if (!personalizationCompleted) {
                                         showPersonalizationWizard = true
@@ -770,13 +770,13 @@ private fun LivePreviewBar(
                     Modifier.pointerInput(Unit) {
                         awaitEachGesture {
                             val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
-                            haptics.touch()
+                            haptics.play(Haptic.Tap)
                             currentOnBypassChanged(true)
                             while (true) {
                                 val event = awaitPointerEvent(pass = PointerEventPass.Main)
                                 val anyPressed = event.changes.any { it.pressed }
                                 if (!anyPressed) {
-                                    haptics.touch()
+                                    haptics.play(Haptic.Tap)
                                     currentOnBypassChanged(false)
                                     break
                                 }
