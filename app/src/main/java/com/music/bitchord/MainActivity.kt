@@ -176,6 +176,7 @@ import com.music.bitchord.ui.screens.DiscordDialog
 import com.music.bitchord.ui.screens.DiscordDialogHost
 import com.music.bitchord.ui.screens.DiscordScreen
 import com.music.bitchord.ui.screens.EqualizerScreen
+import com.music.bitchord.ui.screens.calibration.AudioCalibrationScreen
 import com.music.bitchord.ui.screens.HistoryScreen
 import com.music.bitchord.ui.screens.LibraryReplayEntry
 import com.music.bitchord.ui.screens.libraryDeviceItems
@@ -3104,6 +3105,11 @@ private fun BitChordApp(
                                 contentPadding = listPadding,
                                 onOpenPresets = { navigator.push(AppRoute.EqualizerPresets) },
                             )
+                        } else if (pageRoute == AppRoute.AudioCalibration) {
+                            AudioCalibrationScreen(
+                                contentPadding = listPadding,
+                                onBack = { navigator.pop() },
+                            )
                         } else if (pageRoute == AppRoute.EqualizerPresets) {
                             EqualizerPresetPage(
                                 onChosen = { navigator.pop() },
@@ -3133,6 +3139,7 @@ private fun BitChordApp(
                                 onSignOut = { viewModel.signOut() },
                                 onAccountScrobbling = { navigator.push(AppRoute.AccountScrobbling) },
                                 onEqualizer = { navigator.push(AppRoute.Equalizer) },
+                                onAudioCalibration = { navigator.push(AppRoute.AudioCalibration) },
                                 onOpenReplay = {
                                     replayLandingPage = ReplayStoryPage.INTRO
                                     navigator.push(AppRoute.Replay)
@@ -3811,6 +3818,7 @@ private fun BitChordApp(
                         AppRoute.ListenTogether -> stringResource(R.string.listen_together)
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
+                        AppRoute.AudioCalibration -> stringResource(R.string.audio_calibration)
                         AppRoute.Settings -> stringResource(R.string.settings)
                         is AppRoute.SettingsSection -> stringResource(route.category.title)
                         is AppRoute.SettingsChoice -> stringResource(route.choice.title)

@@ -7449,6 +7449,8 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             combine<Any?, Unit>(
                 AppSettings.audioCalibrationEnabled,
+                AppSettings.devicePresetEnabled,
+                AppSettings.personalizationEnabled,
                 AppSettings.calibrationModelId,
                 AppSettings.calibrationTarget,
                 AppSettings.personalizationLeftGains,
@@ -7497,6 +7499,8 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun applyCalibration() {
         val calibrationEnabled = AppSettings.audioCalibrationEnabled.value
+        val devicePresetEnabled = AppSettings.devicePresetEnabled.value
+        val personalizationEnabled = AppSettings.personalizationEnabled.value
         val previewUncalibrated = AppSettings.previewUncalibrated.value
         val snapshot = AudioOutputStatus.current.value
         val routeKind = snapshot.routeKind
@@ -7516,7 +7520,8 @@ class PlaybackService : MediaLibraryService() {
 
         // Speaker Fallback Rule: if routed to PHONE speaker, bypass DSP!
         // Live A/B Preview: if previewUncalibrated is true, temporarily bypass calibration!
-        val shouldBypass = !calibrationEnabled || previewUncalibrated || routeKind == AudioRouting.Kind.PHONE
+        val shouldBypass = !calibrationEnabled || previewUncalibrated || routeKind == AudioRouting.Kind.PHONE ||
+            (!devicePresetEnabled && !personalizationEnabled)
 
         equalizerProcessorA.setOutputRoute(routeKind)
         equalizerProcessorB.setOutputRoute(routeKind)
@@ -7539,11 +7544,12 @@ class PlaybackService : MediaLibraryService() {
 
         // Combine Hardware Model biquads + Personalization Left/Right gains
         val modelId = AppSettings.calibrationModelId.value
-        val model = modelId?.let { com.music.bitchord.playback.calibration.AcousticModelCatalog.getModelById(it) }
+        val rawModel = modelId?.let { com.music.bitchord.playback.calibration.AcousticModelCatalog.getModelById(it) }
+        val model = if (devicePresetEnabled) rawModel else null
         val target = com.music.bitchord.playback.calibration.CalibrationCombiner.parseTarget(AppSettings.calibrationTarget.value)
         val leftGains = AppSettings.personalizationLeftGains.value
         val rightGains = AppSettings.personalizationRightGains.value
-        val personalizationCompleted = AppSettings.personalizationCompleted.value
+        val personalizationCompleted = AppSettings.personalizationCompleted.value && personalizationEnabled
 
         val (leftCurve, rightCurve) = com.music.bitchord.playback.calibration.CalibrationCombiner.combineModelAndPersonalization(
             model = model,

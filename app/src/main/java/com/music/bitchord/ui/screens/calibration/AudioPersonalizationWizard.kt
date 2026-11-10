@@ -77,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +113,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private enum class WizardStage {
@@ -186,8 +188,10 @@ fun AudioPersonalizationWizard(
         repeat(zones.size) { rightEarDeltas.add(0.0f) }
     }
 
-    // Function to generate and play tone
-    val playCurrentTone: () -> Unit = {
+    var currentAmplitudeDb by remember { mutableFloatStateOf(-46.0f) }
+
+    // Function to generate and play tone at specific amplitude
+    val playToneAtVolume: (Float) -> Unit = { amp ->
         val beeps = Random.nextInt(1, 4) // 1, 2, or 3 beeps
         currentRandomBeeps = beeps
         answeredStep1Yes = false
@@ -196,6 +200,7 @@ fun AudioPersonalizationWizard(
                 frequencyHz = currentZone.frequencyHz,
                 ear = currentEar,
                 beepCount = beeps,
+                amplitudeDb = amp,
                 onPlayingChange = { isPlayingTone = it },
             )
         }
@@ -204,8 +209,9 @@ fun AudioPersonalizationWizard(
     // Start tone on entering testing or advancing steps
     LaunchedEffect(stage, currentStepIndex) {
         if (stage == WizardStage.TESTING) {
+            currentAmplitudeDb = -46.0f
             delay(300)
-            playCurrentTone()
+            playToneAtVolume(-46.0f)
         }
     }
 
@@ -274,38 +280,44 @@ fun AudioPersonalizationWizard(
                             totalSteps = totalSteps,
                             currentEar = currentEar,
                             currentZone = currentZone,
+                            currentAmplitudeDb = currentAmplitudeDb,
                             isPlayingTone = isPlayingTone,
                             answeredStep1Yes = answeredStep1Yes,
-                            onReplayAudio = playCurrentTone,
+                            onReplayAudio = { playToneAtVolume(currentAmplitudeDb) },
                             onStep1No = {
-                                // User didn't hear tone -> needs threshold boost
-                                val zoneIdx = currentStepIndex % zones.size
-                                if (currentEar == EarChannel.LEFT) {
-                                    leftEarDeltas[zoneIdx] = 3.0f
-                                } else {
-                                    rightEarDeltas[zoneIdx] = 3.0f
-                                }
-                                if (currentStepIndex + 1 < totalSteps) {
-                                    currentStepIndex++
-                                } else {
-                                    stage = WizardStage.COMPLETION
-                                }
+                                // User didn't hear tone -> step up volume by +4dB (up to -14dB) to find threshold!
+                                val nextAmp = (currentAmplitudeDb + 4.0f).coerceAtMost(-14.0f)
+                                currentAmplitudeDb = nextAmp
+                                playToneAtVolume(nextAmp)
                             },
                             onStep1Yes = {
                                 answeredStep1Yes = true
                             },
                             onStep2Count = { count ->
                                 val zoneIdx = currentStepIndex % zones.size
-                                val delta = if (count == currentRandomBeeps) 0.0f else 1.5f
-                                if (currentEar == EarChannel.LEFT) {
-                                    leftEarDeltas[zoneIdx] = delta
+                                if (count == currentRandomBeeps) {
+                                    // User accurately heard beeps -> lock in threshold!
+                                    // -46 dBFS is sharp baseline -> 0 dB boost.
+                                    val hearingLossDb = (currentAmplitudeDb - (-46.0f)).coerceAtLeast(0.0f)
+                                    val delta = ((hearingLossDb * 0.35f) * 2f).roundToInt() / 2f
+                                    val clampedDelta = delta.coerceIn(0.0f, 7.0f)
+
+                                    if (currentEar == EarChannel.LEFT) {
+                                        leftEarDeltas[zoneIdx] = clampedDelta
+                                    } else {
+                                        rightEarDeltas[zoneIdx] = clampedDelta
+                                    }
+
+                                    if (currentStepIndex + 1 < totalSteps) {
+                                        currentStepIndex++
+                                    } else {
+                                        stage = WizardStage.COMPLETION
+                                    }
                                 } else {
-                                    rightEarDeltas[zoneIdx] = delta
-                                }
-                                if (currentStepIndex + 1 < totalSteps) {
-                                    currentStepIndex++
-                                } else {
-                                    stage = WizardStage.COMPLETION
+                                    // Miscounted: step up volume by +3dB and play new count to verify
+                                    val nextAmp = (currentAmplitudeDb + 3.0f).coerceAtMost(-14.0f)
+                                    currentAmplitudeDb = nextAmp
+                                    playToneAtVolume(nextAmp)
                                 }
                             },
                             onClose = { closeAfter {} },
@@ -501,6 +513,7 @@ private fun WizardTestingContent(
     totalSteps: Int,
     currentEar: EarChannel,
     currentZone: FrequencyZone,
+    currentAmplitudeDb: Float,
     isPlayingTone: Boolean,
     answeredStep1Yes: Boolean,
     onReplayAudio: () -> Unit,
@@ -574,7 +587,21 @@ private fun WizardTestingContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(4.dp))
+
+        val levelLabel = when {
+            currentAmplitudeDb <= -42f -> "Volume: Faint (Testing Threshold)"
+            currentAmplitudeDb <= -34f -> "Volume: Soft"
+            currentAmplitudeDb <= -26f -> "Volume: Moderate"
+            else -> "Volume: Elevated"
+        }
+        Text(
+            text = levelLabel,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+        )
+
+        Spacer(Modifier.height(24.dp))
 
         // Wave Pulse Visualizer
         AudioWaveVisualizer(
@@ -1110,6 +1137,7 @@ private object ToneSynthesizer {
         frequencyHz: Int,
         ear: EarChannel,
         beepCount: Int,
+        amplitudeDb: Float = -40.0f,
         onPlayingChange: (Boolean) -> Unit,
     ) = withContext(Dispatchers.Default) {
         stop()
@@ -1126,7 +1154,7 @@ private object ToneSynthesizer {
                 frequencyHz = frequencyHz.toFloat(),
                 channel = channel,
                 pulseCount = beepCount,
-                amplitudeDb = -15.0f,
+                amplitudeDb = amplitudeDb,
                 sampleRate = sampleRate,
             )
 

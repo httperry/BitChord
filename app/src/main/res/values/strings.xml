@@ -1366,4 +1366,12 @@
     <string name="save_and_apply">Save and Apply</string>
     <string name="uncalibrated_preview_label">Previewing Uncalibrated Audio</string>
     <string name="calibrated_active_label">BitChord Studio Calibration Active</string>
+    <string name="audio_personalisation">Audio Personalisation</string>
+    <string name="device_preset">Device Preset</string>
+    <string name="personal_eq">Personal EQ</string>
+    <string name="personal_eq_subtitle">Audio tuning for your ears</string>
+    <string name="current_eq">Current EQ</string>
+    <string name="disabled_on_phone_speaker">Disabled on phone speaker</string>
+    <string name="select_device_preset">Tap to select device preset</string>
+    <string name="connect_audio_device_notice">Please connect to your audio device to continue</string>
 </resources>

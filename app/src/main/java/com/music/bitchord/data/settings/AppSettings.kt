@@ -421,6 +421,8 @@ object AppSettings {
     val personalizationLeftGains = MutableStateFlow<List<Float>>(DEFAULT_PERSONALIZATION_GAINS)
     val personalizationRightGains = MutableStateFlow<List<Float>>(DEFAULT_PERSONALIZATION_GAINS)
     val personalizationCompleted = MutableStateFlow(false)
+    val personalizationEnabled = MutableStateFlow(true)
+    val devicePresetEnabled = MutableStateFlow(true)
     val personalizationModelIdSnapshot = MutableStateFlow<String?>(null)
     val calibrationDeviceProfiles = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -1048,6 +1050,8 @@ object AppSettings {
         personalizationLeftGains.value = readCalibrationGains(KEY_PERSONALIZATION_LEFT_GAINS)
         personalizationRightGains.value = readCalibrationGains(KEY_PERSONALIZATION_RIGHT_GAINS)
         personalizationCompleted.value = prefs.getBoolean(KEY_PERSONALIZATION_COMPLETED, false)
+        personalizationEnabled.value = prefs.getBoolean(KEY_PERSONALIZATION_ENABLED, true)
+        devicePresetEnabled.value = prefs.getBoolean(KEY_DEVICE_PRESET_ENABLED, true)
         personalizationModelIdSnapshot.value = prefs.getString(KEY_PERSONALIZATION_MODEL_ID_SNAPSHOT, null)
         calibrationDeviceProfiles.value = readCalibrationDeviceProfiles()
         playbackSpeed.value = prefs.getFloat(KEY_SPEED, 1.0f)
@@ -1432,6 +1436,16 @@ object AppSettings {
     fun setAudioCalibrationEnabled(value: Boolean) {
         audioCalibrationEnabled.value = value
         prefs.edit().putBoolean(KEY_AUDIO_CALIBRATION_ENABLED, value).apply()
+    }
+
+    fun setDevicePresetEnabled(value: Boolean) {
+        devicePresetEnabled.value = value
+        prefs.edit().putBoolean(KEY_DEVICE_PRESET_ENABLED, value).apply()
+    }
+
+    fun setPersonalizationEnabled(value: Boolean) {
+        personalizationEnabled.value = value
+        prefs.edit().putBoolean(KEY_PERSONALIZATION_ENABLED, value).apply()
     }
 
     fun setCalibrationModel(id: String?, name: String?, brand: String?) {
@@ -2433,6 +2447,8 @@ object AppSettings {
     private const val KEY_EQ_BALANCE = "equalizer_balance"
     private const val KEY_EQ_BANDS = "equalizer_bands"
     private const val KEY_AUDIO_CALIBRATION_ENABLED = "audio_calibration_enabled"
+    private const val KEY_DEVICE_PRESET_ENABLED = "device_preset_enabled"
+    private const val KEY_PERSONALIZATION_ENABLED = "personalization_enabled"
     private const val KEY_CALIBRATION_MODEL_ID = "calibration_model_id"
     private const val KEY_CALIBRATION_MODEL_NAME = "calibration_model_name"
     private const val KEY_CALIBRATION_MODEL_BRAND = "calibration_model_brand"

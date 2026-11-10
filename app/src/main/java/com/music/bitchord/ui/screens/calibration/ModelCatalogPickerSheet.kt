@@ -84,8 +84,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelCatalogPickerSheet(
-    selectedModel: HeadphoneModel,
-    onSelectModel: (HeadphoneModel) -> Unit,
+    selectedModel: HeadphoneModel?,
+    onSelectModel: (HeadphoneModel?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -225,8 +225,59 @@ fun ModelCatalogPickerSheet(
                     .heightIn(max = 480.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
+                if (searchQuery.isBlank() && selectedBrand == "All") {
+                    item(key = "none_preset") {
+                        val isNoneSelected = selectedModel == null
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isNoneSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    else Color.Transparent
+                                )
+                                .clickable {
+                                    closeAfter {
+                                        onSelectModel(null)
+                                    }
+                                }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = SfIcons.Close,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "No Device Preset",
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "Disable preset compensation curve",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+
                 items(filteredModels, key = { it.id }) { model ->
-                    val isSelected = model.id == selectedModel.id
+                    val isSelected = model.id == selectedModel?.id
                     ModelListItem(
                         model = model,
                         isSelected = isSelected,
