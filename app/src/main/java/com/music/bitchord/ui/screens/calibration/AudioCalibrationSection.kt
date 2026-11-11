@@ -244,7 +244,7 @@ private fun RouteStatusBadge(outputStatus: AudioOutputStatus.Snapshot) {
 
 @Composable
 private fun HardwareModelCard(
-    model: HeadphoneModel,
+    model: HeadphoneModel?,
     onClick: () -> Unit,
 ) {
     val isGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
@@ -274,12 +274,20 @@ private fun HardwareModelCard(
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Standardized 56x56dp placeholder vector container
-        DeviceSilhouette(
-            formFactor = model.formFactor,
-            isSelected = true,
-            size = 56.dp,
-        )
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = SfIcons.Headphones,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+        }
 
         Spacer(Modifier.width(14.dp))
 
@@ -291,7 +299,7 @@ private fun HardwareModelCard(
             )
             Spacer(Modifier.height(1.dp))
             Text(
-                text = "${model.brand} ${model.name}",
+                text = if (model != null) cleanModelDisplayName(model.brand, model.name) else stringResource(R.string.no_preset_flat),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -299,16 +307,14 @@ private fun HardwareModelCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(3.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = model.targetBaseline,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = model?.targetBaseline ?: stringResource(R.string.no_preset_flat_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
         Spacer(Modifier.width(8.dp))

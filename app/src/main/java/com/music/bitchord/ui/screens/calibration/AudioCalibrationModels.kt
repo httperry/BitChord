@@ -13,9 +13,19 @@ package com.music.bitchord.ui.screens.calibration
 import android.content.Context
 import android.content.SharedPreferences
 import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.playback.AudioOutputStatus
+import com.music.bitchord.playback.AudioRouting
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 enum class HeadphoneFormFactor(val label: String) {
     IEM("In-Ear Monitor"),
@@ -147,9 +157,9 @@ object HeadphoneCatalog {
 
     val DEFAULT_MODEL: HeadphoneModel get() = MODELS.firstOrNull { it.id == "moondrop_blessing_3" } ?: MODELS.first()
 
-    fun findModel(id: String?): HeadphoneModel {
-        if (id == null) return DEFAULT_MODEL
-        return MODELS.firstOrNull { it.id == id } ?: DEFAULT_MODEL
+    fun findModel(id: String?): HeadphoneModel? {
+        if (id == null) return null
+        return MODELS.firstOrNull { it.id == id }
     }
 
     val BRANDS: List<String> get() = listOf("All") + MODELS.map { it.brand }.distinct()
@@ -157,7 +167,7 @@ object HeadphoneCatalog {
 
 /**
  * Global audio calibration state manager.
- * Holds the selected headphone model and personalization profile, persisting to SharedPreferences.
+ * Supports per-device profile memory and automatic profile switching based on connected audio sink.
  */
 object AudioCalibrationManager {
     private const val PREFS_NAME = "bitchord_audio_calibration"
@@ -167,11 +177,16 @@ object AudioCalibrationManager {
     private const val KEY_CALIBRATION_TIMESTAMP = "calibration_timestamp"
     private const val KEY_LEFT_DELTAS = "left_ear_deltas"
     private const val KEY_RIGHT_DELTAS = "right_ear_deltas"
+    private const val KEY_DEVICE_PROFILES_JSON = "device_profiles_json"
 
     private var sharedPrefs: SharedPreferences? = null
+    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
-    private val _selectedModel = MutableStateFlow<HeadphoneModel>(HeadphoneCatalog.DEFAULT_MODEL)
-    val selectedModel: StateFlow<HeadphoneModel> = _selectedModel.asStateFlow()
+    private val _activeDeviceKey = MutableStateFlow("default")
+    val activeDeviceKey: StateFlow<String> = _activeDeviceKey.asStateFlow()
+
+    private val _selectedModel = MutableStateFlow<HeadphoneModel?>(null)
+    val selectedModel: StateFlow<HeadphoneModel?> = _selectedModel.asStateFlow()
 
     private val _calibrationProfile = MutableStateFlow(AudioCalibrationProfile())
     val calibrationProfile: StateFlow<AudioCalibrationProfile> = _calibrationProfile.asStateFlow()
@@ -182,51 +197,184 @@ object AudioCalibrationManager {
     private val _hardwareBaselineUpdated = MutableStateFlow(false)
     val hardwareBaselineUpdated: StateFlow<Boolean> = _hardwareBaselineUpdated.asStateFlow()
 
+    fun resolveDeviceKey(snapshot: AudioOutputStatus.Snapshot): String {
+        return when (snapshot.routeKind) {
+            AudioRouting.Kind.PHONE -> "phone_speaker"
+            AudioRouting.Kind.WIRED -> "wired_headset"
+            AudioRouting.Kind.USB -> "usb_${snapshot.deviceName}"
+            AudioRouting.Kind.BLUETOOTH -> {
+                snapshot.deviceAddress?.takeIf { it.isNotBlank() } ?: "bt_${snapshot.deviceName}"
+            }
+            else -> "other_${snapshot.deviceName}"
+        }
+    }
+
     fun init(context: Context) {
         if (sharedPrefs != null) return
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sharedPrefs = prefs
 
-        val modelId = prefs.getString(KEY_MODEL_ID, HeadphoneCatalog.DEFAULT_MODEL.id)
-        val model = HeadphoneCatalog.findModel(modelId)
-        _selectedModel.value = model
+        // Restore active route
+        val currentSnapshot = AudioOutputStatus.current.value
+        val initialKey = resolveDeviceKey(currentSnapshot)
+        _activeDeviceKey.value = initialKey
 
-        val isCalibrated = prefs.getBoolean(KEY_IS_CALIBRATED, false)
-        val calibratedModelId = prefs.getString(KEY_CALIBRATED_MODEL_ID, null)
-        val timestamp = prefs.getLong(KEY_CALIBRATION_TIMESTAMP, 0L)
-        val leftStr = prefs.getString(KEY_LEFT_DELTAS, "") ?: ""
-        val rightStr = prefs.getString(KEY_RIGHT_DELTAS, "") ?: ""
+        // Load profile for initial key
+        loadProfileForDevice(initialKey)
 
-        val leftDeltas = parseDeltas(leftStr)
-        val rightDeltas = parseDeltas(rightStr)
+        // Observe route transitions and auto-switch per-device profile
+        scope.launch {
+            AudioOutputStatus.current
+                .map { resolveDeviceKey(it) }
+                .distinctUntilChanged()
+                .collect { newKey ->
+                    onDeviceChanged(newKey)
+                }
+        }
+    }
 
-        val profile = AudioCalibrationProfile(
-            isCalibrated = isCalibrated,
-            calibratedModelId = calibratedModelId,
-            calibrationTimestamp = timestamp,
-            leftEarDeltas = leftDeltas,
-            rightEarDeltas = rightDeltas,
-            isBypassed = false,
-        )
-        _calibrationProfile.value = profile
+    private fun onDeviceChanged(newKey: String) {
+        val oldKey = _activeDeviceKey.value
+        if (oldKey == newKey) return
+
+        // Save current device state before switching (if not phone speaker)
+        if (oldKey != "phone_speaker") {
+            saveCurrentDeviceRecord(oldKey)
+        }
+
+        _activeDeviceKey.value = newKey
+        loadProfileForDevice(newKey)
+    }
+
+    private fun loadProfileForDevice(deviceKey: String) {
+        val prefs = sharedPrefs ?: return
+        val profilesJson = prefs.getString(KEY_DEVICE_PROFILES_JSON, null)
+        val profileObj = if (!profilesJson.isNullOrBlank()) {
+            runCatching { JSONObject(profilesJson).optJSONObject(deviceKey) }.getOrNull()
+        } else null
+
+        if (profileObj != null) {
+            val modelId = profileObj.optString("modelId", "").ifBlank { null }
+            val model = HeadphoneCatalog.findModel(modelId)
+            _selectedModel.value = model
+
+            val isCalibrated = profileObj.optBoolean("isCalibrated", false)
+            val calibratedModelId = profileObj.optString("calibratedModelId", "").ifBlank { null }
+            val timestamp = profileObj.optLong("timestamp", 0L)
+            val leftDeltas = parseDeltas(profileObj.optString("leftDeltas", ""))
+            val rightDeltas = parseDeltas(profileObj.optString("rightDeltas", ""))
+            val devicePresetEnabled = profileObj.optBoolean("devicePresetEnabled", model != null)
+            val personalizationEnabled = profileObj.optBoolean("personalizationEnabled", isCalibrated)
+
+            _calibrationProfile.value = AudioCalibrationProfile(
+                isCalibrated = isCalibrated,
+                calibratedModelId = calibratedModelId,
+                calibrationTimestamp = timestamp,
+                leftEarDeltas = leftDeltas,
+                rightEarDeltas = rightDeltas,
+                isBypassed = false,
+            )
+
+            runCatching {
+                AppSettings.setCalibrationModel(model?.id, model?.name, model?.brand)
+                AppSettings.setDevicePresetEnabled(devicePresetEnabled)
+                AppSettings.setPersonalizationEnabled(personalizationEnabled)
+                AppSettings.setPersonalizationGains(
+                    left = leftDeltas,
+                    right = rightDeltas,
+                    completed = isCalibrated,
+                    modelIdSnapshot = calibratedModelId,
+                )
+            }
+        } else {
+            // First time seeing this device: initialize from legacy global prefs if available, otherwise flat
+            val legacyModelId = prefs.getString(KEY_MODEL_ID, null)
+            val model = HeadphoneCatalog.findModel(legacyModelId)
+            _selectedModel.value = model
+
+            val isCalibrated = prefs.getBoolean(KEY_IS_CALIBRATED, false)
+            val calibratedModelId = prefs.getString(KEY_CALIBRATED_MODEL_ID, null)
+            val timestamp = prefs.getLong(KEY_CALIBRATION_TIMESTAMP, 0L)
+            val leftDeltas = parseDeltas(prefs.getString(KEY_LEFT_DELTAS, "") ?: "")
+            val rightDeltas = parseDeltas(prefs.getString(KEY_RIGHT_DELTAS, "") ?: "")
+
+            _calibrationProfile.value = AudioCalibrationProfile(
+                isCalibrated = isCalibrated,
+                calibratedModelId = calibratedModelId,
+                calibrationTimestamp = timestamp,
+                leftEarDeltas = leftDeltas,
+                rightEarDeltas = rightDeltas,
+                isBypassed = false,
+            )
+
+            runCatching {
+                AppSettings.setCalibrationModel(model?.id, model?.name, model?.brand)
+                AppSettings.setDevicePresetEnabled(model != null)
+                AppSettings.setPersonalizationEnabled(isCalibrated)
+                AppSettings.setPersonalizationGains(
+                    left = leftDeltas,
+                    right = rightDeltas,
+                    completed = isCalibrated,
+                    modelIdSnapshot = calibratedModelId,
+                )
+            }
+
+            if (deviceKey != "phone_speaker") {
+                saveCurrentDeviceRecord(deviceKey)
+            }
+        }
+
         updateBaselineNotice()
     }
 
-    fun selectModel(model: HeadphoneModel) {
+    private fun saveCurrentDeviceRecord(deviceKey: String) {
+        val prefs = sharedPrefs ?: return
+        val currentModel = _selectedModel.value
+        val profile = _calibrationProfile.value
+
+        val rootObj = runCatching {
+            val raw = prefs.getString(KEY_DEVICE_PROFILES_JSON, null)
+            if (!raw.isNullOrBlank()) JSONObject(raw) else JSONObject()
+        }.getOrDefault(JSONObject())
+
+        val devObj = JSONObject().apply {
+            put("modelId", currentModel?.id.orEmpty())
+            put("isCalibrated", profile.isCalibrated)
+            put("calibratedModelId", profile.calibratedModelId.orEmpty())
+            put("timestamp", profile.calibrationTimestamp)
+            put("leftDeltas", profile.leftEarDeltas.joinToString(","))
+            put("rightDeltas", profile.rightEarDeltas.joinToString(","))
+            put("devicePresetEnabled", AppSettings.devicePresetEnabled.value)
+            put("personalizationEnabled", AppSettings.personalizationEnabled.value)
+        }
+
+        rootObj.put(deviceKey, devObj)
+        prefs.edit().putString(KEY_DEVICE_PROFILES_JSON, rootObj.toString()).apply()
+    }
+
+    fun selectModel(model: HeadphoneModel?) {
         _selectedModel.value = model
-        sharedPrefs?.edit()?.putString(KEY_MODEL_ID, model.id)?.apply()
+        sharedPrefs?.edit()?.putString(KEY_MODEL_ID, model?.id.orEmpty())?.apply()
         runCatching {
-            AppSettings.setCalibrationModel(model.id, model.name, model.brand)
+            AppSettings.setCalibrationModel(model?.id, model?.name, model?.brand)
+            AppSettings.setDevicePresetEnabled(model != null)
+        }
+        val key = _activeDeviceKey.value
+        if (key != "phone_speaker") {
+            saveCurrentDeviceRecord(key)
         }
         updateBaselineNotice()
     }
 
-    fun saveCalibration(leftDeltas: List<Float>, rightDeltas: List<Float>) {
-        val currentModelId = _selectedModel.value.id
+    fun saveCalibration(
+        leftDeltas: List<Float>,
+        rightDeltas: List<Float>,
+        calibratedModelId: String? = _selectedModel.value?.id,
+    ) {
         val now = System.currentTimeMillis()
         val newProfile = AudioCalibrationProfile(
             isCalibrated = true,
-            calibratedModelId = currentModelId,
+            calibratedModelId = calibratedModelId,
             calibrationTimestamp = now,
             leftEarDeltas = leftDeltas,
             rightEarDeltas = rightDeltas,
@@ -236,7 +384,7 @@ object AudioCalibrationManager {
 
         sharedPrefs?.edit()
             ?.putBoolean(KEY_IS_CALIBRATED, true)
-            ?.putString(KEY_CALIBRATED_MODEL_ID, currentModelId)
+            ?.putString(KEY_CALIBRATED_MODEL_ID, calibratedModelId)
             ?.putLong(KEY_CALIBRATION_TIMESTAMP, now)
             ?.putString(KEY_LEFT_DELTAS, leftDeltas.joinToString(","))
             ?.putString(KEY_RIGHT_DELTAS, rightDeltas.joinToString(","))
@@ -247,8 +395,13 @@ object AudioCalibrationManager {
                 left = leftDeltas,
                 right = rightDeltas,
                 completed = true,
-                modelIdSnapshot = currentModelId,
+                modelIdSnapshot = calibratedModelId,
             )
+        }
+
+        val key = _activeDeviceKey.value
+        if (key != "phone_speaker") {
+            saveCurrentDeviceRecord(key)
         }
 
         updateBaselineNotice()
@@ -283,6 +436,10 @@ object AudioCalibrationManager {
             AppSettings.setPersonalizationModelIdSnapshot(null)
             AppSettings.setPersonalizationGains(emptyList(), emptyList(), completed = false, modelIdSnapshot = null)
         }
+        val key = _activeDeviceKey.value
+        if (key != "phone_speaker") {
+            saveCurrentDeviceRecord(key)
+        }
         updateBaselineNotice()
     }
 
@@ -291,7 +448,7 @@ object AudioCalibrationManager {
         val currentModel = _selectedModel.value
         _hardwareBaselineUpdated.value = profile.isCalibrated &&
                 profile.calibratedModelId != null &&
-                profile.calibratedModelId != currentModel.id
+                profile.calibratedModelId != currentModel?.id
     }
 
     private fun parseDeltas(str: String): List<Float> {
@@ -299,8 +456,10 @@ object AudioCalibrationManager {
         return str.split(",").mapNotNull { it.trim().toFloatOrNull() }
     }
 
-    fun getActiveAcousticModel(): com.music.bitchord.playback.calibration.AcousticModel? =
-        com.music.bitchord.playback.calibration.AcousticModelCatalog.getModelById(_selectedModel.value.id)
+    fun getActiveAcousticModel(): com.music.bitchord.playback.calibration.AcousticModel? {
+        val model = _selectedModel.value ?: return null
+        return com.music.bitchord.playback.calibration.AcousticModelCatalog.getModelById(model.id)
+    }
 
     fun getActiveAutoEqProfile(
         target: com.music.bitchord.playback.calibration.CalibrationTarget? = null

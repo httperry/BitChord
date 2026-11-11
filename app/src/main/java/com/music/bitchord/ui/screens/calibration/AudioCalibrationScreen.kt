@@ -11,10 +11,13 @@
 package com.music.bitchord.ui.screens.calibration
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -36,6 +39,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -70,6 +76,7 @@ import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.playback.AudioOutputStatus
 import com.music.bitchord.playback.AudioRouting
 import com.music.bitchord.playback.calibration.AcousticModelCatalog
+import com.music.bitchord.playback.calibration.CalibrationCombiner
 import com.music.bitchord.ui.components.IosSwitch
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
@@ -111,6 +118,7 @@ fun AudioCalibrationScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit = {},
     onOpenAudioTest: () -> Unit = {},
+    onOpenDevicePresetPicker: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val audioCalibrationEnabled by AppSettings.audioCalibrationEnabled.collectAsStateWithLifecycle()
@@ -124,12 +132,12 @@ fun AudioCalibrationScreen(
     val personalizationCompleted by AppSettings.personalizationCompleted.collectAsStateWithLifecycle()
     val previewUncalibrated by AppSettings.previewUncalibrated.collectAsStateWithLifecycle()
     val outputStatus by AudioOutputStatus.current.collectAsStateWithLifecycle()
+    val hardwareBaselineUpdated by AudioCalibrationManager.hardwareBaselineUpdated.collectAsStateWithLifecycle()
 
     val selectedModel: HeadphoneModel? = remember(modelId) {
         modelId?.let { id -> HeadphoneCatalog.MODELS.firstOrNull { it.id == id } }
     }
 
-    var showModelPicker by remember { mutableStateOf(false) }
     var showPersonalizationWizard by remember { mutableStateOf(false) }
 
     val isPhoneSpeaker = outputStatus.routeKind == AudioRouting.Kind.PHONE
@@ -160,6 +168,68 @@ fun AudioCalibrationScreen(
             )
         }
 
+        // --- Hardware Baseline Changed Notice (Prompt to retake Audio Test when preset changes) ---
+        AnimatedVisibility(
+            visible = hardwareBaselineUpdated && !isPhoneSpeaker,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = GROUP_INSET)
+                    .padding(bottom = 12.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f))
+                    .border(
+                        width = 0.5.dp,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(16.dp),
+                    )
+                    .padding(14.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = SfIcons.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.hardware_baseline_changed_title),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.hardware_baseline_changed_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        haptics.play(Haptic.Tap)
+                        onOpenAudioTest()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(36.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.retake_audio_test),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                }
+            }
+        }
+
         // --- Main Control Card Container (Device Preset + Personal EQ) ---
         Column(
             modifier = Modifier
@@ -170,9 +240,9 @@ fun AudioCalibrationScreen(
         ) {
             // ROW 1: Device Preset
             val presetSubtitle = when {
-                modelName != null -> "${modelBrand ?: ""} $modelName".trim()
-                selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
-                else -> stringResource(R.string.select_device_preset)
+                selectedModel != null -> cleanModelDisplayName(selectedModel.brand, selectedModel.name)
+                modelName != null -> cleanModelDisplayName(modelBrand ?: "", modelName ?: "")
+                else -> stringResource(R.string.no_preset_flat)
             }
             SettingsRow(
                 icon = SfIcons.Headphones,
@@ -180,7 +250,7 @@ fun AudioCalibrationScreen(
                 subtitle = presetSubtitle,
                 onClick = {
                     haptics.play(Haptic.Tap)
-                    showModelPicker = true
+                    onOpenDevicePresetPicker()
                 },
                 enabled = !isPhoneSpeaker,
             )
@@ -357,22 +427,29 @@ fun AudioCalibrationScreen(
                         // ONLY draw lines when output is NOT phone speaker
                         if (!isPhoneSpeaker) {
                             // 3. Draw Device Preset line (Cyan)
-                            val presetIsActive = devicePresetEnabled && (selectedModel != null || bands10.isNotEmpty()) && audioCalibrationEnabled
+                            val presetIsActive = devicePresetEnabled && selectedModel != null && audioCalibrationEnabled
                             val presetAlpha = if (!presetIsActive || previewUncalibrated) 0.20f else 0.90f
-                            val presetStrokeWidth = if (presetIsActive && !previewUncalibrated) 2.5.dp.toPx() else 1.8.dp.toPx()
+                            val presetStrokeWidth = if (presetIsActive && !previewUncalibrated) 3.5.dp.toPx() else 2.0.dp.toPx()
 
-                            if (bands10.isNotEmpty()) {
-                                val presetPath = Path()
-                                for (i in 0 until bandCount) {
-                                    val x = i * stepX
-                                    val rawDb = bands10.getOrNull(i.coerceAtMost(bands10.lastIndex)) ?: 0f
-                                    val y = dbToY(rawDb)
-                                    if (i == 0) presetPath.moveTo(x, y) else presetPath.lineTo(x, y)
-                                }
+                            val presetPoints = mutableListOf<Offset>()
+                            for (i in 0 until bandCount) {
+                                val x = i * stepX
+                                val hz = HeadphoneCatalog.ZONES[i].frequencyHz.toFloat()
+                                val rawDb = CalibrationCombiner.evaluateModelGain(activeAcousticModel?.activeProfile, hz)
+                                val y = dbToY(rawDb)
+                                presetPoints.add(Offset(x, y))
+                            }
+
+                            if (presetPoints.isNotEmpty() && selectedModel != null) {
+                                val presetPath = createSmoothSplinePath(presetPoints)
                                 drawPath(
                                     path = presetPath,
                                     color = presetCurveColor.copy(alpha = presetAlpha),
-                                    style = Stroke(width = presetStrokeWidth, cap = StrokeCap.Round),
+                                    style = Stroke(
+                                        width = presetStrokeWidth,
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round,
+                                    ),
                                 )
                             } else {
                                 drawLine(
@@ -386,22 +463,27 @@ fun AudioCalibrationScreen(
                             // 4. Draw Personal EQ line (Amber)
                             val personalIsActive = personalizationEnabled && personalizationCompleted && audioCalibrationEnabled
                             val personalAlpha = if (!personalIsActive || previewUncalibrated) 0.20f else 0.90f
-                            val personalStrokeWidth = if (personalIsActive && !previewUncalibrated) 2.5.dp.toPx() else 1.8.dp.toPx()
+                            val personalStrokeWidth = if (personalIsActive && !previewUncalibrated) 3.5.dp.toPx() else 2.0.dp.toPx()
 
                             if (personalizationCompleted) {
-                                val personalPath = Path()
+                                val personalPoints = mutableListOf<Offset>()
                                 for (i in 0 until bandCount) {
                                     val x = i * stepX
                                     val left = leftGains.getOrNull(i) ?: 0f
                                     val right = rightGains.getOrNull(i) ?: 0f
                                     val avg = (left + right) / 2f
                                     val y = dbToY(avg)
-                                    if (i == 0) personalPath.moveTo(x, y) else personalPath.lineTo(x, y)
+                                    personalPoints.add(Offset(x, y))
                                 }
+                                val personalPath = createSmoothSplinePath(personalPoints)
                                 drawPath(
                                     path = personalPath,
                                     color = personalCurveColor.copy(alpha = personalAlpha),
-                                    style = Stroke(width = personalStrokeWidth, cap = StrokeCap.Round),
+                                    style = Stroke(
+                                        width = personalStrokeWidth,
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round,
+                                    ),
                                 )
                             } else {
                                 drawLine(
@@ -436,10 +518,10 @@ fun AudioCalibrationScreen(
 
                 // Footer: Device Name & Curve Legend
                 val deviceDisplayName = when {
-                    modelName != null -> "${modelBrand ?: ""} $modelName".trim()
-                    selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
+                    selectedModel != null -> cleanModelDisplayName(selectedModel.brand, selectedModel.name)
+                    modelName != null -> cleanModelDisplayName(modelBrand ?: "", modelName ?: "")
                     outputStatus.deviceName.isNotBlank() && !isPhoneSpeaker -> outputStatus.deviceName
-                    else -> ""
+                    else -> stringResource(R.string.no_preset_flat)
                 }
 
                 Row(
@@ -628,4 +710,33 @@ private fun LivePreviewBar(
             )
         }
     }
+}
+
+/**
+ * Constructs a smooth cubic Bezier spline path passing through [points] with continuous first derivatives.
+ * Eliminates sharp angular corners, rendering a fluid iOS-grade curve.
+ */
+private fun createSmoothSplinePath(points: List<Offset>): Path {
+    val path = Path()
+    if (points.isEmpty()) return path
+    if (points.size == 1) {
+        path.moveTo(points[0].x, points[0].y)
+        return path
+    }
+    path.moveTo(points[0].x, points[0].y)
+    val n = points.size
+    for (i in 0 until n - 1) {
+        val p0 = if (i > 0) points[i - 1] else points[i]
+        val p1 = points[i]
+        val p2 = points[i + 1]
+        val p3 = if (i + 2 < n) points[i + 2] else points[i + 1]
+
+        val cp1x = p1.x + (p2.x - p0.x) / 6f
+        val cp1y = p1.y + (p2.y - p0.y) / 6f
+        val cp2x = p2.x - (p3.x - p1.x) / 6f
+        val cp2y = p2.y - (p3.y - p1.y) / 6f
+
+        path.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+    }
+    return path
 }

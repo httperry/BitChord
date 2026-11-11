@@ -1045,12 +1045,20 @@ internal fun DualEarCurveGraph(
                 drawPath(
                     path = leftPath,
                     color = leftColor,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(
+                        width = 3.5.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                    ),
                 )
                 drawPath(
                     path = rightPath,
                     color = rightColor,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(
+                        width = 3.5.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                    ),
                 )
 
                 // Draw node dots

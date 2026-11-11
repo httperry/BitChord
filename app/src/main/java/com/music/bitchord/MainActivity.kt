@@ -3116,9 +3116,15 @@ private fun BitChordApp(
                                 contentPadding = listPadding,
                                 onBack = { navigator.pop() },
                                 onOpenAudioTest = { navigator.push(AppRoute.AudioTest) },
+                                onOpenDevicePresetPicker = { navigator.push(AppRoute.DevicePresetPicker) },
                             )
                         } else if (pageRoute == AppRoute.AudioTest) {
                             com.music.bitchord.ui.screens.calibration.AudioTestScreen(
+                                onBack = { navigator.pop() },
+                            )
+                        } else if (pageRoute == AppRoute.DevicePresetPicker) {
+                            com.music.bitchord.ui.screens.calibration.DevicePresetPickerScreen(
+                                contentPadding = listPadding,
                                 onBack = { navigator.pop() },
                             )
                         } else if (pageRoute == AppRoute.EqualizerPresets) {
@@ -3832,6 +3838,7 @@ private fun BitChordApp(
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.AudioCalibration -> stringResource(R.string.audio_calibration)
                         AppRoute.AudioTest -> stringResource(R.string.audio_test)
+                        AppRoute.DevicePresetPicker -> stringResource(R.string.device_presets)
                         AppRoute.Settings -> stringResource(R.string.settings)
                         is AppRoute.SettingsSection -> stringResource(route.category.title)
                         is AppRoute.SettingsChoice -> stringResource(route.choice.title)

@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.R
 import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.playback.calibration.CalibrationCombiner
 import com.music.bitchord.playback.calibration.HearingToneGenerator
 import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
 import com.music.bitchord.ui.components.isGlassSupported
@@ -215,12 +216,21 @@ fun AudioTestScreen(
         val beeps = Random.nextInt(1, 4)
         currentRandomBeeps = beeps
         stage = TestStage.DID_YOU_HEAR
+
+        val activeModelProfile = AudioCalibrationManager.getActiveAutoEqProfile()
+        val modelGain = if (AppSettings.devicePresetEnabled.value) {
+            CalibrationCombiner.evaluateModelGain(activeModelProfile, currentZone.frequencyHz.toFloat())
+        } else {
+            0f
+        }
+        val effectiveAmp = (amp + modelGain).coerceIn(-100f, -6f)
+
         AudioTestToneStreamer.playTones(
             scope = scope,
             frequencyHz = currentZone.frequencyHz.toFloat(),
             ear = currentEar,
             beepCount = beeps,
-            amplitudeDb = amp,
+            amplitudeDb = effectiveAmp,
             onPlayingChange = { isPlayingTone = it },
         )
     }

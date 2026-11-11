@@ -24,6 +24,7 @@ sealed interface AppRoute {
     data object Equalizer : AppRoute
     data object AudioCalibration : AppRoute
     data object AudioTest : AppRoute
+    data object DevicePresetPicker : AppRoute
     data object Replay : AppRoute
     data object History : AppRoute
     data object Discord : AppRoute
