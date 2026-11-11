@@ -15,7 +15,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,8 +28,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -51,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,9 +62,10 @@ import com.music.bitchord.R
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
+import com.music.bitchord.ui.screens.GROUP_INSET
+import com.music.bitchord.ui.screens.GroupShape
 import com.music.bitchord.ui.screens.SettingsPageTitle
 
-private val InsetCardShape = RoundedCornerShape(16.dp)
 private val ChipShape = RoundedCornerShape(20.dp)
 
 /**
@@ -122,10 +121,11 @@ fun DevicePresetPickerScreen(
     }
 
     LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding() + 32.dp,
+        ),
     ) {
         // Page Title & Subtitle
         item {
@@ -143,7 +143,7 @@ fun DevicePresetPickerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
+                    .padding(horizontal = GROUP_INSET)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -206,14 +206,12 @@ fun DevicePresetPickerScreen(
 
         // Horizontal Brand Filter Chips
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = GROUP_INSET),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                brands.forEach { brand ->
+                items(brands) { brand ->
                     val isSelected = selectedBrand.equals(brand, ignoreCase = true)
                     val chipBg = if (isSelected) {
                         MaterialTheme.colorScheme.primary
@@ -246,7 +244,6 @@ fun DevicePresetPickerScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
         }
 
         // Section 1: BASELINE (Flat Reference Option)
@@ -255,13 +252,14 @@ fun DevicePresetPickerScreen(
                 text = stringResource(R.string.baseline_group_title),
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+                modifier = Modifier.padding(start = GROUP_INSET + 4.dp, bottom = 6.dp, top = 16.dp),
             )
             val isFlatSelected = !devicePresetEnabled || modelId == null
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(InsetCardShape)
+                    .padding(horizontal = GROUP_INSET)
+                    .clip(GroupShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 Row(
@@ -298,7 +296,6 @@ fun DevicePresetPickerScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(20.dp))
         }
 
         // Section 2: HEADPHONE MODELS
@@ -307,7 +304,7 @@ fun DevicePresetPickerScreen(
                 text = stringResource(R.string.headphone_models_group_title),
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+                modifier = Modifier.padding(start = GROUP_INSET + 4.dp, bottom = 6.dp, top = 16.dp),
             )
         }
 
@@ -316,7 +313,8 @@ fun DevicePresetPickerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(InsetCardShape)
+                        .padding(horizontal = GROUP_INSET)
+                        .clip(GroupShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(vertical = 32.dp, horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
@@ -333,7 +331,8 @@ fun DevicePresetPickerScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(InsetCardShape)
+                        .padding(horizontal = GROUP_INSET)
+                        .clip(GroupShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     filteredModels.forEachIndexed { index, model ->
@@ -344,7 +343,7 @@ fun DevicePresetPickerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectModelAndExit(model) }
-                                .padding(horizontal = 16.dp, vertical = 13.dp),
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
@@ -403,16 +402,12 @@ fun DevicePresetPickerScreen(
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 16.dp),
                                 thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
                             )
                         }
                     }
                 }
             }
-        }
-
-        item {
-            Spacer(Modifier.height(32.dp))
         }
     }
 }

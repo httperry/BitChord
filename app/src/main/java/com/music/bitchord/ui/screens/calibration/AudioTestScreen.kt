@@ -18,6 +18,7 @@ import android.media.AudioTrack
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -75,10 +76,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -171,6 +182,7 @@ private enum class TestEar(val label: String, val shortLabel: String) {
  * 8. Persistent streaming AudioTrack with inaudible comfort dither keep-alive carrier
  *    ensuring Bluetooth A2DP transport and earbud DACs never sleep.
  */
+@OptIn(ExperimentalHazeApi::class)
 @Composable
 fun AudioTestScreen(
     onBack: () -> Unit,
@@ -182,7 +194,10 @@ fun AudioTestScreen(
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val progressiveBlurEnabled by AppSettings.progressiveBlur.collectAsStateWithLifecycle()
+    val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val isGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
+    val useProgressiveBlur = progressiveBlurEnabled && isGlass && !reduceDynamicBlur
+    val testHazeState = remember { HazeState() }
 
     // Testing zones (7 key audiometric frequencies)
     val zones = HeadphoneCatalog.ZONES
@@ -272,37 +287,125 @@ fun AudioTestScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        // --- 1. Top Dark Fade / Vignette Overlay (Drawn BEHIND content so text is never blurred) ---
+        // --- 1. Background Visualizer Layer (Carries hazeSource for sampling) ---
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.Black.copy(alpha = if (progressiveBlurEnabled) 0.88f else 0.75f),
-                        0.6f to Color.Black.copy(alpha = 0.35f),
-                        1.0f to Color.Transparent,
-                    ),
-                ),
-        )
+                .fillMaxSize()
+                .hazeSource(state = testHazeState),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Comic Book Halftone Wave Canvas centered at width/2, height/2
+            ComicBookHalftoneWaveCanvas(
+                isPlaying = isPlayingTone,
+                currentEar = currentEar,
+                modifier = Modifier.fillMaxSize(),
+            )
 
-        // --- 2. Bottom Dark Fade / Vignette Overlay (Creates the loved edge darkening behind buttons) ---
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(340.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.Transparent,
-                        0.30f to Color.Black.copy(alpha = if (progressiveBlurEnabled) 0.65f else 0.50f),
-                        1.0f to Color.Black.copy(alpha = 0.98f),
-                    ),
-                ),
-        )
+            // Central Headphone Badge in true center
+            CentralHeadphoneBadge(
+                currentEar = currentEar,
+                isPlaying = isPlayingTone,
+                isGlass = isGlass,
+            )
+        }
 
-        // --- 3. Screen UI Content ---
+        // --- 2. Top Progressive Blur / Scrim (Softens waves passing under status & top bar) ---
+        if (useProgressiveBlur) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .align(Alignment.TopCenter)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            Brush.verticalGradient(
+                                0.0f to Color.Black,
+                                0.70f to Color.Black,
+                                1.0f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                    .hazeEffect(state = testHazeState) {
+                        backgroundColor = MaterialTheme.colorScheme.background
+                        tints = emptyList()
+                        blurRadius = 24.dp
+                        noiseFactor = 0f
+                        inputScale = HazeInputScale.Fixed(0.33f)
+                        progressive = HazeProgressive.verticalGradient(
+                            easing = EaseInOut,
+                            startIntensity = 1f,
+                            endIntensity = 0f,
+                        )
+                    },
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                            0.65f to MaterialTheme.colorScheme.background.copy(alpha = 0.40f),
+                            1.0f to Color.Transparent,
+                        ),
+                    ),
+            )
+        }
+
+        // --- 3. Bottom Progressive Blur Floor / Scrim (Softens floor behind controls) ---
+        if (useProgressiveBlur) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    .align(Alignment.BottomCenter)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            Brush.verticalGradient(
+                                0.0f to Color.Transparent,
+                                0.30f to Color.Black,
+                                1.0f to Color.Black,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                    .hazeEffect(state = testHazeState) {
+                        backgroundColor = MaterialTheme.colorScheme.background
+                        tints = emptyList()
+                        blurRadius = 24.dp
+                        noiseFactor = 0f
+                        inputScale = HazeInputScale.Fixed(0.33f)
+                        progressive = HazeProgressive.verticalGradient(
+                            easing = EaseInOut,
+                            startIntensity = 0f,
+                            endIntensity = 1f,
+                        )
+                    },
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to Color.Transparent,
+                            0.30f to MaterialTheme.colorScheme.background.copy(alpha = 0.60f),
+                            1.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
+                        ),
+                    ),
+            )
+        }
+
+        // --- 4. Foreground UI Content (Clear and sharp on top of progressive blur) ---
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -379,27 +482,8 @@ fun AudioTestScreen(
                 )
             }
 
-            // --- Middle Visualizer Area (weight 1f, perfect optical & layout center) ---
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                // Comic Book Halftone Wave Canvas centered at width/2, height/2
-                ComicBookHalftoneWaveCanvas(
-                    isPlaying = isPlayingTone,
-                    currentEar = currentEar,
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                // Central Headphone Badge in true center
-                CentralHeadphoneBadge(
-                    currentEar = currentEar,
-                    isPlaying = isPlayingTone,
-                    isGlass = isGlass,
-                )
-            }
+            // Spacer weight 1f to push bottom controls down
+            Spacer(modifier = Modifier.weight(1f))
 
             // --- Bottom Controls Area ---
             Box(
