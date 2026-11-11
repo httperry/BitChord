@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Build target'
+        required: true
+        default: 'phone'
+        type: choice
+        options:
+          - 'phone'
+          - 'both'
 
 jobs:
   build-prod-release:
@@ -18,7 +27,17 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
+
+    - name: Setup Gradle Build Cache
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: false
+
+    - name: Setup ccache for Native C++
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-android-ccache
+        max-size: 500M
 
     - name: Setup Secrets (Keystore & local.properties)
       run: |
@@ -38,7 +57,16 @@ jobs:
       run: chmod +x gradlew
 
     - name: Build Signed Prod Release APK
-      run: ./gradlew assembleProdRelease
+      run: |
+        TARGET="${{ github.event.inputs.target || (github.ref == 'refs/heads/main' && 'both') || 'phone' }}"
+        GRADLE_FLAGS="--parallel --build-cache -Dorg.gradle.workers.max=4 -DANDROID_CCACHE=ccache"
+        if [ "$TARGET" = "both" ]; then
+          echo "Building both Phone and Wear OS APKs..."
+          ./gradlew assembleProdRelease $GRADLE_FLAGS
+        else
+          echo "Building Phone Release APK (:app:assembleProdArm64-v8aRelease)..."
+          ./gradlew :app:assembleProdArm64-v8aRelease $GRADLE_FLAGS
+        fi
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
@@ -46,10 +74,8 @@ jobs:
         name: bitchord-prod-release-signed
         path: app/build/outputs/apk/prod/release/*.apk
 
-    # Built by the same assembleProdRelease, with the same key. The watch app
-    # only pairs with a phone app signed by the same key, so a prod watch APK
-    # for these phone builds can only come from here, never a local build.
     - name: Upload Wear OS APK Artifact
+      if: github.event.inputs.target == 'both' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
       uses: actions/upload-artifact@v4
       with:
         name: bitchord-wear-prod-release-signed
