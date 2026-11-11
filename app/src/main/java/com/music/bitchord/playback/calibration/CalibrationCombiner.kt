@@ -88,32 +88,58 @@ object CalibrationCombiner {
         rightGains: List<Float>,
     ): Pair<Float, Float> {
         // Audiometric bands: [125, 250, 500, 1000, 2000, 4000, 8000] Hz
-        val l = { idx: Int -> leftGains.getOrElse(idx) { 0f } }
-        val r = { idx: Int -> rightGains.getOrElse(idx) { 0f } }
-        // Equal-loudness bass anchor: ensures sub-bass punch is preserved when mids are boosted
-        val midEnergyL = (l(2) + l(3)) * 0.45f
-        val midEnergyR = (r(2) + r(3)) * 0.45f
-        val bassShelfL = maxOf(l(0), midEnergyL)
-        val bassShelfR = maxOf(r(0), midEnergyR)
+        val lRaw = { idx: Int -> leftGains.getOrElse(idx) { 0f } }
+        val rRaw = { idx: Int -> rightGains.getOrElse(idx) { 0f } }
+
+        // Stereo Coupling Safeguard:
+        // A 1-2 dB difference between ears shifts the stereo image, while 2-5 dB differences
+        // are standard test noise or ear-tip seal variance. Unless asymmetry is >= 6 dB,
+        // average both ears into a unified common curve so the stereo soundstage stays centered.
+        val l = { idx: Int ->
+            val diff = kotlin.math.abs(lRaw(idx) - rRaw(idx))
+            if (diff < 6.0f) {
+                (lRaw(idx) + rRaw(idx)) * 0.5f
+            } else {
+                val mean = (lRaw(idx) + rRaw(idx)) * 0.5f
+                (mean + (lRaw(idx) - mean) * 0.5f).coerceIn(-2.0f, 3.5f)
+            }
+        }
+        val r = { idx: Int ->
+            val diff = kotlin.math.abs(lRaw(idx) - rRaw(idx))
+            if (diff < 6.0f) {
+                (lRaw(idx) + rRaw(idx)) * 0.5f
+            } else {
+                val mean = (lRaw(idx) + rRaw(idx)) * 0.5f
+                (mean + (rRaw(idx) - mean) * 0.5f).coerceIn(-2.0f, 3.5f)
+            }
+        }
+
+        // Equal-loudness bass anchor:
+        // When mid-frequencies are boosted, ensure sub-bass (60Hz & 150Hz) is anchored
+        // so kick drums and sub-bass vibrancy are never hollowed out by pre-amp attenuation.
+        val midEnergyL = maxOf(0f, l(2), l(3), l(4)) * 0.65f
+        val midEnergyR = maxOf(0f, r(2), r(3), r(4)) * 0.65f
+        val bassShelfL = maxOf(l(0), midEnergyL).coerceAtLeast(0f)
+        val bassShelfR = maxOf(r(0), midEnergyR).coerceAtLeast(0f)
 
         val left = when (slot) {
             0 -> bassShelfL                 // 60 Hz shelf (anchors sub-bass vibrancy)
-            1 -> maxOf(l(0), l(1) * 0.85f)  // 150 Hz
+            1 -> maxOf(bassShelfL * 0.9f, l(1)) // 150 Hz mid-bass warmth
             2 -> (l(1) + l(2)) * 0.5f       // 400 Hz (interpolating 250 & 500)
             3 -> l(3)                       // 1000 Hz
             4 -> l(4)                       // 2500 Hz
-            5 -> (l(5) + l(6)) * 0.5f       // 6000 Hz (interpolating 4k & 8k)
-            6 -> l(6)                       // 14000 Hz shelf
+            5 -> ((l(5) + l(6)) * 0.5f).coerceAtMost(1.8f) // 6000 Hz (smoothed treble, no harsh sibilance)
+            6 -> l(6).coerceAtMost(1.5f)    // 14000 Hz air shelf (smooth air, non-fatiguing)
             else -> 0f
         }
         val right = when (slot) {
             0 -> bassShelfR
-            1 -> maxOf(r(0), r(1) * 0.85f)
+            1 -> maxOf(bassShelfR * 0.9f, r(1))
             2 -> (r(1) + r(2)) * 0.5f
             3 -> r(3)
             4 -> r(4)
-            5 -> (r(5) + r(6)) * 0.5f
-            6 -> r(6)
+            5 -> ((r(5) + r(6)) * 0.5f).coerceAtMost(1.8f)
+            6 -> r(6).coerceAtMost(1.5f)
             else -> 0f
         }
         return left to right

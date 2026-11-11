@@ -427,14 +427,18 @@ fun AudioTestScreen(
                                 onCountSelected = { count ->
                                     val zoneIdx = currentStepIndex % zones.size
                                     if (count == currentRandomBeeps) {
-                                        // Musical audiometric prescription: 0.25x slope preserves music balance while clarifying vocals
+                                        // Best-practice musical prescription: delta = k * max(0, loss - deadband)
+                                        // 8 dB deadband filters out ear-tip seal variance & lax 'Yes' threshold noise
                                         val spec = getThresholdSpecForFrequency(currentZone.frequencyHz.toFloat())
-                                        val hearingLossDb = currentAmplitudeDb - spec.referenceThresholdDb
-                                        val delta = if (hearingLossDb > 0f) {
-                                            ((hearingLossDb * 0.25f) * 2f).roundToInt() / 2f
+                                        val rawHearingLossDb = currentAmplitudeDb - spec.referenceThresholdDb
+                                        val deadbandLoss = maxOf(0f, rawHearingLossDb - 8.0f)
+                                        val delta = if (deadbandLoss > 0f) {
+                                            ((deadbandLoss * 0.30f) * 2f).roundToInt() / 2f
+                                        } else if (rawHearingLossDb < -4.0f) {
+                                            -0.5f
                                         } else {
-                                            ((hearingLossDb * 0.15f) * 2f).roundToInt() / 2f
-                                        }.coerceIn(-2.0f, 3.5f)
+                                            0.0f
+                                        }.coerceIn(-1.5f, 3.0f)
 
                                         if (currentEar == TestEar.LEFT) {
                                             leftEarDeltas[zoneIdx] = delta
