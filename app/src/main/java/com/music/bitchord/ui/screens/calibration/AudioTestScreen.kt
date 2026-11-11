@@ -427,14 +427,14 @@ fun AudioTestScreen(
                                 onCountSelected = { count ->
                                     val zoneIdx = currentStepIndex % zones.size
                                     if (count == currentRandomBeeps) {
-                                        // Verified threshold! Compute NAL-NL2 0.45x prescription gain relative to ISO reference
+                                        // Musical audiometric prescription: 0.25x slope preserves music balance while clarifying vocals
                                         val spec = getThresholdSpecForFrequency(currentZone.frequencyHz.toFloat())
                                         val hearingLossDb = currentAmplitudeDb - spec.referenceThresholdDb
                                         val delta = if (hearingLossDb > 0f) {
-                                            ((hearingLossDb * 0.45f) * 2f).roundToInt() / 2f
+                                            ((hearingLossDb * 0.25f) * 2f).roundToInt() / 2f
                                         } else {
-                                            ((hearingLossDb * 0.20f) * 2f).roundToInt() / 2f
-                                        }.coerceIn(-2.5f, 9.0f)
+                                            ((hearingLossDb * 0.15f) * 2f).roundToInt() / 2f
+                                        }.coerceIn(-2.0f, 3.5f)
 
                                         if (currentEar == TestEar.LEFT) {
                                             leftEarDeltas[zoneIdx] = delta
@@ -676,20 +676,21 @@ private fun QuestionDidYouHearSection(
                 )
             }
 
-            OutlinedButton(
+            Button(
                 onClick = onNo,
                 modifier = Modifier
                     .weight(1f)
                     .height(54.dp),
                 shape = RoundedCornerShape(27.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
                 border = ButtonDefaults.outlinedButtonBorder.copy(
                     brush = Brush.horizontalGradient(
                         listOf(
-                            MaterialTheme.colorScheme.outlineVariant,
-                            MaterialTheme.colorScheme.outline,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
                         ),
                     ),
                 ),
@@ -697,7 +698,7 @@ private fun QuestionDidYouHearSection(
                 Text(
                     text = "No",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }

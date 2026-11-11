@@ -90,9 +90,15 @@ object CalibrationCombiner {
         // Audiometric bands: [125, 250, 500, 1000, 2000, 4000, 8000] Hz
         val l = { idx: Int -> leftGains.getOrElse(idx) { 0f } }
         val r = { idx: Int -> rightGains.getOrElse(idx) { 0f } }
+        // Equal-loudness bass anchor: ensures sub-bass punch is preserved when mids are boosted
+        val midEnergyL = (l(2) + l(3)) * 0.45f
+        val midEnergyR = (r(2) + r(3)) * 0.45f
+        val bassShelfL = maxOf(l(0), midEnergyL)
+        val bassShelfR = maxOf(r(0), midEnergyR)
+
         val left = when (slot) {
-            0 -> l(0) * 0.75f               // 60 Hz shelf
-            1 -> l(0)                       // 150 Hz
+            0 -> bassShelfL                 // 60 Hz shelf (anchors sub-bass vibrancy)
+            1 -> maxOf(l(0), l(1) * 0.85f)  // 150 Hz
             2 -> (l(1) + l(2)) * 0.5f       // 400 Hz (interpolating 250 & 500)
             3 -> l(3)                       // 1000 Hz
             4 -> l(4)                       // 2500 Hz
@@ -101,8 +107,8 @@ object CalibrationCombiner {
             else -> 0f
         }
         val right = when (slot) {
-            0 -> r(0) * 0.75f
-            1 -> r(0)
+            0 -> bassShelfR
+            1 -> maxOf(r(0), r(1) * 0.85f)
             2 -> (r(1) + r(2)) * 0.5f
             3 -> r(3)
             4 -> r(4)
