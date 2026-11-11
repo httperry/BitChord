@@ -10,16 +10,14 @@
 
 package com.music.bitchord.ui.screens.calibration
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -54,13 +52,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -82,11 +78,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -115,10 +109,36 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-// Hughson-Westlake Audiometric Standards (ISO 8253-1 / NAL-NL2)
-private const val STARTING_AMPLITUDE_DB: Float = -62.0f
-private const val BASELINE_AMPLITUDE_DB: Float = -60.0f
-private const val MAX_AMPLITUDE_DB: Float = -14.0f
+/** Global flag indicating Audio Test screen is active (used to overtake volume controls). */
+object AudioTestState {
+    @Volatile
+    var isActive: Boolean = false
+}
+
+/**
+ * Frequency-specific Hughson-Westlake audiometric starting levels & normal reference thresholds
+ * based on ISO 226 equal-loudness contours (ANSI S3.6 standard).
+ *
+ * Normal human hearing requires significantly more sound energy at 125 Hz than at 1 kHz-4 kHz.
+ * Starting levels are calibrated 14 dB - 18 dB below normal threshold so EVERY frequency
+ * begins inaudible, prompting the user to press "No" as the ascending staircase begins.
+ */
+data class AudiometricThresholdSpec(
+    val startingAmplitudeDb: Float,
+    val referenceThresholdDb: Float,
+)
+
+fun getThresholdSpecForFrequency(frequencyHz: Float): AudiometricThresholdSpec = when {
+    frequencyHz <= 160f -> AudiometricThresholdSpec(startingAmplitudeDb = -74.0f, referenceThresholdDb = -56.0f) // 125 Hz Sub-Bass
+    frequencyHz <= 350f -> AudiometricThresholdSpec(startingAmplitudeDb = -82.0f, referenceThresholdDb = -68.0f) // 250 Hz Bass
+    frequencyHz <= 750f -> AudiometricThresholdSpec(startingAmplitudeDb = -88.0f, referenceThresholdDb = -76.0f) // 500 Hz Low-Mids
+    frequencyHz <= 1500f -> AudiometricThresholdSpec(startingAmplitudeDb = -94.0f, referenceThresholdDb = -82.0f) // 1000 Hz Mids
+    frequencyHz <= 3000f -> AudiometricThresholdSpec(startingAmplitudeDb = -96.0f, referenceThresholdDb = -84.0f) // 2000 Hz Upper-Mids
+    frequencyHz <= 6000f -> AudiometricThresholdSpec(startingAmplitudeDb = -98.0f, referenceThresholdDb = -86.0f) // 4000 Hz Presence (Peak sensitivity)
+    else -> AudiometricThresholdSpec(startingAmplitudeDb = -84.0f, referenceThresholdDb = -68.0f) // 8000 Hz Air / Treble
+}
+
+private const val MAX_AMPLITUDE_DB: Float = -12.0f
 private const val STEP_UP_DB: Float = 4.0f
 
 private enum class TestStage {
@@ -138,14 +158,16 @@ private enum class TestEar(val label: String, val shortLabel: String) {
  * Implements:
  * 1. Immersive dark fade / progressive blur backdrop matching app theme.
  * 2. Comic book halftone concentric dot pattern visualizer with 1-second radial wave ripple.
- * 3. Central headphone badge displaying active testing channel.
+ * 3. Central headphone badge displaying active testing channel (perfectly centered).
  * 4. Replay button positioned cleanly above the prompt text.
  * 5. Sequential 2-step prompt flow:
  *    - "Did you hear that?" with [ No ] and [ Yes ] pill buttons.
  *    - "How many did you hear?" with [ 1 ], [ 2 ], [ 3 ] count verification pills.
- * 6. Hughson-Westlake ascending staircase algorithm (-62 dBFS baseline, +4 dB step-ups)
- *    producing genuine NAL-NL2 hearing threshold calibration.
- * 7. Persistent streaming AudioTrack with inaudible comfort dither keep-alive carrier
+ * 6. Frequency-adjusted ISO 226 Hughson-Westlake ascending staircase algorithm
+ *    producing genuine, non-flat NAL-NL2 hearing threshold calibration.
+ * 7. System volume overtake: locks media volume to a standardized calibrated level during the test
+ *    and restores previous volume upon exit.
+ * 8. Persistent streaming AudioTrack with inaudible comfort dither keep-alive carrier
  *    ensuring Bluetooth A2DP transport and earbud DACs never sleep.
  */
 @Composable
@@ -156,6 +178,8 @@ fun AudioTestScreen(
     BackHandler(onBack = onBack)
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val progressiveBlurEnabled by AppSettings.progressiveBlur.collectAsStateWithLifecycle()
     val isGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
 
@@ -170,7 +194,11 @@ fun AudioTestScreen(
     var stage by remember { mutableStateOf(TestStage.DID_YOU_HEAR) }
     var currentRandomBeeps by remember { mutableIntStateOf(2) }
     var isPlayingTone by remember { mutableStateOf(false) }
-    var currentAmplitudeDb by remember { mutableFloatStateOf(STARTING_AMPLITUDE_DB) }
+
+    val initialSpec = remember(currentZone.frequencyHz) {
+        getThresholdSpecForFrequency(currentZone.frequencyHz.toFloat())
+    }
+    var currentAmplitudeDb by remember { mutableFloatStateOf(initialSpec.startingAmplitudeDb) }
 
     // Collected hearing deltas (in dB)
     val leftEarDeltas = remember { mutableStateListOf<Float>() }
@@ -197,18 +225,32 @@ fun AudioTestScreen(
         )
     }
 
-    // Trigger tone on step advancement
+    // Trigger tone on step advancement and reset volume to the frequency's inaudible starting floor
     LaunchedEffect(currentStepIndex) {
         if (stage != TestStage.COMPLETED) {
-            currentAmplitudeDb = STARTING_AMPLITUDE_DB
+            val spec = getThresholdSpecForFrequency(currentZone.frequencyHz.toFloat())
+            currentAmplitudeDb = spec.startingAmplitudeDb
             AudioTestToneStreamer.ensureStarted(scope)
             delay(350)
-            playToneAtVolume(STARTING_AMPLITUDE_DB)
+            playToneAtVolume(spec.startingAmplitudeDb)
         }
     }
 
+    // Overtake system volume controls and set standard test reference volume
     DisposableEffect(Unit) {
+        AudioTestState.isActive = true
+        val originalVolume = runCatching { audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(10)
+        val maxVolume = runCatching { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(15)
+        val referenceVolume = (maxVolume * 0.75f).roundToInt().coerceIn(1, maxVolume)
+        runCatching {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, referenceVolume, 0)
+        }
+
         onDispose {
+            AudioTestState.isActive = false
+            runCatching {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
+            }
             AudioTestToneStreamer.stop()
         }
     }
@@ -220,58 +262,37 @@ fun AudioTestScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        // --- 1. Comic Book Halftone Wave Canvas (Center Layer) ---
-        ComicBookHalftoneWaveCanvas(
-            isPlaying = isPlayingTone,
-            currentEar = currentEar,
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        // --- 2. Central Headphone Badge ---
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(bottom = 64.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            CentralHeadphoneBadge(
-                currentEar = currentEar,
-                isPlaying = isPlayingTone,
-                isGlass = isGlass,
-            )
-        }
-
-        // --- 3. Top Dark Fade / Vignette Overlay ---
+        // --- 1. Top Dark Fade / Vignette Overlay (Drawn BEHIND content so text is never blurred) ---
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp)
+                .height(200.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
                         0.0f to Color.Black.copy(alpha = if (progressiveBlurEnabled) 0.88f else 0.75f),
-                        0.5f to Color.Black.copy(alpha = 0.40f),
+                        0.6f to Color.Black.copy(alpha = 0.35f),
                         1.0f to Color.Transparent,
                     ),
                 ),
         )
 
-        // --- 4. Bottom Dark Fade / Vignette Overlay ---
+        // --- 2. Bottom Dark Fade / Vignette Overlay (Creates the loved edge darkening behind buttons) ---
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(320.dp)
+                .height(340.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
                         0.0f to Color.Transparent,
-                        0.35f to Color.Black.copy(alpha = if (progressiveBlurEnabled) 0.70f else 0.55f),
-                        1.0f to Color.Black.copy(alpha = 0.96f),
+                        0.30f to Color.Black.copy(alpha = if (progressiveBlurEnabled) 0.65f else 0.50f),
+                        1.0f to Color.Black.copy(alpha = 0.98f),
                     ),
                 ),
         )
 
-        // --- 5. Screen UI Content ---
+        // --- 3. Screen UI Content ---
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -282,30 +303,53 @@ fun AudioTestScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) {
+                // Glass Circular Back Button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isGlass) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f)
+                            else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        )
+                        .border(
+                            width = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            shape = CircleShape,
+                        )
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.close),
+                        imageVector = SfIcons.ArrowBack,
+                        contentDescription = stringResource(R.string.back),
                         tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(18.dp),
                     )
                 }
 
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(14.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Text(
                         text = "Audio Test",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                        ),
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (stage != TestStage.COMPLETED) {
+                        Spacer(Modifier.height(1.dp))
                         Text(
                             text = "${currentEar.label} · ${currentZone.label} (${currentZone.frequencyHz.toInt()} Hz) · Step ${currentStepIndex + 1} of $totalSteps",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -317,91 +361,118 @@ fun AudioTestScreen(
                     progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 2.dp)
+                        .padding(horizontal = 20.dp, vertical = 2.dp)
                         .height(3.dp)
                         .clip(CircleShape),
                     color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
                 )
             }
 
-            Spacer(Modifier.weight(1f))
+            // --- Middle Visualizer Area (weight 1f, perfect optical & layout center) ---
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                // Comic Book Halftone Wave Canvas centered at width/2, height/2
+                ComicBookHalftoneWaveCanvas(
+                    isPlaying = isPlayingTone,
+                    currentEar = currentEar,
+                    modifier = Modifier.fillMaxSize(),
+                )
 
-            // Bottom Controls Area
-            AnimatedContent(
-                targetState = stage,
-                transitionSpec = {
-                    (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 5 }) togetherWith
-                        (fadeOut(tween(180)) + slideOutVertically(tween(180)) { -it / 5 })
-                },
-                label = "AudioTestStageTransition",
+                // Central Headphone Badge in true center
+                CentralHeadphoneBadge(
+                    currentEar = currentEar,
+                    isPlaying = isPlayingTone,
+                    isGlass = isGlass,
+                )
+            }
+
+            // --- Bottom Controls Area ---
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
-            ) { activeStage ->
-                when (activeStage) {
-                    TestStage.DID_YOU_HEAR -> {
-                        QuestionDidYouHearSection(
-                            onReplay = { playToneAtVolume(currentAmplitudeDb) },
-                            onNo = {
-                                // Step up volume by +4dB (Hughson-Westlake ascending staircase)
-                                val nextAmp = (currentAmplitudeDb + STEP_UP_DB).coerceAtMost(MAX_AMPLITUDE_DB)
-                                currentAmplitudeDb = nextAmp
-                                playToneAtVolume(nextAmp)
-                            },
-                            onYes = {
-                                stage = TestStage.HOW_MANY
-                            },
-                        )
-                    }
-
-                    TestStage.HOW_MANY -> {
-                        QuestionHowManySection(
-                            onReplay = { playToneAtVolume(currentAmplitudeDb) },
-                            onCountSelected = { count ->
-                                val zoneIdx = currentStepIndex % zones.size
-                                if (count == currentRandomBeeps) {
-                                    // Verified threshold! Compute NAL-NL2 0.45x prescription gain
-                                    val hearingLossDb = (currentAmplitudeDb - BASELINE_AMPLITUDE_DB).coerceAtLeast(0.0f)
-                                    val delta = ((hearingLossDb * 0.45f) * 2f).roundToInt() / 2f
-                                    val clampedDelta = delta.coerceIn(0.0f, 9.0f)
-
-                                    if (currentEar == TestEar.LEFT) {
-                                        leftEarDeltas[zoneIdx] = clampedDelta
-                                    } else {
-                                        rightEarDeltas[zoneIdx] = clampedDelta
-                                    }
-
-                                    if (currentStepIndex + 1 < totalSteps) {
-                                        currentStepIndex++
-                                    } else {
-                                        stage = TestStage.COMPLETED
-                                    }
-                                } else {
-                                    // Miscounted: step up volume by +4dB and try new beep burst
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+            ) {
+                AnimatedContent(
+                    targetState = stage,
+                    transitionSpec = {
+                        (fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 6 }) togetherWith
+                            (fadeOut(tween(160)) + slideOutVertically(tween(160)) { -it / 6 })
+                    },
+                    label = "AudioTestStageTransition",
+                ) { activeStage ->
+                    when (activeStage) {
+                        TestStage.DID_YOU_HEAR -> {
+                            QuestionDidYouHearSection(
+                                onReplay = { playToneAtVolume(currentAmplitudeDb) },
+                                onNo = {
+                                    // Step up volume by +4dB (Hughson-Westlake ascending staircase)
                                     val nextAmp = (currentAmplitudeDb + STEP_UP_DB).coerceAtMost(MAX_AMPLITUDE_DB)
                                     currentAmplitudeDb = nextAmp
                                     playToneAtVolume(nextAmp)
-                                }
-                            },
-                        )
-                    }
+                                },
+                                onYes = {
+                                    stage = TestStage.HOW_MANY
+                                },
+                            )
+                        }
 
-                    TestStage.COMPLETED -> {
-                        CompletedTestSection(
-                            leftDeltas = leftEarDeltas.toList(),
-                            rightDeltas = rightEarDeltas.toList(),
-                            zones = zones,
-                            onSave = {
-                                AudioCalibrationManager.saveCalibration(
-                                    leftDeltas = leftEarDeltas.toList(),
-                                    rightDeltas = rightEarDeltas.toList(),
-                                )
-                                AppSettings.setPersonalizationEnabled(true)
-                                AppSettings.setAudioCalibrationEnabled(true)
-                                onBack()
-                            },
-                        )
+                        TestStage.HOW_MANY -> {
+                            QuestionHowManySection(
+                                onReplay = { playToneAtVolume(currentAmplitudeDb) },
+                                onCountSelected = { count ->
+                                    val zoneIdx = currentStepIndex % zones.size
+                                    if (count == currentRandomBeeps) {
+                                        // Verified threshold! Compute NAL-NL2 0.45x prescription gain relative to ISO reference
+                                        val spec = getThresholdSpecForFrequency(currentZone.frequencyHz.toFloat())
+                                        val hearingLossDb = currentAmplitudeDb - spec.referenceThresholdDb
+                                        val delta = if (hearingLossDb > 0f) {
+                                            ((hearingLossDb * 0.45f) * 2f).roundToInt() / 2f
+                                        } else {
+                                            ((hearingLossDb * 0.20f) * 2f).roundToInt() / 2f
+                                        }.coerceIn(-2.5f, 9.0f)
+
+                                        if (currentEar == TestEar.LEFT) {
+                                            leftEarDeltas[zoneIdx] = delta
+                                        } else {
+                                            rightEarDeltas[zoneIdx] = delta
+                                        }
+
+                                        if (currentStepIndex + 1 < totalSteps) {
+                                            currentStepIndex++
+                                        } else {
+                                            stage = TestStage.COMPLETED
+                                        }
+                                    } else {
+                                        // Miscounted: step up volume by +4dB and try new beep burst
+                                        val nextAmp = (currentAmplitudeDb + STEP_UP_DB).coerceAtMost(MAX_AMPLITUDE_DB)
+                                        currentAmplitudeDb = nextAmp
+                                        playToneAtVolume(nextAmp)
+                                    }
+                                },
+                            )
+                        }
+
+                        TestStage.COMPLETED -> {
+                            CompletedTestSection(
+                                leftDeltas = leftEarDeltas.toList(),
+                                rightDeltas = rightEarDeltas.toList(),
+                                zones = zones,
+                                onSave = {
+                                    AudioCalibrationManager.saveCalibration(
+                                        leftDeltas = leftEarDeltas.toList(),
+                                        rightDeltas = rightEarDeltas.toList(),
+                                    )
+                                    AppSettings.setPersonalizationEnabled(true)
+                                    AppSettings.setAudioCalibrationEnabled(true)
+                                    onBack()
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -439,7 +510,7 @@ private fun ComicBookHalftoneWaveCanvas(
 
     Canvas(modifier = modifier) {
         val cx = size.width / 2f
-        val cy = size.height / 2f - 64.dp.toPx()
+        val cy = size.height / 2f
         val maxRadius = sqrt((size.width * size.width) + (size.height * size.height)) * 0.75f
 
         val centerDiscRadius = 52.dp.toPx()
@@ -537,14 +608,15 @@ private fun CentralHeadphoneBadge(
                 imageVector = SfIcons.Headphones,
                 contentDescription = null,
                 tint = if (isPlaying) earColor else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(38.dp),
+                modifier = Modifier.size(36.dp),
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = currentEar.shortLabel,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp,
                 ),
                 color = earColor,
             )
@@ -790,6 +862,7 @@ private fun CompletedTestSection(
                         awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
                         isPreviewingUncalibrated = true
                         AudioCalibrationManager.setBypass(true)
+                        AppSettings.setPreviewUncalibrated(true)
                         try {
                             while (true) {
                                 val event = awaitPointerEvent(pass = PointerEventPass.Main)
@@ -798,6 +871,7 @@ private fun CompletedTestSection(
                         } finally {
                             isPreviewingUncalibrated = false
                             AudioCalibrationManager.setBypass(false)
+                            AppSettings.setPreviewUncalibrated(false)
                         }
                     }
                 }

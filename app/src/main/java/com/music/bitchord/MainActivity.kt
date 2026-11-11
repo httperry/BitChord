@@ -472,8 +472,14 @@ class MainActivity : AppCompatActivity() {
      * remote-volume panel; in the background the session takes them. A sheet
      * in a window of its own asks the same through [DacVolumeKeys].
      */
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
-        handleDacVolumeKey(event) || super.dispatchKeyEvent(event)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (com.music.bitchord.ui.screens.calibration.AudioTestState.isActive) {
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP || event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                return true
+            }
+        }
+        return handleDacVolumeKey(event) || super.dispatchKeyEvent(event)
+    }
 
     /**
      * Requests a window refresh rate without forcing a display mode or
@@ -3791,23 +3797,24 @@ private fun BitChordApp(
                             (header * fadeRamp)).coerceIn(0f, 1f)
                     }
                 }
-                if (reduceDynamicBlur || !glassActive || !progressiveBlur) {
-                    BottomFadeScrim(
-                        pageColor = chromePageColor,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .rotate(180f)
-                            .graphicsLayer { alpha = topFadeAlpha },
-                    )
-                } else if (topFadeAlpha > 0.01f) {
-                    TopFadeBlur(
-                        hazeState = hazeState,
-                        pageColor = chromePageColor,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .graphicsLayer { alpha = topFadeAlpha },
-                    )
-                }
+                if (route != AppRoute.AudioTest) {
+                    if (reduceDynamicBlur || !glassActive || !progressiveBlur) {
+                        BottomFadeScrim(
+                            pageColor = chromePageColor,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .rotate(180f)
+                                .graphicsLayer { alpha = topFadeAlpha },
+                        )
+                    } else if (topFadeAlpha > 0.01f) {
+                        TopFadeBlur(
+                            hazeState = hazeState,
+                            pageColor = chromePageColor,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .graphicsLayer { alpha = topFadeAlpha },
+                        )
+                    }
 
                 FrostedTopBar(
                     title = when (route) {
@@ -4156,7 +4163,9 @@ private fun BitChordApp(
                         }
                     },
                 )
+                }
 
+                if (route != AppRoute.AudioTest) {
                 // Drawn before the bars so their own glass reads on top of it.
                 BottomFadeScrim(
                     withMiniPlayer = player.song != null,
@@ -4273,6 +4282,7 @@ private fun BitChordApp(
                         hazeState = hazeState,
                         onTabSelected = onTabSelected,
                     )
+                }
                 }
             }
 
