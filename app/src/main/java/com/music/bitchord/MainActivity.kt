@@ -3109,6 +3109,11 @@ private fun BitChordApp(
                             AudioCalibrationScreen(
                                 contentPadding = listPadding,
                                 onBack = { navigator.pop() },
+                                onOpenAudioTest = { navigator.push(AppRoute.AudioTest) },
+                            )
+                        } else if (pageRoute == AppRoute.AudioTest) {
+                            com.music.bitchord.ui.screens.calibration.AudioTestScreen(
+                                onBack = { navigator.pop() },
                             )
                         } else if (pageRoute == AppRoute.EqualizerPresets) {
                             EqualizerPresetPage(
@@ -3819,6 +3824,7 @@ private fun BitChordApp(
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.AudioCalibration -> stringResource(R.string.audio_calibration)
+                        AppRoute.AudioTest -> stringResource(R.string.audio_test)
                         AppRoute.Settings -> stringResource(R.string.settings)
                         is AppRoute.SettingsSection -> stringResource(route.category.title)
                         is AppRoute.SettingsChoice -> stringResource(route.choice.title)

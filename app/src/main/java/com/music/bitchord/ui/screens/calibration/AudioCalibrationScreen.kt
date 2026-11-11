@@ -110,6 +110,7 @@ import java.util.Locale
 fun AudioCalibrationScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit = {},
+    onOpenAudioTest: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val audioCalibrationEnabled by AppSettings.audioCalibrationEnabled.collectAsStateWithLifecycle()
@@ -200,7 +201,7 @@ fun AudioCalibrationScreen(
                         .weight(1f)
                         .clickable(enabled = !isPhoneSpeaker) {
                             haptics.play(Haptic.Tap)
-                            showPersonalizationWizard = true
+                            onOpenAudioTest()
                         }
                         .heightIn(min = 52.dp)
                         .padding(start = ROW_INSET, end = 12.dp, top = 12.dp, bottom = 12.dp),
@@ -249,7 +250,7 @@ fun AudioCalibrationScreen(
                         onCheckedChange = { desired ->
                             if (desired) {
                                 if (!personalizationCompleted) {
-                                    showPersonalizationWizard = true
+                                    onOpenAudioTest()
                                 } else {
                                     AppSettings.setPersonalizationEnabled(true)
                                     AppSettings.setAudioCalibrationEnabled(true)

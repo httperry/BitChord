@@ -1374,4 +1374,7 @@
     <string name="disabled_on_phone_speaker">Disabled on phone speaker</string>
     <string name="select_device_preset">Tap to select device preset</string>
     <string name="connect_audio_device_notice">Please connect to your audio device to continue</string>
+    <string name="audio_test">Audio Test</string>
+    <string name="did_you_hear_that">Did you hear that?</string>
+    <string name="how_many_did_you_hear">How many did you hear?</string>
 </resources>

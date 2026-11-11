@@ -951,7 +951,7 @@ private fun LegendItem(
 }
 
 @Composable
-private fun DualEarCurveGraph(
+internal fun DualEarCurveGraph(
     leftDeltas: List<Float>,
     rightDeltas: List<Float>,
     zones: List<FrequencyZone>,
