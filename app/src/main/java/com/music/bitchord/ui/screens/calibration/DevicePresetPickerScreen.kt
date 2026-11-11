@@ -108,7 +108,7 @@ fun DevicePresetPickerScreen(
     }
 
     val selectModelAndExit: (HeadphoneModel?) -> Unit = { model ->
-        haptics.play(Haptic.Selection)
+        haptics.play(Haptic.Select)
         if (model == null) {
             AppSettings.setDevicePresetEnabled(false)
             AppSettings.setCalibrationModel(null, null, null)
