@@ -189,7 +189,7 @@ fun AudioTestScreen(
         stage = TestStage.DID_YOU_HEAR
         AudioTestToneStreamer.playTones(
             scope = scope,
-            frequencyHz = currentZone.frequencyHz,
+            frequencyHz = currentZone.frequencyHz.toFloat(),
             ear = currentEar,
             beepCount = beeps,
             amplitudeDb = amp,
@@ -514,7 +514,7 @@ private fun CentralHeadphoneBadge(
                 if (isGlass) {
                     Modifier.lightweightLiquidGlass(
                         shape = CircleShape,
-                        tint = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     )
                 } else {
                     Modifier
