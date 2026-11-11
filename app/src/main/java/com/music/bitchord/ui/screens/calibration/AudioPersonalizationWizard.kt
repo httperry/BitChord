@@ -101,19 +101,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
 import com.music.bitchord.R
+import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.playback.calibration.HearingToneGenerator
 import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
 import com.music.bitchord.ui.components.isGlassSupported
 import com.music.bitchord.ui.components.lightweightLiquidGlass
 import com.music.bitchord.ui.icons.SfIcons
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
 import kotlin.random.Random
+
+// Hughson-Westlake Audiometric Calibration Constants (ISO 8253-1 / NAL-NL2)
+private const val STARTING_AMPLITUDE_DB: Float = -62.0f
+private const val BASELINE_AMPLITUDE_DB: Float = -60.0f
+private const val MAX_AMPLITUDE_DB: Float = -14.0f
+private const val STEP_UP_DB: Float = 4.0f
 
 private enum class WizardStage {
     ONBOARDING,
@@ -187,30 +200,32 @@ fun AudioPersonalizationWizard(
         repeat(zones.size) { rightEarDeltas.add(0.0f) }
     }
 
-    var currentAmplitudeDb by remember { mutableFloatStateOf(-46.0f) }
+    var currentAmplitudeDb by remember { mutableFloatStateOf(STARTING_AMPLITUDE_DB) }
 
     // Function to generate and play tone at specific amplitude
     val playToneAtVolume: (Float) -> Unit = { amp ->
         val beeps = Random.nextInt(1, 4) // 1, 2, or 3 beeps
         currentRandomBeeps = beeps
         answeredStep1Yes = false
-        scope.launch {
-            ToneSynthesizer.playTones(
-                frequencyHz = currentZone.frequencyHz,
-                ear = currentEar,
-                beepCount = beeps,
-                amplitudeDb = amp,
-                onPlayingChange = { isPlayingTone = it },
-            )
-        }
+        ToneSynthesizer.playTones(
+            scope = scope,
+            frequencyHz = currentZone.frequencyHz,
+            ear = currentEar,
+            beepCount = beeps,
+            amplitudeDb = amp,
+            onPlayingChange = { isPlayingTone = it },
+        )
     }
 
     // Start tone on entering testing or advancing steps
     LaunchedEffect(stage, currentStepIndex) {
         if (stage == WizardStage.TESTING) {
-            currentAmplitudeDb = -46.0f
+            currentAmplitudeDb = STARTING_AMPLITUDE_DB
+            ToneSynthesizer.ensureStarted(scope)
             delay(300)
-            playToneAtVolume(-46.0f)
+            playToneAtVolume(STARTING_AMPLITUDE_DB)
+        } else {
+            ToneSynthesizer.stop()
         }
     }
 
@@ -285,7 +300,7 @@ fun AudioPersonalizationWizard(
                             onReplayAudio = { playToneAtVolume(currentAmplitudeDb) },
                             onStep1No = {
                                 // User didn't hear tone -> step up volume by +4dB (up to -14dB) to find threshold!
-                                val nextAmp = (currentAmplitudeDb + 4.0f).coerceAtMost(-14.0f)
+                                val nextAmp = (currentAmplitudeDb + STEP_UP_DB).coerceAtMost(MAX_AMPLITUDE_DB)
                                 currentAmplitudeDb = nextAmp
                                 playToneAtVolume(nextAmp)
                             },
@@ -296,10 +311,10 @@ fun AudioPersonalizationWizard(
                                 val zoneIdx = currentStepIndex % zones.size
                                 if (count == currentRandomBeeps) {
                                     // User accurately heard beeps -> lock in threshold!
-                                    // -46 dBFS is sharp baseline -> 0 dB boost.
-                                    val hearingLossDb = (currentAmplitudeDb - (-46.0f)).coerceAtLeast(0.0f)
-                                    val delta = ((hearingLossDb * 0.35f) * 2f).roundToInt() / 2f
-                                    val clampedDelta = delta.coerceIn(0.0f, 7.0f)
+                                    // Calculate threshold against -60 dBFS baseline with NAL-NL2 0.45x prescription weighting
+                                    val hearingLossDb = (currentAmplitudeDb - BASELINE_AMPLITUDE_DB).coerceAtLeast(0.0f)
+                                    val delta = ((hearingLossDb * 0.45f) * 2f).roundToInt() / 2f
+                                    val clampedDelta = delta.coerceIn(0.0f, 9.0f)
 
                                     if (currentEar == EarChannel.LEFT) {
                                         leftEarDeltas[zoneIdx] = clampedDelta
@@ -313,8 +328,8 @@ fun AudioPersonalizationWizard(
                                         stage = WizardStage.COMPLETION
                                     }
                                 } else {
-                                    // Miscounted: step up volume by +3dB and play new count to verify
-                                    val nextAmp = (currentAmplitudeDb + 3.0f).coerceAtMost(-14.0f)
+                                    // Miscounted: step up volume by +4dB and play new count to verify
+                                    val nextAmp = (currentAmplitudeDb + STEP_UP_DB).coerceAtMost(MAX_AMPLITUDE_DB)
                                     currentAmplitudeDb = nextAmp
                                     playToneAtVolume(nextAmp)
                                 }
@@ -332,6 +347,8 @@ fun AudioPersonalizationWizard(
                                     leftDeltas = leftEarDeltas.toList(),
                                     rightDeltas = rightEarDeltas.toList(),
                                 )
+                                AppSettings.setPersonalizationEnabled(true)
+                                AppSettings.setAudioCalibrationEnabled(true)
                                 closeAfter {}
                             },
                             onClose = { closeAfter {} },
@@ -589,9 +606,10 @@ private fun WizardTestingContent(
         Spacer(Modifier.height(4.dp))
 
         val levelLabel = when {
-            currentAmplitudeDb <= -42f -> "Volume: Faint (Testing Threshold)"
-            currentAmplitudeDb <= -34f -> "Volume: Soft"
-            currentAmplitudeDb <= -26f -> "Volume: Moderate"
+            currentAmplitudeDb <= -54f -> "Volume: Very Faint (Testing Threshold)"
+            currentAmplitudeDb <= -42f -> "Volume: Faint"
+            currentAmplitudeDb <= -30f -> "Volume: Soft"
+            currentAmplitudeDb <= -22f -> "Volume: Moderate"
             else -> "Volume: Elevated"
         }
         Text(
@@ -1130,70 +1148,148 @@ fun HoldToPreviewButton(
 // ---------------------------------------------------------------------------
 
 private object ToneSynthesizer {
-    private var activeTrack: AudioTrack? = null
+    private const val TAG = "ToneSynthesizer"
+    private const val SAMPLE_RATE = HearingToneGenerator.DEFAULT_SAMPLE_RATE
+    private const val CARRIER_CHUNK_FRAMES = 1024
 
-    suspend fun playTones(
+    private val lock = Any()
+    private var activeTrack: AudioTrack? = null
+    private var streamingJob: Job? = null
+
+    private class ToneRequest(
+        val samples: FloatArray,
+        val onPlayingChange: (Boolean) -> Unit,
+    )
+
+    private val toneChannel = Channel<ToneRequest>(Channel.CONFLATED)
+
+    private val carrierChunk = HearingToneGenerator.generateKeepAliveCarrier(
+        frameCount = CARRIER_CHUNK_FRAMES,
+        ditherAmplitude = 1e-5f,
+    )
+
+    fun ensureStarted(scope: CoroutineScope) {
+        synchronized(lock) {
+            if (activeTrack != null && streamingJob?.isActive == true) return
+
+            try {
+                val minBufSize = AudioTrack.getMinBufferSize(
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_OUT_STEREO,
+                    AudioFormat.ENCODING_PCM_FLOAT,
+                )
+                val bufferSize = maxOf(minBufSize, SAMPLE_RATE * 2 * 4 * 250 / 1000)
+
+                val track = AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build(),
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                            .setSampleRate(SAMPLE_RATE)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                            .build(),
+                    )
+                    .setBufferSizeInBytes(bufferSize)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+
+                track.play()
+                activeTrack = track
+
+                streamingJob = scope.launch(Dispatchers.IO) {
+                    try {
+                        while (isActive) {
+                            val request = toneChannel.tryReceive().getOrNull()
+                            if (request != null) {
+                                request.onPlayingChange(true)
+                                try {
+                                    val samples = request.samples
+                                    var offset = 0
+                                    val total = samples.size
+                                    val writeChunkSize = CARRIER_CHUNK_FRAMES * 2
+
+                                    while (isActive && offset < total) {
+                                        if (!toneChannel.isEmpty) {
+                                            break
+                                        }
+                                        val toWrite = minOf(writeChunkSize, total - offset)
+                                        val written = track.write(samples, offset, toWrite, AudioTrack.WRITE_BLOCKING)
+                                        if (written > 0) {
+                                            offset += written
+                                        } else {
+                                            break
+                                        }
+                                    }
+                                } finally {
+                                    request.onPlayingChange(false)
+                                }
+                            } else {
+                                track.write(carrierChunk, 0, carrierChunk.size, AudioTrack.WRITE_BLOCKING)
+                            }
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        try {
+                            track.stop()
+                            track.release()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start ToneSynthesizer AudioTrack", e)
+            }
+        }
+    }
+
+    fun playTones(
+        scope: CoroutineScope,
         frequencyHz: Int,
         ear: EarChannel,
         beepCount: Int,
         amplitudeDb: Float = -40.0f,
         onPlayingChange: (Boolean) -> Unit,
-    ) = withContext(Dispatchers.Default) {
-        stop()
-        onPlayingChange(true)
-        try {
-            val sampleRate = com.music.bitchord.playback.calibration.HearingToneGenerator.DEFAULT_SAMPLE_RATE
-            val channel = if (ear == EarChannel.LEFT) {
-                com.music.bitchord.playback.calibration.HearingToneGenerator.Channel.LEFT
-            } else {
-                com.music.bitchord.playback.calibration.HearingToneGenerator.Channel.RIGHT
-            }
-
-            val samples = com.music.bitchord.playback.calibration.HearingToneGenerator.generatePulse(
-                frequencyHz = frequencyHz.toFloat(),
-                channel = channel,
-                pulseCount = beepCount,
-                amplitudeDb = amplitudeDb,
-                sampleRate = sampleRate,
-            )
-
-            val track = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .build(),
-                )
-                .setBufferSizeInBytes(samples.size * 4)
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .build()
-
-            activeTrack = track
-            track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            track.play()
-
-            val totalFrames = samples.size / 2
-            val playDurationMs = (totalFrames * 1000L / sampleRate) + 60L
-            delay(playDurationMs)
-        } catch (_: Exception) {
-        } finally {
-            onPlayingChange(false)
+    ) {
+        ensureStarted(scope)
+        val channel = if (ear == EarChannel.LEFT) {
+            HearingToneGenerator.Channel.LEFT
+        } else {
+            HearingToneGenerator.Channel.RIGHT
         }
+
+        val samples = HearingToneGenerator.generatePulse(
+            frequencyHz = frequencyHz.toFloat(),
+            channel = channel,
+            pulseCount = beepCount,
+            amplitudeDb = amplitudeDb,
+            sampleRate = SAMPLE_RATE,
+            leadInMs = 120,
+            leadOutMs = 100,
+        )
+
+        toneChannel.trySend(ToneRequest(samples, onPlayingChange))
     }
 
     fun stop() {
-        try {
-            activeTrack?.stop()
-            activeTrack?.release()
-        } catch (_: Exception) {
+        synchronized(lock) {
+            val job = streamingJob
+            streamingJob = null
+            job?.cancel()
+
+            val track = activeTrack
+            activeTrack = null
+            try {
+                track?.pause()
+                track?.flush()
+                track?.stop()
+                track?.release()
+            } catch (_: Exception) {
+            }
         }
-        activeTrack = null
     }
 }

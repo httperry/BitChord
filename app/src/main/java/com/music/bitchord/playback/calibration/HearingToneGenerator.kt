@@ -89,6 +89,8 @@ object HearingToneGenerator {
      * @param pulseDurationMs Duration of each beep in milliseconds (defaults to 250ms).
      * @param gapDurationMs Duration of silence between beeps in milliseconds (defaults to 150ms).
      * @param hannWindowMs Duration of Hann window ramp at start & end of each beep (5.0ms).
+     * @param leadInMs Duration of lead-in silence before the first beep in milliseconds (defaults to 0ms).
+     * @param leadOutMs Duration of lead-out silence after the last beep in milliseconds (defaults to 0ms).
      * @return Interleaved stereo FloatArray with strict channel isolation.
      */
     fun generatePulse(
@@ -100,6 +102,8 @@ object HearingToneGenerator {
         pulseDurationMs: Int = DEFAULT_PULSE_DURATION_MS,
         gapDurationMs: Int = DEFAULT_GAP_DURATION_MS,
         hannWindowMs: Float = HANN_WINDOW_DURATION_MS,
+        leadInMs: Int = 0,
+        leadOutMs: Int = 0,
     ): FloatArray {
         require(pulseCount in 1..3) { "Pulse count must be 1, 2, or 3: $pulseCount" }
         require(frequencyHz > 0f) { "Frequency must be positive: $frequencyHz" }
@@ -109,13 +113,15 @@ object HearingToneGenerator {
         val pulseFrames = ((pulseDurationMs / 1000.0) * sampleRate).roundToInt().coerceAtLeast(1)
         val gapFrames = ((gapDurationMs / 1000.0) * sampleRate).roundToInt().coerceAtLeast(0)
         val fadeFrames = ((hannWindowMs / 1000.0f) * sampleRate).roundToInt().coerceAtLeast(1)
+        val leadInFrames = if (leadInMs > 0) ((leadInMs / 1000.0) * sampleRate).roundToInt().coerceAtLeast(0) else 0
+        val leadOutFrames = if (leadOutMs > 0) ((leadOutMs / 1000.0) * sampleRate).roundToInt().coerceAtLeast(0) else 0
 
-        val totalFrames = (pulseCount * pulseFrames) + ((pulseCount - 1) * gapFrames)
+        val totalFrames = leadInFrames + (pulseCount * pulseFrames) + ((pulseCount - 1) * gapFrames) + leadOutFrames
         val interleavedSamples = FloatArray(totalFrames * 2)
 
         val phaseIncrement = (2.0 * Math.PI * frequencyHz / sampleRate).toFloat()
         var phase = 0f
-        var frameOffset = 0
+        var frameOffset = leadInFrames
 
         for (p in 0 until pulseCount) {
             // Generate single beep with Hann window envelope
@@ -160,6 +166,25 @@ object HearingToneGenerator {
     }
 
     /**
+     * Generates continuous sub-audible comfort dither frames (~ -90 dBFS).
+     * Used as a keep-alive carrier to prevent Bluetooth A2DP sinks and earbud DACs
+     * from entering power-saving sleep and swallowing initial tone bursts.
+     */
+    fun generateKeepAliveCarrier(
+        frameCount: Int = 1024,
+        ditherAmplitude: Float = 1e-5f,
+    ): FloatArray {
+        val samples = FloatArray(frameCount * 2)
+        for (i in 0 until frameCount) {
+            val sign = if (i % 2 == 0) 1.0f else -1.0f
+            val v = sign * ditherAmplitude
+            samples[i * 2] = v
+            samples[i * 2 + 1] = v
+        }
+        return samples
+    }
+
+    /**
      * Generates pure-tone sine pulses into an [AudioBlock] for direct playback through BitChord's DSP chain.
      */
     fun generatePulseToBlock(
@@ -170,6 +195,8 @@ object HearingToneGenerator {
         sampleRate: Int = DEFAULT_SAMPLE_RATE,
         pulseDurationMs: Int = DEFAULT_PULSE_DURATION_MS,
         gapDurationMs: Int = DEFAULT_GAP_DURATION_MS,
+        leadInMs: Int = 0,
+        leadOutMs: Int = 0,
     ): AudioBlock {
         val samples = generatePulse(
             frequencyHz = frequencyHz,
@@ -179,6 +206,8 @@ object HearingToneGenerator {
             sampleRate = sampleRate,
             pulseDurationMs = pulseDurationMs,
             gapDurationMs = gapDurationMs,
+            leadInMs = leadInMs,
+            leadOutMs = leadOutMs,
         )
         val frameCount = samples.size / 2
         val block = AudioBlock(channelCount = 2, capacityFrames = frameCount)
@@ -198,6 +227,8 @@ object HearingToneGenerator {
         sampleRate: Int = DEFAULT_SAMPLE_RATE,
         pulseDurationMs: Int = DEFAULT_PULSE_DURATION_MS,
         gapDurationMs: Int = DEFAULT_GAP_DURATION_MS,
+        leadInMs: Int = 0,
+        leadOutMs: Int = 0,
     ): ByteBuffer {
         val samples = generatePulse(
             frequencyHz = frequencyHz,
@@ -207,6 +238,8 @@ object HearingToneGenerator {
             sampleRate = sampleRate,
             pulseDurationMs = pulseDurationMs,
             gapDurationMs = gapDurationMs,
+            leadInMs = leadInMs,
+            leadOutMs = leadOutMs,
         )
         val buffer = ByteBuffer.allocateDirect(samples.size * 4).order(ByteOrder.nativeOrder())
         buffer.asFloatBuffer().put(samples)

@@ -142,4 +142,57 @@ class HearingToneGeneratorTest {
             }
         }
     }
+
+    @Test
+    fun pulseBurstWithLeadInAndLeadOutHasExactFrameDimensionsAndSilentPaddings() {
+        val sampleRate = 44100
+        val pulseMs = 100
+        val gapMs = 50
+        val leadInMs = 120
+        val leadOutMs = 100
+        val pulseFrames = (pulseMs * sampleRate) / 1000
+        val leadInFrames = (leadInMs * sampleRate) / 1000
+        val leadOutFrames = (leadOutMs * sampleRate) / 1000
+
+        val samples = HearingToneGenerator.generatePulse(
+            frequencyHz = 1000f,
+            channel = HearingToneGenerator.Channel.BOTH,
+            pulseCount = 1,
+            amplitudeDb = -6f,
+            sampleRate = sampleRate,
+            pulseDurationMs = pulseMs,
+            gapDurationMs = gapMs,
+            leadInMs = leadInMs,
+            leadOutMs = leadOutMs,
+        )
+
+        val expectedFrames = leadInFrames + pulseFrames + leadOutFrames
+        assertEquals("Total frames must include lead-in and lead-out", expectedFrames * 2, samples.size)
+
+        // Lead-in must be pure silence
+        for (f in 0 until leadInFrames) {
+            val idx = f * 2
+            assertEquals("Lead-in L must be silence at frame $f", 0.0f, samples[idx], 0.0f)
+            assertEquals("Lead-in R must be silence at frame $f", 0.0f, samples[idx + 1], 0.0f)
+        }
+
+        // Lead-out must be pure silence
+        val leadOutStartFrame = leadInFrames + pulseFrames
+        for (f in 0 until leadOutFrames) {
+            val idx = (leadOutStartFrame + f) * 2
+            assertEquals("Lead-out L must be silence at frame $f", 0.0f, samples[idx], 0.0f)
+            assertEquals("Lead-out R must be silence at frame $f", 0.0f, samples[idx + 1], 0.0f)
+        }
+    }
+
+    @Test
+    fun keepAliveCarrierProducesContinuousSubAudibleDither() {
+        val carrier = HearingToneGenerator.generateKeepAliveCarrier(frameCount = 1024, ditherAmplitude = 1e-5f)
+        assertEquals("Carrier size must be frameCount * 2", 2048, carrier.size)
+
+        for (i in carrier.indices) {
+            val absSample = abs(carrier[i])
+            assertEquals("Dither magnitude must be 1e-5", 1e-5f, absSample, 1e-7f)
+        }
+    }
 }
