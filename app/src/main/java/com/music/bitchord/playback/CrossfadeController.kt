@@ -1086,6 +1086,8 @@ class CrossfadeController(
         // Even for the marker alone: a stored analysis is only loaded off disk
         // by asking for it, and without that a paused track plans blind.
         requestAnalysisAround(player, duration)
+        askLyrics(currentItem, duration)
+        askLyrics(nextItem, nextDuration)
 
         // Only used before analysis lands, or when the evidence is too weak
         // for more than a plain fade (see [TransitionTier.PLAIN_CROSSFADE]):
@@ -1115,6 +1117,8 @@ class CrossfadeController(
             fadeSeconds = fallbackSeconds,
             mode = CrossfadeMode.SMART,
             advanced = advanced,
+            sungOut = lyricSpans[currentItem.mediaId]?.spans,
+            sungIn = lyricSpans[nextItem.mediaId]?.spans,
         )
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
@@ -1844,7 +1848,10 @@ class CrossfadeController(
         player.volume = rise
         out.volume = if (ranOn(out)) 0f else fall
         onBlendHeadroom(
-            headroomFor(mixRise(outgoingAt), outgoingLevel(elapsed / wallSpan + tracks.outgoingLeadMs() / span.toFloat(), wallSpan)),
+            headroomFor(
+                incomingGain = mixRise(incomingAt),
+                outgoingGain = outgoingLevel(outgoingAt, wallSpan),
+            ),
         )
         if (render.phaseLock) holdPhase(out, player, progress)
 
@@ -3069,13 +3076,17 @@ class CrossfadeController(
      * of preparing it.
      */
     private fun retire(player: ExoPlayer) {
-        player.stop()
-        player.clearMediaItems()
-        // This is the next transition's incoming player, and from its handoff
-        // the session: a hold left on it would pause every track at its end.
+        player.volume = 0f
         player.pauseAtEndOfMediaItems = false
-        player.volume = 1f
-        player.setPlaybackSpeed(AppSettings.playbackSpeed.value)
+        scope.launch(Dispatchers.Main) {
+            delay(250)
+            player.stop()
+            player.clearMediaItems()
+            // This is the next transition's incoming player, and from its handoff
+            // the session: a hold left on it would pause every track at its end.
+            player.volume = 1f
+            player.setPlaybackSpeed(AppSettings.playbackSpeed.value)
+        }
     }
 
     // ---- Numbers ------------------------------------------------------------
@@ -3350,9 +3361,11 @@ class CrossfadeController(
         // Instant crossover flip on downbeat: two tempi that don't match are two kicks that flam, and the 300Hz bed
         // keeps the outgoing kick whole. So the low end changes hands cleanly on the exact downbeat handoff.
         val swapTriggered = progress >= render.filterSwapAt
-        val handover = if (swapTriggered) 1.0 else 0.0
-        tracks.outgoing(cutoff.toFloat(), bassCutoff(handover))
-        tracks.incoming(TransitionFilterProcessor.OPEN_HZ, maxOf(entryCorner, bassCutoff(1.0 - handover)))
+        val window = render.swapWidth.coerceAtLeast(0.08)
+        val handover = ((progress - (render.swapAt - window)) / window).coerceIn(0.0, 1.0)
+        val smoothHandover = (0.5 * (1.0 - kotlin.math.cos(Math.PI * handover))).toFloat()
+        tracks.outgoing(cutoff.toFloat(), bassCutoff(smoothHandover))
+        tracks.incoming(TransitionFilterProcessor.OPEN_HZ, maxOf(entryCorner, bassCutoff(1f - smoothHandover)))
         tracks.flipBassSwap(incomingCut = !swapTriggered, outgoingCut = swapTriggered)
     }
 
@@ -3365,7 +3378,9 @@ class CrossfadeController(
     private fun rideFallbackBassHandoff(progress: Float) {
         val p = progress.toDouble()
         val swapTriggered = p >= render.filterSwapAt
-        val handover = if (swapTriggered) 1.0 else 0.0
+        val window = render.swapWidth.coerceAtLeast(0.08)
+        val handover = ((progress - (render.swapAt - window)) / window).coerceIn(0.0, 1.0)
+        val smoothHandover = (0.5 * (1.0 - kotlin.math.cos(Math.PI * handover))).toFloat()
         val exitAmount = ((p - render.filterSwapAt) / (1.0 - render.filterSwapAt)).coerceIn(0.0, 1.0)
         val handoffTone = glide(
             TransitionFilterProcessor.OPEN_HZ.toDouble(),
@@ -3386,8 +3401,8 @@ class CrossfadeController(
             glide(FALLBACK_HANDOFF_ENTRY_HZ, VOCAL_SAFE_ENTRY_HIGH_PASS_HZ, render.clash),
             render.vocalEntryOpenBy,
         )
-        tracks.outgoing(outgoingTone, bassCutoff(handover))
-        tracks.incoming(TransitionFilterProcessor.OPEN_HZ, maxOf(incomingEntry, bassCutoff(1.0 - handover)))
+        tracks.outgoing(outgoingTone, bassCutoff(smoothHandover))
+        tracks.incoming(TransitionFilterProcessor.OPEN_HZ, maxOf(incomingEntry, bassCutoff(1f - smoothHandover)))
         tracks.flipBassSwap(incomingCut = !swapTriggered, outgoingCut = swapTriggered)
     }
 
@@ -3448,11 +3463,13 @@ class CrossfadeController(
     private fun rideBassSwap(progress: Float) {
         // Downbeat instant bass swap (<150Hz crossover flip)
         val swapTriggered = progress >= render.swapAt
-        val handover = if (swapTriggered) 1.0 else 0.0
+        val window = render.swapWidth.coerceAtLeast(0.08)
+        val handover = ((progress - (render.swapAt - window)) / window).coerceIn(0.0, 1.0)
+        val smoothHandover = (0.5 * (1.0 - kotlin.math.cos(Math.PI * handover))).toFloat()
 
         val clash = render.vocalOverlap.coerceIn(0.0, 1.0)
         val entry = maxOf(
-            bassCutoff(1.0 - handover),
+            bassCutoff(1f - smoothHandover),
             entryHighPass(
                 progress,
                 1.0,
@@ -3461,7 +3478,7 @@ class CrossfadeController(
             ),
         )
         tracks.incoming(TransitionFilterProcessor.OPEN_HZ, entry)
-        tracks.outgoing(blendExitLowPass(progress, clash), bassCutoff(handover))
+        tracks.outgoing(blendExitLowPass(progress, clash), bassCutoff(smoothHandover))
         tracks.flipBassSwap(incomingCut = !swapTriggered, outgoingCut = swapTriggered)
     }
 
@@ -3487,6 +3504,8 @@ class CrossfadeController(
     /** [amount] 0 leaves the low end alone; 1 lifts it out entirely. */
     private fun bassCutoff(amount: Double): Float =
         glide(TransitionFilterProcessor.OFF_HZ.toDouble(), BASS_SWAP_HZ, amount).toFloat()
+
+    private fun bassCutoff(amount: Float): Float = bassCutoff(amount.toDouble())
 
     /**
      * Whether the transition in flight is doing something a plain crossfade
@@ -3554,14 +3573,11 @@ class CrossfadeController(
         if (render.echo) return 1f
         val styled = when (render.style) {
             TransitionStyle.DJ_BLEND -> {
-                if (!render.bassSwap) {
-                    fallGain(progress)
-                } else {
-                    val from = render.fallFrom
-                    held(fallGain(progress), if (progress <= from) 1f else fallGain((progress - from) / (1f - from)))
-                }
+                val p = progress.coerceIn(0f, 1f)
+                val blendCurve = cos(p * PI.toFloat() / 2f).pow(1.2f)
+                held(fallGain(progress), blendCurve)
             }
-            TransitionStyle.DJ_FILTER -> fallGain(progress.pow(FILTER_FALL_SHAPE))
+            TransitionStyle.DJ_FILTER -> fallGain(progress.pow(1.15f))
             else -> fallGain(progress)
         }
         val vocalSafe = fallGain(progress.pow(VOCAL_SAFE_FALL_SHAPE))
@@ -3844,7 +3860,7 @@ class CrossfadeController(
     /** See [onBlendHeadroom]. */
     private fun headroomFor(incomingGain: Float, outgoingGain: Float): Float {
         val sum = incomingGain + outgoingGain
-        return if (sum <= 1f) 1f else 1f / kotlin.math.sqrt(sum)
+        return if (sum <= 1.25f) 1f else (1.25f / sum).coerceIn(0.85f, 1f)
     }
 
     // There is deliberately no second, equal-gain pair here any more. It existed
@@ -4117,7 +4133,7 @@ class CrossfadeController(
          * quarter of the way at 1.3. Lands at 3.8kHz a tenth of the way in,
          * 2.6kHz at a fifth, 1.0kHz at the midpoint.
          */
-        const val FILTER_SWEEP_SHAPE = 0.75
+        const val FILTER_SWEEP_SHAPE = 1.15
 
         /**
          * Where the incoming track's high-pass starts on a filter ride.

@@ -7631,7 +7631,8 @@ class PlaybackService : MediaLibraryService() {
         val sp = activeSpatial()
         val activeEq = eq.isShaping || eq.isEnabled
         val activeSpatial = sp.enabled
-        val canOffloadVolume = !activeEq && !activeSpatial && gain <= 1.0f
+        val isTransitioning = crossfade?.isTransitioning() == true
+        val canOffloadVolume = !activeEq && !activeSpatial && gain <= 1.0f && !isTransitioning
 
         activeLoudness().offloadedToHardwareVolume = canOffloadVolume
         if (canOffloadVolume) {

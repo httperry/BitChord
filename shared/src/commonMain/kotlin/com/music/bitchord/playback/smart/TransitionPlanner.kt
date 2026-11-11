@@ -752,9 +752,8 @@ private fun phraseBarPlan(
 
 // The fade is bounded in beats because overlap length is musical: bounding it
 // in seconds makes a faster track get a longer mix, which is backwards. Four
-// bars is the ceiling and one bar the floor, the latter for tracks whose
-// intro cannot cover more.
-private const val MIN_FADE_BEATS = 4
+// bars is the ceiling and two bars the floor (8 beats), ensuring mixes are never rushed.
+private const val MIN_FADE_BEATS = 8
 private const val MAX_FADE_BEATS = 16
 
 // A ceiling on the whole overlap regardless of how long the incoming intro is.
@@ -938,7 +937,7 @@ private fun plannedVocalOverlap(
     val outgoingSpan = transitionEnd - transitionStart
     if (outgoingSpan <= 0.0 || !outgoingSpan.isFinite()) return 0.0
     val rate = incomingPlaybackRate.takeIf { it.isFinite() && it > 0 } ?: 1.0
-    return simultaneousVocalFraction(
+    val simultaneous = simultaneousVocalFraction(
         outgoing = analysis,
         incoming = nextAnalysis,
         outStart = transitionStart,
@@ -946,6 +945,19 @@ private fun plannedVocalOverlap(
         inStart = incomingCueTime,
         rate = rate,
     ) ?: 0.0
+    if (simultaneous > 0.0) return simultaneous
+
+    // Single-sided vocal presence: when outgoing is singing and incoming is instrumental,
+    // mark the overlap and filter appropriately rather than returning 0.0.
+    val outVocal = vocalActivityBetween(analysis, transitionStart, transitionEnd)
+    if (outVocal != null && outVocal >= VOCAL_ACTIVE_THRESHOLD) {
+        val incomingSpan = outgoingSpan * rate
+        val inVocal = vocalActivityBetween(nextAnalysis, incomingCueTime, incomingCueTime + incomingSpan)
+        val overlapAmount = vocalOverlapAmount(outVocal, inVocal)
+        if (overlapAmount > 0.0) return overlapAmount
+        return ((outVocal - VOCAL_ACTIVE_THRESHOLD) / (1.0 - VOCAL_ACTIVE_THRESHOLD)).coerceIn(0.2, 1.0)
+    }
+    return 0.0
 }
 
 private fun nearestAtOrBefore(values: List<Double>, target: Double): Double? {
@@ -1029,6 +1041,7 @@ fun planWsolaTransition(
     duration: Double = 0.0,
     nextDuration: Double = 0.0,
     advanced: Boolean = false,
+    sungOut: List<LoopMix.Span>? = null,
 ): WsolaPlanResult {
     val policy = assessTransitionTier(analysis, nextAnalysis, advanced)
     if (policy.tier != TransitionTier.BEATMATCHED) {
@@ -1052,7 +1065,12 @@ fun planWsolaTransition(
     }
 
     val contentEnd = analysis.contentEndTime.orZero().takeIf { it != 0.0 } ?: outgoingLength
-    val mixOutAnchor = resolveMixOutAnchor(analysis, contentEnd = contentEnd, duration = outgoingLength)
+    val mixOutAnchor = resolveMixOutAnchor(
+        analysis = analysis,
+        contentEnd = contentEnd,
+        duration = outgoingLength,
+        sungOut = sungOut,
+    )
     val unshiftedOverlapEnd = min(outgoingLength, mixOutAnchor.time)
     val outgoingArrangementOverlap =
         if (mixOutAnchor.type == "content_end") {
@@ -1107,10 +1125,13 @@ fun planWsolaTransition(
         return false
     }
     var fadeVocalClash = clashOver(fadeBeats)
-    while (fadeVocalClash && fadeBeats > MIN_FADE_BEATS) {
-        fadeBeats -= 4
+    while (fadeVocalClash && fadeBeats > 8) {
+        val nextBeats = fadeBeats - 4
+        if (nextBeats < 8) break
+        fadeBeats = nextBeats
         fadeVocalClash = clashOver(fadeBeats)
     }
+    fadeBeats = max(8, fadeBeats)
 
     val coverableBeats = floor(max(0.0, incomingDropTime - audibleStart) / incomingBeatSeconds).toInt()
     val overlapBeats = min(fadeBeats, coverableBeats)
@@ -1189,6 +1210,7 @@ private fun phraseSwitch(
     length: Double,
     nextLength: Double,
     advanced: Boolean,
+    sungOut: List<LoopMix.Span>? = null,
 ): TransitionPlan? {
     if (!CamelotHarmonics.isHarmonicallyCompatible(analysis, nextAnalysis)) return null
 
@@ -1198,6 +1220,7 @@ private fun phraseSwitch(
         duration = length,
         nextDuration = nextLength,
         advanced = advanced,
+        sungOut = sungOut,
     ) as? WsolaPlanResult.Planned ?: return null
     // The incoming song is slowed by at most 10% and sped up by at most 25%;
     // the audible outgoing song is never retimed. A phrase switch that needs
@@ -1540,6 +1563,8 @@ fun planTransition(
     advanced: Boolean = false,
     phraseBars: Int = 0,
     mixWindow: Boolean = false,
+    sungOut: List<LoopMix.Span>? = null,
+    sungIn: List<LoopMix.Span>? = null,
 ): TransitionPlan {
     val plan = planTransitionInner(
         analysis = analysis,
@@ -1554,6 +1579,8 @@ fun planTransition(
         albumSequential = albumSequential,
         advanced = advanced,
         phraseBars = phraseBars,
+        sungOut = sungOut,
+        sungIn = sungIn,
     )
     if (!mixWindow) return plan
     return clampToMixWindow(
@@ -1602,6 +1629,8 @@ private fun planTransitionInner(
     albumSequential: Boolean = false,
     advanced: Boolean = false,
     phraseBars: Int = 0,
+    sungOut: List<LoopMix.Span>? = null,
+    sungIn: List<LoopMix.Span>? = null,
 ): TransitionPlan {
     val length = max(duration.orZero(), trackDurationSeconds(currentTrack))
     val playbackTime = max(0.0, currentTime.orZero())
@@ -1624,7 +1653,13 @@ private fun planTransitionInner(
     }
     // Ranked once and kept: the best is the anchor (what [resolveMixOutAnchor]
     // answers), and the rest are where an advanced plan looks for a vocal-free exit.
-    val rankedMixOuts = rankMixOutCandidates(analysis, finalMixAnchor, length, nextAnalysis)
+    val rankedMixOuts = rankMixOutCandidates(
+        analysis = analysis,
+        contentEnd = finalMixAnchor,
+        duration = length,
+        incomingAnalysis = nextAnalysis,
+        sungOut = sungOut,
+    )
     val mixOutAnchor = rankedMixOuts.firstOrNull()
         ?.let { MixOutAnchor(it.time, it.type, it.discardedMusicSeconds) }
         ?: MixOutAnchor(finalMixAnchor, "content_end", 0.0)
@@ -1747,7 +1782,7 @@ private fun planTransitionInner(
         }
     }
 
-    phraseSwitch(analysis, nextAnalysis, length, nextLength, advanced)
+    phraseSwitch(analysis, nextAnalysis, length, nextLength, advanced, sungOut = sungOut)
         ?.takeIf { playbackTime < it.transitionEnd }
         ?.let { plan ->
             val started = playbackTime >= plan.transitionStart
@@ -1872,9 +1907,9 @@ private fun mixPlan(
     val handoffBeats = if (sameBeatBlend) 8 else 4
     val beatSeconds = if (handoffBpm > 0) 60 / handoffBpm else 0.5
     val handoffSeconds = if (handoffBpm > 0) {
-        clamp((handoffBeats * 60) / handoffBpm, 2.0, if (sameBeatBlend) 6.0 else 5.0)
+        clamp((handoffBeats * 60) / handoffBpm, 5.0, if (sameBeatBlend) 6.0 else 5.0)
     } else {
-        4.0
+        5.0
     }
     val analyzedPickup = nextAnalysis.audibleStartTime ?: nextAnalysis.pickupTime
     val pickupSeconds = if (analyzedPickup != null && analyzedPickup.isFinite() && analyzedPickup >= 0) {

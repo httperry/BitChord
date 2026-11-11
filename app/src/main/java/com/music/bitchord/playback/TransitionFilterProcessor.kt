@@ -304,15 +304,17 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
 
                 if (flipInProgress) {
                     val gain = windowGains[flipSampleIndex]
+                    val cutoff = if (flipFromBassCut) {
+                        CROSSOVER_HZ + gain * (MIN_HZ - CROSSOVER_HZ)
+                    } else {
+                        MIN_HZ + gain * (CROSSOVER_HZ - MIN_HZ)
+                    }
+                    updateCrossoverCoefficients(cutoff)
                     for (channel in 0 until channelCount) {
                         var sample = block.samples[baseIdx + channel]
                         if (lowOn) sample = lowPass(channel, sample)
-                        val hp = crossoverHighPass(channel, sample)
-                        sample = if (flipFromBassCut) {
-                            (1f - gain) * hp + gain * sample
-                        } else {
-                            (1f - gain) * sample + gain * hp
-                        }
+                        sample = crossoverHighPass(channel, sample)
+                        if (highOn) sample = highPass(channel, sample)
                         // Headroom preserved: no clamping to [-1.0f, +1.0f]
                         block.samples[baseIdx + channel] = sample
                     }
@@ -323,18 +325,13 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
                         if (!currentBassCut) {
                             crossoverState.fill(0f)
                         }
-                    }
-                } else if (currentBassCut) {
-                    for (channel in 0 until channelCount) {
-                        var sample = block.samples[baseIdx + channel]
-                        if (lowOn) sample = lowPass(channel, sample)
-                        sample = crossoverHighPass(channel, sample)
-                        block.samples[baseIdx + channel] = sample
+                        updateCrossoverCoefficients(CROSSOVER_HZ)
                     }
                 } else {
                     for (channel in 0 until channelCount) {
                         var sample = block.samples[baseIdx + channel]
                         if (lowOn) sample = lowPass(channel, sample)
+                        if (currentBassCut) sample = crossoverHighPass(channel, sample)
                         if (highOn) sample = highPass(channel, sample)
                         // Headroom preserved: no clamping to [-1.0f, +1.0f]
                         block.samples[baseIdx + channel] = sample
@@ -444,15 +441,17 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
 
                 if (flipInProgress) {
                     val gain = windowGains[flipSampleIndex]
+                    val cutoff = if (flipFromBassCut) {
+                        CROSSOVER_HZ + gain * (MIN_HZ - CROSSOVER_HZ)
+                    } else {
+                        MIN_HZ + gain * (CROSSOVER_HZ - MIN_HZ)
+                    }
+                    updateCrossoverCoefficients(cutoff)
                     for (channel in 0 until channelCount) {
                         var sample = inputBuffer.short.toFloat() * invScale
                         if (lowOn) sample = lowPass(channel, sample)
-                        val hp = crossoverHighPass(channel, sample)
-                        sample = if (flipFromBassCut) {
-                            (1f - gain) * hp + gain * sample
-                        } else {
-                            (1f - gain) * sample + gain * hp
-                        }
+                        sample = crossoverHighPass(channel, sample)
+                        if (highOn) sample = highPass(channel, sample)
                         outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
                     }
                     flipSampleIndex++
@@ -462,18 +461,13 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
                         if (!currentBassCut) {
                             crossoverState.fill(0f)
                         }
-                    }
-                } else if (currentBassCut) {
-                    for (channel in 0 until channelCount) {
-                        var sample = inputBuffer.short.toFloat() * invScale
-                        if (lowOn) sample = lowPass(channel, sample)
-                        sample = crossoverHighPass(channel, sample)
-                        outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
+                        updateCrossoverCoefficients(CROSSOVER_HZ)
                     }
                 } else {
                     for (channel in 0 until channelCount) {
                         var sample = inputBuffer.short.toFloat() * invScale
                         if (lowOn) sample = lowPass(channel, sample)
+                        if (currentBassCut) sample = crossoverHighPass(channel, sample)
                         if (highOn) sample = highPass(channel, sample)
                         outputBuffer.putShort(PcmBoundary.clamp16FromFloat(sample))
                     }
@@ -618,9 +612,9 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         }
     }
 
-    private fun updateCrossoverCoefficients() {
+    private fun updateCrossoverCoefficients(hz: Float = CROSSOVER_HZ) {
         if (sampleRate <= 0) return
-        val g = tan(Math.PI * usableCutoff(CROSSOVER_HZ) / sampleRate).toFloat()
+        val g = tan(Math.PI * usableCutoff(hz) / sampleRate).toFloat()
         for (stage in 0 until STAGES) {
             val k = 1f / BUTTERWORTH_Q[stage]
             val a1 = 1f / (1f + g * (g + k))
@@ -700,8 +694,8 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         /** Two cascaded second-order sections: 24 dB/octave, the usual DJ-filter slope. */
         private const val STAGES = 2
 
-        /** Section Qs for a maximally flat (Butterworth) fourth-order response. */
-        private val BUTTERWORTH_Q = floatArrayOf(0.54120f, 1.30656f)
+        /** Section Qs for Linkwitz-Riley 4th-order critically damped response (two cascaded Butterworth 2nd-order stages). */
+        private val BUTTERWORTH_Q = floatArrayOf(0.70710678f, 0.70710678f)
 
         /** Frames between coefficient updates. ~1.5 ms at 44.1 kHz. */
         private const val GLIDE_FRAMES = 64

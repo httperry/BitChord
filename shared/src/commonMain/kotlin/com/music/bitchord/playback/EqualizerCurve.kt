@@ -166,7 +166,7 @@ fun toneCurve(x: Int, y: Int, focused: Boolean): EqCurve {
  * decibels add — and takes its actual peak. Runs on whoever changed the
  * setting, never on the audio thread.
  */
-private fun preampFor(gainsDb: FloatArray, qs: FloatArray): Float {
+fun preampFor(gainsDb: FloatArray, qs: FloatArray): Float {
     var peak = 0f
     for (point in 0 until RESPONSE_POINTS) {
         val hz = responseFrequency(point)

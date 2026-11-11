@@ -199,39 +199,42 @@ fun vocalActivityBetween(analysis: TrackAnalysis, start: Double, end: Double): D
 }
 
 /**
- * Both windows measurably singing at once. Null means "no evidence", which
- * never blocks; absence of a mask is not absence of a vocal, but acting on it
- * would punish every track a fallback analyzer handled.
+ * Whether the transition has a vocal clash or protected vocal presence.
+ *
+ * Returns true if both windows are measurably singing at once, or if the
+ * outgoing track is actively singing (activity >= [VOCAL_ACTIVE_THRESHOLD]),
+ * so Automix never mixes over active singing lyrics or vocal outros.
+ * Null means "no evidence", which never blocks.
  */
-fun isVocalClash(outgoingActivity: Double?, incomingActivity: Double?): Boolean =
-    outgoingActivity != null &&
+fun isVocalClash(outgoingActivity: Double?, incomingActivity: Double?): Boolean {
+    if (outgoingActivity != null && outgoingActivity >= VOCAL_ACTIVE_THRESHOLD) {
+        return true
+    }
+    return outgoingActivity != null &&
         incomingActivity != null &&
-        outgoingActivity >= VOCAL_ACTIVE_THRESHOLD &&
         incomingActivity >= VOCAL_ACTIVE_THRESHOLD
+}
 
 /**
- * How strongly two windows sing over each other: 0 for nothing worth acting on,
- * 1 for two fully vocal passages landing on one another.
+ * How strongly vocals are present over the transition: 0 for clean instrumental,
+ * up to 1 for fully vocal passages colliding.
  *
- * [isVocalClash]'s graded counterpart, and the reason for having both. A boolean
- * is the right shape for a routing decision — shorten the overlap or don't — but
- * it is the wrong shape for the renderer, which has to decide *how hard* to pull
- * the two voices apart. A pair scraping over the threshold and two choruses
- * colliding are the same `true` and want visibly different treatment.
- *
- * Governed by the quieter of the two, because a clash needs both sides: an
- * instrumental passage under a vocal is not a clash however loud the vocal is,
- * and taking a mean would let one strong side manufacture one.
- *
- * Null on either side is no evidence and answers zero, which leaves whatever the
- * caller would have done anyway. Absence of a mask is not absence of a vocal —
- * but acting on it would filter every track a fallback analyzer handled.
+ * When both sides are singing, governed by the quieter of the two.
+ * When the outgoing track is actively singing (activity >= [VOCAL_ACTIVE_THRESHOLD])
+ * while the incoming track has an instrumental intro (or lacks a mask), reports an
+ * outgoing vocal presence so the planner does not treat it as clean instrumental silence.
  */
 fun vocalOverlapAmount(outgoingActivity: Double?, incomingActivity: Double?): Double {
-    if (outgoingActivity == null || incomingActivity == null) return 0.0
-    val both = min(outgoingActivity, incomingActivity)
-    if (both <= VOCAL_ACTIVE_THRESHOLD) return 0.0
-    return ((both - VOCAL_ACTIVE_THRESHOLD) / (1.0 - VOCAL_ACTIVE_THRESHOLD)).coerceIn(0.0, 1.0)
+    if (outgoingActivity == null) return 0.0
+    if (outgoingActivity >= VOCAL_ACTIVE_THRESHOLD) {
+        if (incomingActivity != null && incomingActivity >= VOCAL_ACTIVE_THRESHOLD) {
+            val both = min(outgoingActivity, incomingActivity)
+            return ((both - VOCAL_ACTIVE_THRESHOLD) / (1.0 - VOCAL_ACTIVE_THRESHOLD)).coerceIn(0.0, 1.0)
+        }
+        // Single-sided outgoing vocal presence: protect active singing over instrumental incoming
+        return ((outgoingActivity - VOCAL_ACTIVE_THRESHOLD) / (1.0 - VOCAL_ACTIVE_THRESHOLD)).coerceIn(0.2, 1.0)
+    }
+    return 0.0
 }
 
 /**
@@ -495,10 +498,12 @@ fun rankMixOutCandidates(
     contentEnd: Double = 0.0,
     duration: Double = 0.0,
     incomingAnalysis: TrackAnalysis? = null,
+    sungOut: List<LoopMix.Span>? = null,
 ): List<RankedMixCandidate> {
     val end = resolveContentEnd(analysis, contentEnd, duration)
     if (end <= 0) return emptyList()
     val keyClash = incomingAnalysis != null && hasKeyClash(analysis, incomingAnalysis)
+    val lastSung = sungOut?.maxOfOrNull { it.end }
     return mixOutCandidatesOf(analysis, end)
         .map { candidate ->
             val measured = audibleSecondsBetween(analysis, candidate.time, end)
@@ -511,6 +516,15 @@ fun rankMixOutCandidates(
                     rankScore += 0.1
                 }
             }
+            // Heavily penalize any mix-out candidate before the last sung lyric ends
+            if (lastSung != null && candidate.time < lastSung + 0.5) {
+                rankScore -= 2.0
+            }
+            // Check vocal activity around candidate; penalize so content_end wins over early cut during active vocals
+            val vocalNear = vocalActivityBetween(analysis, candidate.time - 4.0, candidate.time + 2.0)
+            if (vocalNear != null && vocalNear >= VOCAL_ACTIVE_THRESHOLD) {
+                rankScore -= 0.6
+            }
             RankedMixCandidate(
                 time = candidate.time,
                 score = candidate.score,
@@ -521,6 +535,10 @@ fun rankMixOutCandidates(
             )
         }
         .filter { candidate ->
+            // Reject any mix-out candidate whose time is before the last sung lyrics end
+            if (lastSung != null && candidate.type != "content_end" && candidate.time < lastSung + 0.5) {
+                return@filter false
+            }
             val maxAllowed = when (candidate.type) {
                 "outro_start", "energy_cliff" -> max(MAX_OUTRO_DISCARDED_MUSIC_SECONDS, min(end * 0.35, 60.0))
                 else -> MAX_DISCARDED_MUSIC_SECONDS
@@ -540,9 +558,10 @@ fun resolveMixOutAnchor(
     contentEnd: Double = 0.0,
     duration: Double = 0.0,
     incomingAnalysis: TrackAnalysis? = null,
+    sungOut: List<LoopMix.Span>? = null,
 ): MixOutAnchor {
     val end = resolveContentEnd(analysis, contentEnd, duration)
-    val best = rankMixOutCandidates(analysis, end, duration, incomingAnalysis).firstOrNull()
+    val best = rankMixOutCandidates(analysis, end, duration, incomingAnalysis, sungOut).firstOrNull()
     return MixOutAnchor(
         time = best?.time ?: end,
         type = best?.type ?: "content_end",

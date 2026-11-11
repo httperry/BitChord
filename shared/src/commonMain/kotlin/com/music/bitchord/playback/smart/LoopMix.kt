@@ -177,7 +177,7 @@ object LoopMix {
         why: StringBuilder? = null,
     ): Plan? {
         if (outVideo || inVideo) return null.also { why?.append("a music video") }
-        val outGrid = constantGrid(out) ?: return null.also { why?.append("no grid on the outgoing song") }
+        val outGrid = constantGrid(out, isOutro = true) ?: return null.also { why?.append("no grid on the outgoing song") }
         val inGrid = constantGrid(inn) ?: return null.also { why?.append("no grid on the incoming song") }
         val outCount = Rejections()
         val inCount = Rejections()
@@ -279,11 +279,17 @@ object LoopMix {
         val barSec: Double get() = beatSec * 4
     }
 
-    private fun constantGrid(analysis: TrackAnalysis): Grid? {
+    private fun constantGrid(analysis: TrackAnalysis, isOutro: Boolean = false): Grid? {
         val beat = analysis.beatInterval.takeIf { it.isFinite() && it > 0 }
             ?: analysis.bpm.takeIf { it.isFinite() && it > 0 }?.let { 60 / it }
             ?: return null
-        val anchor = analysis.downbeats.firstOrNull { it.isFinite() } ?: analysis.firstBeat
+        val anchor = if (isOutro) {
+            analysis.tailBeats?.downbeats?.firstOrNull()
+                ?: analysis.downbeats.firstOrNull { it.isFinite() }
+                ?: analysis.firstBeat
+        } else {
+            analysis.downbeats.firstOrNull { it.isFinite() } ?: analysis.firstBeat
+        }
         if (!anchor.isFinite()) return null
         return Grid(beat, anchor)
     }
@@ -306,24 +312,19 @@ object LoopMix {
      * end lands more than a quarter beat from [bars] bars on (a missed or
      * misplaced downbeat between) is skipped. Without them (or where the model
      * found too few), the constant grid.
-     * Candidate loop start points land strictly on 4-bar phrase downbeats (indices % 4 == 0
-     * of detected downbeats or 4-bar multiples of grid).
      */
     private fun loopsBetween(side: BeatSide?, grid: Grid, from: Double, to: Double, bars: Int): List<Loop> {
         val loops = ArrayList<Loop>()
         if (side != null && side.bpm > 0 && side.downbeats.size >= bars + 1) {
             val beat = 60 / side.bpm
             val downs = side.downbeats
-            val step = if (bars >= 4) 4 else 1
             var low = 0
             var high = downs.size - 1
             while (low <= high) {
                 val mid = (low + high) ushr 1
                 if (downs[mid] < from) low = mid + 1 else high = mid - 1
             }
-            val startIdx = if (bars >= 4) ((low + 3) / 4) * 4 else low
-            for (i in startIdx until downs.size step step) {
-                if (bars >= 4 && i % 4 != 0) continue
+            for (i in low until downs.size) {
                 val start = downs[i]
                 val target = start + bars * 4 * beat
                 val end = nearest(downs, target)
@@ -545,9 +546,25 @@ object LoopMix {
         sungOut: List<Span>?,
     ): Double {
         val lastSung = sungOut?.filter { it.end in outFirst..outDuration }?.maxOfOrNull { it.end }
+        val LYRIC_GUARD_SEC = 0.5
+        val minSafeTime = when {
+            lastSung != null -> lastSung + LYRIC_GUARD_SEC
+            out.vocalActivityMask.isNotEmpty() -> {
+                // Find last active vocal frame
+                val curve = out.energyCurve
+                val lastVocalTime = out.vocalActivityMask.indices
+                    .filter { out.vocalActivityMask[it] >= VOCAL_ACTIVE_THRESHOLD }
+                    .mapNotNull { curve.getOrNull(it)?.time }
+                    .filter { it in outFirst..outEnd }
+                    .maxOrNull()
+                (lastVocalTime ?: out.outroStartTime) + LYRIC_GUARD_SEC
+            }
+            else -> out.outroStartTime
+        }
+
         val target = when {
-            lastSung != null && lastSung <= outEnd - 4 * grid.barSec -> lastSung
-            out.outroStartTime > 0 && out.outroStartTime in outFirst..outEnd - 4 * grid.barSec -> out.outroStartTime
+            minSafeTime <= outEnd - 4 * grid.barSec -> minSafeTime
+            out.outroStartTime >= minSafeTime && out.outroStartTime in outFirst..outEnd - 4 * grid.barSec -> out.outroStartTime
             else -> max(outFirst, outEnd - 4 * grid.barSec)
         }
 
@@ -558,7 +575,17 @@ object LoopMix {
             var bestDist = Double.POSITIVE_INFINITY
             for (i in downs.indices step 4) {
                 val d = downs[i]
-                if (d < outFirst || d > outEnd) continue
+                if (d < outFirst || d > outEnd || d < minSafeTime) continue
+                val dist = abs(d - target)
+                if (dist < bestDist) {
+                    bestDist = dist
+                    best = d
+                }
+            }
+            if (best >= 0.0) return best
+
+            for (d in downs) {
+                if (d < outFirst || d > outEnd || d < minSafeTime) continue
                 val dist = abs(d - target)
                 if (dist < bestDist) {
                     bestDist = dist
@@ -569,7 +596,7 @@ object LoopMix {
         }
 
         val step = 4 * grid.barSec
-        val k = round((target - grid.anchor) / step)
+        val k = ceil((target - grid.anchor) / step)
         val snapped = grid.anchor + k * step
         return snapped.coerceIn(outFirst, outEnd)
     }
