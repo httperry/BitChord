@@ -479,7 +479,7 @@ class TrackAnalyzer(
                         // session. Any provisional head result already published
                         // stays: a partial analysis beats an empty one.
                         Log.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes")
-                        if (trackId !in provisional) {
+                        if (trackId !in provisional && results[trackId]?.isUsable != true) {
                             results[trackId] = TrackAnalysis(
                                 status = TrackAnalysis.STATUS_READY,
                                 trackId = trackId,
@@ -507,7 +507,7 @@ class TrackAnalyzer(
                 // a different, complete file and deserves its own attempt.
                 // [headWorthTrying] has already made sure the head is not tried
                 // twice, so this cannot spin.
-                if (usableComplete) {
+                if (usableComplete && results[trackId]?.isUsable != true) {
                     // Recorded as ready-but-empty so a track that cannot be
                     // analysed is not retried on every tick for the rest of the
                     // session.
@@ -835,6 +835,13 @@ class TrackAnalyzer(
                 // queued a pass on every one of them — reopening and parsing the
                 // same file four times a second for as long as the track played.
                 badRenditions.add(candidate.key)
+                if (results[trackId]?.isUsable != true) {
+                    store.load(trackId)?.let { stored ->
+                        if (stored.isUsable) {
+                            results.putIfAbsent(trackId, stored)
+                        }
+                    }
+                }
                 continue
             }
             if (candidate.key != cache.cacheKeyOf(uri)) {
@@ -896,7 +903,15 @@ class TrackAnalyzer(
      * fills and reads the separately pinned YouTube Opus entry.
      */
     private fun analysisUriFor(trackId: String, playbackUri: Uri): Uri? {
-        if (playbackUri.getQueryParameter("v") != null || playbackUri.authority != "source") return playbackUri
+        if (playbackUri.authority == "source") {
+            val videoId = playbackUri.getQueryParameter("v")?.takeIf { it.isNotBlank() }
+                ?: trackId.takeIf { it.length == 11 && YOUTUBE_ID_REGEX.matches(it) }
+            if (videoId != null) {
+                return Uri.parse(AutomixAnalysisSource.opusUri(videoId))
+            }
+        } else {
+            return playbackUri
+        }
         // Never for a row picked from the Addons search: that would put a
         // YouTube search and its Opus on the network under a track whose whole
         // point is not being YouTube. Left unmeasured, as a party leaves every
@@ -1612,6 +1627,7 @@ class TrackAnalyzer(
 
     private companion object {
         const val TAG = "BitChordTrackAnalyzer"
+        val YOUTUBE_ID_REGEX = Regex("""[A-Za-z0-9_-]{11}""")
 
         /**
          * What an unmeasured instant reads as. Below the policy's VOCAL_ACTIVE_THRESHOLD by

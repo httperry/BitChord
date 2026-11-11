@@ -1996,6 +1996,16 @@ class PlaybackService : MediaLibraryService() {
                     transitionFilterA.parkEcho()
                     transitionFilterB.parkEcho()
                 }
+
+                override fun open() {
+                    transitionFilterA.open()
+                    transitionFilterB.open()
+                }
+
+                override fun snapOpen() {
+                    transitionFilterA.snapOpen()
+                    transitionFilterB.snapOpen()
+                }
             },
             analysisRunningFor = { item -> trackAnalyzer.isAnalysing(item.mediaId) },
             // The standby is still the spare when this runs — it only becomes
@@ -2009,6 +2019,7 @@ class PlaybackService : MediaLibraryService() {
                 loudnessB.setBlendTrim(trim)
             },
             onSettled = {
+                setupLoudness(player?.currentMediaItem?.mediaId)
                 if (boundedEditState.hasPendingEdits) {
                     scope.launch {
                         applyDeferredBoundedQueueEdit()

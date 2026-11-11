@@ -169,10 +169,33 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
 
     val isBassCut: Boolean get() = targetBassCut || currentBassCut || flipInProgress
 
-    /** Parks both filters and disengages bass cut. Glided, not snapped. */
+    /** Parks both filters and disengages bass cut cleanly in pure pass-through. */
     fun open() {
-        setCutoffs(OPEN_HZ, OFF_HZ)
-        setBassCut(false, instant = false)
+        snapOpen()
+    }
+
+    /**
+     * Immediately parks both filters in pure pass-through without residual crossover attenuation.
+     * Clears all integrator states and resets target and current cutoffs.
+     */
+    fun snapOpen() {
+        targetLowPassHz = OPEN_HZ
+        targetHighPassHz = OFF_HZ
+        currentLowPassHz = OPEN_HZ
+        currentHighPassHz = OFF_HZ
+        targetBassCut = false
+        currentBassCut = false
+        flipInProgress = false
+        flipPendingZeroCross = false
+        zeroCrossSearchFramesLeft = 0
+        prevSample = 0f
+        flipSampleIndex = 0
+        flipFromBassCut = false
+        flipToBassCut = false
+        lowState.fill(0f)
+        highState.fill(0f)
+        crossoverState.fill(0f)
+        filterStateDirty = false
     }
 
     val isFiltering: Boolean
@@ -789,6 +812,11 @@ interface TransitionFilters {
         outgoing(TransitionFilterProcessor.OPEN_HZ, TransitionFilterProcessor.OFF_HZ)
         incomingBassCut(false)
         outgoingBassCut(false)
+    }
+
+    /** Immediately parks both in pure pass-through without residual crossover attenuation. */
+    fun snapOpen() {
+        open()
     }
 
     /** For callers with no audio sink to filter — tests, and the default wiring. */

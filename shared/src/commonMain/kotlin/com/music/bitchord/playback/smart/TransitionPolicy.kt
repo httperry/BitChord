@@ -516,14 +516,26 @@ fun rankMixOutCandidates(
                     rankScore += 0.1
                 }
             }
-            // Heavily penalize any mix-out candidate before the last sung lyric ends
-            if (lastSung != null && candidate.time < lastSung + 0.5) {
-                rankScore -= 2.0
-            }
-            // Check vocal activity around candidate; penalize so content_end wins over early cut during active vocals
-            val vocalNear = vocalActivityBetween(analysis, candidate.time - 4.0, candidate.time + 2.0)
-            if (vocalNear != null && vocalNear >= VOCAL_ACTIVE_THRESHOLD) {
-                rankScore -= 0.6
+            if (candidate.type != "content_end") {
+                // Heavily penalize any mix-out candidate before the last sung lyric ends
+                if (lastSung != null && candidate.time < lastSung + 0.5) {
+                    rankScore -= 2.0
+                }
+                // Penalize candidates that fall directly within an active singing lyric line
+                val isActivelySinging = sungOut?.any { span ->
+                    candidate.time in (span.start - 0.5)..(span.end + 0.5)
+                } == true
+                if (isActivelySinging) {
+                    rankScore -= 2.0
+                }
+                // Check vocal activity around candidate; penalize so content_end wins over early cut during active vocals
+                val vocalNear = vocalActivityBetween(analysis, candidate.time - 4.0, candidate.time + 2.0)
+                if (vocalNear != null && vocalNear >= VOCAL_ACTIVE_THRESHOLD) {
+                    rankScore -= 0.6
+                }
+            } else {
+                // For content_end, ensure it remains a valid, smooth musical exit point (never zero overlap)
+                rankScore = max(rankScore, 0.75)
             }
             RankedMixCandidate(
                 time = candidate.time,
@@ -539,6 +551,7 @@ fun rankMixOutCandidates(
             if (lastSung != null && candidate.type != "content_end" && candidate.time < lastSung + 0.5) {
                 return@filter false
             }
+            if (candidate.type == "content_end") return@filter true
             val maxAllowed = when (candidate.type) {
                 "outro_start", "energy_cliff" -> max(MAX_OUTRO_DISCARDED_MUSIC_SECONDS, min(end * 0.35, 60.0))
                 else -> MAX_DISCARDED_MUSIC_SECONDS

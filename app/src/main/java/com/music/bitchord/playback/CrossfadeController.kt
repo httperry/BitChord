@@ -1300,12 +1300,7 @@ class CrossfadeController(
         val nextItem = player.getMediaItemAt(nextIndex)
         if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) return
         requestAnalysis(currentItem, duration)
-        // Defer next track analysis until current track is usable or within 60s of transition,
-        // avoiding concurrent multi-track decoding and ONNX inference storms on song start.
-        val remainingMs = duration - player.currentPosition
-        if (remainingMs <= 60_000L || analysisFor(currentItem).isUsable) {
-            requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
-        }
+        requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
     }
 
     /**
@@ -3032,6 +3027,7 @@ class CrossfadeController(
                 beginEase(it, incomingPlaybackRate, incomingAnalysis)
             }
             outgoing?.let(::retire)
+            active().volume = 1f
         } else {
             // The transition never became audible, so the session player never
             // moved and the standby is the one to throw away.
@@ -3070,6 +3066,10 @@ class CrossfadeController(
      * Puts a player back in the drawer: emptied, silent no longer, and on the
      * listener's own playback rate again.
      *
+     * Uses player.pause() instead of player.stop() to stop playback and decoders cleanly
+     * without firing Android AudioTrack.stop(), preventing OEM hardware fade-out
+     * (e.g. oplusAudioFade) on the shared Bluetooth stream.
+     *
      * The volume matters as much as the emptying. A player left at the gain it
      * faded out on is the next transition's *incoming* player, and it would
      * arrive already turned down — so the reset is part of retiring it, not part
@@ -3077,16 +3077,11 @@ class CrossfadeController(
      */
     private fun retire(player: ExoPlayer) {
         player.volume = 0f
+        player.pause()
+        player.clearMediaItems()
         player.pauseAtEndOfMediaItems = false
-        scope.launch(Dispatchers.Main) {
-            delay(250)
-            player.stop()
-            player.clearMediaItems()
-            // This is the next transition's incoming player, and from its handoff
-            // the session: a hold left on it would pause every track at its end.
-            player.volume = 1f
-            player.setPlaybackSpeed(AppSettings.playbackSpeed.value)
-        }
+        player.volume = 1f
+        player.setPlaybackSpeed(AppSettings.playbackSpeed.value)
     }
 
     // ---- Numbers ------------------------------------------------------------
