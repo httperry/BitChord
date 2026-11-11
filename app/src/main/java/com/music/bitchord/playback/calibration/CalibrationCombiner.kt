@@ -55,7 +55,7 @@ object CalibrationCombiner {
         // Evaluate hardware model response at EqLayout manual frequencies [60, 150, 400, 1000, 2500, 6000, 14000]
         for (slot in 0 until EqLayout.MANUAL_COUNT) {
             val hz = EqLayout.MANUAL_BANDS_HZ[slot]
-            val modelGain = modelProfile?.calculateResponseAt(hz) ?: 0f
+            val modelGain = evaluateModelGain(modelProfile, hz)
 
             val (pLeft, pRight) = if (personalizationCompleted) {
                 mapPersonalizationToSlot(slot, leftGains, rightGains)
@@ -111,5 +111,37 @@ object CalibrationCombiner {
             else -> 0f
         }
         return left to right
+    }
+
+    /**
+     * Evaluates model gain at [hz]. Prefers parametric [AutoEqProfile.biquadBands],
+     * falling back to interpolated [AutoEqProfile.bandOffsets10] if biquad bands are empty.
+     */
+    fun evaluateModelGain(modelProfile: AutoEqProfile?, hz: Float): Float {
+        if (modelProfile == null) return 0f
+        return when {
+            modelProfile.biquadBands.isNotEmpty() -> modelProfile.calculateResponseAt(hz)
+            modelProfile.bandOffsets10.isNotEmpty() -> interpolate10BandGain(hz, modelProfile.bandOffsets10)
+            else -> 0f
+        }
+    }
+
+    private fun interpolate10BandGain(hz: Float, offsets10: List<Float>): Float {
+        val freqs = AutoEqProfile.STANDARD_10_BANDS_HZ
+        if (offsets10.isEmpty() || freqs.isEmpty()) return 0f
+        if (hz <= freqs.first()) return offsets10.first()
+        if (hz >= freqs.last()) return offsets10.getOrElse(freqs.lastIndex) { offsets10.last() }
+
+        for (i in 0 until freqs.size - 1) {
+            val f0 = freqs[i]
+            val f1 = freqs[i + 1]
+            if (hz in f0..f1) {
+                val g0 = offsets10.getOrElse(i) { 0f }
+                val g1 = offsets10.getOrElse(i + 1) { 0f }
+                val fraction = (hz - f0) / (f1 - f0)
+                return g0 + fraction * (g1 - g0)
+            }
+        }
+        return offsets10.last()
     }
 }

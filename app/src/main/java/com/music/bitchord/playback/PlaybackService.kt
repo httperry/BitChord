@@ -7215,6 +7215,7 @@ class PlaybackService : MediaLibraryService() {
         newActive.repeatMode = repeatMode
         newActive.shuffleModeEnabled = shuffleMode
         applyEqualizer()
+        applyCalibration()
         applySpatialAudioEnabled()
         if (items.isNotEmpty()) {
             newActive.setMediaItems(items, index.coerceIn(items.indices), position)
@@ -7486,8 +7487,8 @@ class PlaybackService : MediaLibraryService() {
             EqualizerMode.MANUAL -> manualCurve(AppSettings.equalizerBands.value)
         }
         val balance = AppSettings.equalizerBalance.value
-        equalizerProcessorA.setTuning(enabled, curve, balance)
-        equalizerProcessorB.setTuning(enabled, curve, balance)
+        equalizerProcessorA.setUserTuning(enabled, curve, balance)
+        equalizerProcessorB.setUserTuning(enabled, curve, balance)
     }
 
     /**
@@ -7527,13 +7528,13 @@ class PlaybackService : MediaLibraryService() {
         equalizerProcessorB.setOutputRoute(routeKind)
 
         if (shouldBypass) {
-            equalizerProcessorA.setDualTuning(
+            equalizerProcessorA.setCalibrationTuning(
                 enabled = false,
                 leftCurve = EqCurve.FLAT,
                 rightCurve = EqCurve.FLAT,
                 isPersonalization = true,
             )
-            equalizerProcessorB.setDualTuning(
+            equalizerProcessorB.setCalibrationTuning(
                 enabled = false,
                 leftCurve = EqCurve.FLAT,
                 rightCurve = EqCurve.FLAT,
@@ -7559,18 +7560,16 @@ class PlaybackService : MediaLibraryService() {
             personalizationCompleted = personalizationCompleted,
         )
 
-        equalizerProcessorA.setDualTuning(
+        equalizerProcessorA.setCalibrationTuning(
             enabled = true,
             leftCurve = leftCurve,
             rightCurve = rightCurve,
-            balance = AppSettings.equalizerBalance.value,
             isPersonalization = true,
         )
-        equalizerProcessorB.setDualTuning(
+        equalizerProcessorB.setCalibrationTuning(
             enabled = true,
             leftCurve = leftCurve,
             rightCurve = rightCurve,
-            balance = AppSettings.equalizerBalance.value,
             isPersonalization = true,
         )
     }

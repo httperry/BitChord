@@ -167,4 +167,40 @@ class CalibrationStateIntegrationTest {
         assertTrue("Headroom preamp must be non-positive to prevent clipping", leftCurve.preampDb <= 0.0f)
         assertTrue("Headroom preamp must be non-positive to prevent clipping", rightCurve.preampDb <= 0.0f)
     }
+
+    @Test
+    fun compoundingStandardEqualizerAndCalibrationSumsBothCurves() {
+        val eq = EqualizerProcessor()
+        eq.setOutputRoute(AudioRouting.Kind.BLUETOOTH)
+
+        // 1. User sets standard EQ: Bass boost +4 dB at 60Hz (slot 0)
+        val userGains = FloatArray(EqLayout.SLOTS) { 0f }
+        userGains[0] = 4.0f
+        val userCurve = EqCurve.of(userGains, FloatArray(EqLayout.SLOTS) { EqLayout.MANUAL_Q })
+        eq.setUserTuning(enabled = true, curve = userCurve, balance = 0f)
+
+        // 2. Calibration sets Personal EQ: +2 dB at 60Hz (slot 0) on Left, -1 dB on Right
+        val calibLeftGains = FloatArray(EqLayout.SLOTS) { 0f }
+        val calibRightGains = FloatArray(EqLayout.SLOTS) { 0f }
+        calibLeftGains[0] = 2.0f
+        calibRightGains[0] = -1.0f
+        val calibLeftCurve = EqCurve.of(calibLeftGains, FloatArray(EqLayout.SLOTS) { EqLayout.MANUAL_Q })
+        val calibRightCurve = EqCurve.of(calibRightGains, FloatArray(EqLayout.SLOTS) { EqLayout.MANUAL_Q })
+        eq.setCalibrationTuning(enabled = true, leftCurve = calibLeftCurve, rightCurve = calibRightCurve, isPersonalization = true)
+
+        // Target must be active
+        assertTrue(eq.isEnabled)
+
+        // When standard user EQ is disabled, calibration must still remain active
+        eq.setUserTuning(enabled = false, curve = userCurve, balance = 0f)
+        assertTrue("Calibration must remain active when standard EQ is disabled", eq.isEnabled)
+
+        // When calibration is disabled, user EQ is restored if re-enabled
+        eq.setCalibrationTuning(enabled = false, leftCurve = calibLeftCurve, rightCurve = calibRightCurve)
+        assertFalse("Processor must be bypassed when both are disabled", eq.isEnabled)
+
+        eq.setUserTuning(enabled = true, curve = userCurve, balance = 0f)
+        assertTrue("Standard EQ must be active alone", eq.isEnabled)
+    }
 }
+

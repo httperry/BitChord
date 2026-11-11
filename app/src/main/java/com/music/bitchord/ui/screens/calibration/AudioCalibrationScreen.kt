@@ -256,6 +256,9 @@ fun AudioCalibrationScreen(
                                 }
                             } else {
                                 AppSettings.setPersonalizationEnabled(false)
+                                if (!devicePresetEnabled) {
+                                    AppSettings.setAudioCalibrationEnabled(false)
+                                }
                             }
                         },
                     )
@@ -576,17 +579,20 @@ private fun LivePreviewBar(
             .background(bgColor)
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
+                    awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
                     haptics.play(Haptic.Tap)
                     currentOnBypassChanged(true)
-                    while (true) {
-                        val event = awaitPointerEvent(pass = PointerEventPass.Main)
-                        val anyPressed = event.changes.any { it.pressed }
-                        if (!anyPressed) {
-                            haptics.play(Haptic.Tap)
-                            currentOnBypassChanged(false)
-                            break
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                            val anyPressed = event.changes.any { it.pressed }
+                            if (!anyPressed) {
+                                haptics.play(Haptic.Tap)
+                                break
+                            }
                         }
+                    } finally {
+                        currentOnBypassChanged(false)
                     }
                 }
             }

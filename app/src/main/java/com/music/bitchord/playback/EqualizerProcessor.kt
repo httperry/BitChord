@@ -64,14 +64,21 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val rightCurve: EqCurve,
         val balance: Float,
         val isPersonalization: Boolean = false,
+        val isEnabled: Boolean = true,
     ) {
         val isDual: Boolean get() = leftCurve !== rightCurve
         companion object {
-            val OFF = Tuning(EqCurve.FLAT, EqCurve.FLAT, 0f, false)
-            fun linked(curve: EqCurve, balance: Float, isPersonalization: Boolean = false) =
-                Tuning(curve, curve, balance, isPersonalization)
+            val OFF = Tuning(EqCurve.FLAT, EqCurve.FLAT, 0f, isPersonalization = false, isEnabled = false)
+            fun linked(curve: EqCurve, balance: Float, isPersonalization: Boolean = false, isEnabled: Boolean = true) =
+                Tuning(curve, curve, balance, isPersonalization, isEnabled)
         }
     }
+
+    @Volatile
+    private var userTuning: Tuning = Tuning.OFF
+
+    @Volatile
+    private var calibrationTuning: Tuning = Tuning.OFF
 
     @Volatile
     private var target: Tuning = Tuning.OFF
@@ -81,17 +88,23 @@ class EqualizerProcessor : BaseAudioProcessor() {
 
     /**
      * Updates active output route.
-     * Enforces Speaker Fallback Rule: if [route] is PHONE, calibration personalization is bypassed.
+     * Enforces Speaker Fallback Rule: if [route] is PHONE, calibration contributions are bypassed.
      */
     fun setOutputRoute(route: AudioRouting.Kind) {
+        val changed = outputRoute != route
         outputRoute = route
+        if (changed) {
+            recomputeCombinedTarget()
+        }
     }
 
     val currentRoute: AudioRouting.Kind get() = outputRoute
 
     private fun effectiveTuning(tuning: Tuning): Tuning {
-        return if (tuning.isPersonalization && outputRoute == AudioRouting.Kind.PHONE) {
-            Tuning.OFF
+        if (!tuning.isEnabled) return Tuning.OFF
+        return if (outputRoute == AudioRouting.Kind.PHONE) {
+            // Speaker Fallback Rule: calibration contributions bypassed, standard user EQ still works
+            if (userTuning.isEnabled) userTuning else Tuning.OFF
         } else {
             tuning
         }
@@ -160,22 +173,44 @@ class EqualizerProcessor : BaseAudioProcessor() {
         private set
 
     /**
-     * Aims the equaliser. Called from whoever owns the settings, not from the
-     * audio thread; nothing here is read until the next sub-block boundary.
-     *
-     * `enabled = false` is a flat curve and a centred balance rather than a
-     * bypass flag, so switching the equaliser off glides down to nothing like
-     * every other change instead of cutting the current curve out from under a
-     * playing track.
+     * Updates standard user equalizer tuning (tone controls or manual sliders + balance).
+     */
+    fun setUserTuning(enabled: Boolean, curve: EqCurve, balance: Float) {
+        userTuning = if (enabled) {
+            Tuning.linked(curve, balance.coerceIn(-1f, 1f), isPersonalization = false, isEnabled = true)
+        } else {
+            Tuning.OFF
+        }
+        recomputeCombinedTarget()
+    }
+
+    /**
+     * Independent dual-channel acoustic calibration tuning (device preset + personalization).
+     */
+    fun setCalibrationTuning(
+        enabled: Boolean,
+        leftCurve: EqCurve,
+        rightCurve: EqCurve,
+        isPersonalization: Boolean = true,
+    ) {
+        calibrationTuning = if (enabled) {
+            Tuning(leftCurve, rightCurve, 0f, isPersonalization = isPersonalization, isEnabled = true)
+        } else {
+            Tuning.OFF
+        }
+        recomputeCombinedTarget()
+    }
+
+    /**
+     * Aims the equaliser. Backward-compatible API forwarding to [setUserTuning].
      */
     fun setTuning(enabled: Boolean, curve: EqCurve, balance: Float) {
-        target = if (enabled) Tuning.linked(curve, balance.coerceIn(-1f, 1f), false) else Tuning.OFF
+        setUserTuning(enabled, curve, balance)
     }
 
     /**
      * Independent dual-channel tuning for per-ear calibration.
-     * When [isPersonalization] is true, the Speaker Fallback Rule is enforced:
-     * if routed to built-in phone speaker, personalization is immediately bypassed.
+     * Backward-compatible API forwarding to [setCalibrationTuning].
      */
     fun setDualTuning(
         enabled: Boolean,
@@ -184,17 +219,95 @@ class EqualizerProcessor : BaseAudioProcessor() {
         balance: Float = 0f,
         isPersonalization: Boolean = true,
     ) {
-        target = if (enabled) {
-            Tuning(leftCurve, rightCurve, balance.coerceIn(-1f, 1f), isPersonalization)
-        } else {
-            Tuning.OFF
+        setCalibrationTuning(enabled, leftCurve, rightCurve, isPersonalization)
+    }
+
+    /**
+     * Computes the 3-layer compounded acoustic target:
+     * Effective Filter = (Standard Equalizer) + (Device Preset) + (Personal EQ)
+     */
+    private fun recomputeCombinedTarget() {
+        val u = userTuning
+        val c = calibrationTuning
+        val userEnabled = u.isEnabled && u !== Tuning.OFF
+        val calibEnabled = c.isEnabled && c !== Tuning.OFF
+
+        if (!userEnabled && !calibEnabled) {
+            target = Tuning.OFF
+            logTargetGains(target)
+            return
         }
+
+        val leftGains = FloatArray(EqLayout.SLOTS)
+        val rightGains = FloatArray(EqLayout.SLOTS)
+        val leftQs = FloatArray(EqLayout.SLOTS)
+        val rightQs = FloatArray(EqLayout.SLOTS)
+
+        for (slot in 0 until EqLayout.SLOTS) {
+            val uGain = if (userEnabled) u.leftCurve.gainsDb[slot] else 0f
+            val cLeft = if (calibEnabled) c.leftCurve.gainsDb[slot] else 0f
+            val cRight = if (calibEnabled) c.rightCurve.gainsDb[slot] else 0f
+
+            leftGains[slot] = uGain + cLeft
+            rightGains[slot] = uGain + cRight
+
+            leftQs[slot] = when {
+                userEnabled && u.leftCurve.qs[slot] > 0.05f -> u.leftCurve.qs[slot]
+                calibEnabled && c.leftCurve.qs[slot] > 0.05f -> c.leftCurve.qs[slot]
+                else -> EqLayout.MANUAL_Q
+            }
+            rightQs[slot] = when {
+                userEnabled && u.rightCurve.qs[slot] > 0.05f -> u.rightCurve.qs[slot]
+                calibEnabled && c.rightCurve.qs[slot] > 0.05f -> c.rightCurve.qs[slot]
+                else -> EqLayout.MANUAL_Q
+            }
+        }
+
+        val userPreamp = if (userEnabled) u.leftCurve.preampDb else 0f
+        val calibPreamp = if (calibEnabled) minOf(c.leftCurve.preampDb, c.rightCurve.preampDb) else 0f
+        val combinedPreamp = minOf(userPreamp, calibPreamp)
+        val combinedBalance = if (userEnabled) u.balance else 0f
+
+        val combinedLeftCurve = EqCurve(leftGains, leftQs, combinedPreamp)
+        val combinedRightCurve = EqCurve(rightGains, rightQs, combinedPreamp)
+
+        target = Tuning(
+            leftCurve = combinedLeftCurve,
+            rightCurve = combinedRightCurve,
+            balance = combinedBalance,
+            isPersonalization = calibEnabled,
+            isEnabled = true,
+        )
+        logTargetGains(target)
+    }
+
+    private fun logTargetGains(t: Tuning) {
+        val eff = effectiveTuning(t)
+        val l = eff.leftCurve.gainsDb
+        val r = eff.rightCurve.gainsDb
+        // EqLayout.MANUAL_BANDS_HZ: 150Hz = slot 1, 1kHz = slot 3, 6kHz = slot 5
+        val g150L = l.getOrElse(1) { 0f }
+        val g150R = r.getOrElse(1) { 0f }
+        val g1kL = l.getOrElse(3) { 0f }
+        val g1kR = r.getOrElse(3) { 0f }
+        val g6kL = l.getOrElse(5) { 0f }
+        val g6kR = r.getOrElse(5) { 0f }
+        val preamp = eff.leftCurve.preampDb
+
+        Log.i(
+            TAG,
+            "Target updated [route=$outputRoute, userEnabled=${userTuning.isEnabled}, calibEnabled=${calibrationTuning.isEnabled}]: " +
+                "150Hz=(L: ${g150L}dB, R: ${g150R}dB), " +
+                "1kHz=(L: ${g1kL}dB, R: ${g1kR}dB), " +
+                "6kHz=(L: ${g6kL}dB, R: ${g6kR}dB), " +
+                "preamp=${preamp}dB"
+        )
     }
 
     val isEnabled: Boolean
         get() {
             val t = effectiveTuning(target)
-            return t !== Tuning.OFF
+            return t !== Tuning.OFF && t.isEnabled
         }
 
     /**
@@ -350,6 +463,9 @@ class EqualizerProcessor : BaseAudioProcessor() {
         isShaping = false
         channelCount = 0
         sampleRate = 0
+        userTuning = Tuning.OFF
+        calibrationTuning = Tuning.OFF
+        target = Tuning.OFF
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {

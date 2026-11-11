@@ -143,4 +143,39 @@ class CalibrationSpeakerFallbackTest {
         assertFalse(speakerTarget.isHeadphoneOrIem)
         assertNotNull(speakerTarget.bypassReason)
     }
+
+    @Test
+    fun acousticThreeLayerStackingEnforcesUserPlusCalibrationAndSpeakerFallback() {
+        val eq = EqualizerProcessor()
+
+        // 1. User Standard EQ: +3dB at 1kHz (slot 3)
+        val userGains = FloatArray(EqLayout.SLOTS) { 0f }.apply { this[3] = 3.0f }
+        val userQs = FloatArray(EqLayout.SLOTS) { 1.0f }
+        val userCurve = EqCurve.of(userGains, userQs)
+        eq.setUserTuning(enabled = true, curve = userCurve, balance = 0.2f)
+
+        // 2. Calibration Tuning: Left +2dB at 1kHz, Right +5dB at 1kHz
+        val calibLeftGains = FloatArray(EqLayout.SLOTS) { 0f }.apply { this[3] = 2.0f }
+        val calibRightGains = FloatArray(EqLayout.SLOTS) { 0f }.apply { this[3] = 5.0f }
+        val calibQs = FloatArray(EqLayout.SLOTS) { 1.0f }
+        val calibLeftCurve = EqCurve.of(calibLeftGains, calibQs)
+        val calibRightCurve = EqCurve.of(calibRightGains, calibQs)
+        eq.setCalibrationTuning(enabled = true, leftCurve = calibLeftCurve, rightCurve = calibRightCurve)
+
+        // Route: WIRED -> Both active (Effective = User + Calibration)
+        eq.setOutputRoute(AudioRouting.Kind.WIRED)
+        assertTrue("Processor must be enabled on wired", eq.isEnabled)
+
+        // Route: PHONE -> Calibration bypassed, but User EQ MUST STILL BE ACTIVE!
+        eq.setOutputRoute(AudioRouting.Kind.PHONE)
+        assertTrue("User EQ must remain active on PHONE speaker fallback", eq.isEnabled)
+
+        // If User EQ disabled while on PHONE -> Fully bypassed
+        eq.setUserTuning(enabled = false, curve = userCurve, balance = 0f)
+        assertFalse("When user EQ disabled, speaker output must be flat/bypassed", eq.isEnabled)
+
+        // Switching back to WIRED -> Calibration re-engages!
+        eq.setOutputRoute(AudioRouting.Kind.WIRED)
+        assertTrue("Calibration must re-engage on WIRED even if user EQ is disabled", eq.isEnabled)
+    }
 }
