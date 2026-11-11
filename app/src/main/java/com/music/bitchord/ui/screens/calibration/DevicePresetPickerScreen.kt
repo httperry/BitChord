@@ -62,9 +62,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.R
 import com.music.bitchord.data.settings.AppSettings
-import com.music.bitchord.ui.screens.Haptic
+import com.music.bitchord.ui.haptics.Haptic
+import com.music.bitchord.ui.haptics.rememberHaptics
 import com.music.bitchord.ui.screens.SettingsPageTitle
-import com.music.bitchord.ui.screens.rememberHaptics
 
 private val InsetCardShape = RoundedCornerShape(16.dp)
 private val ChipShape = RoundedCornerShape(20.dp)

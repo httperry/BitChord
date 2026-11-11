@@ -583,26 +583,6 @@ fun AudioCalibrationScreen(
         Spacer(Modifier.height(24.dp))
     }
 
-    // Modal Sheet: Headphone / IEM Catalog Picker
-    if (showModelPicker) {
-        ModelCatalogPickerSheet(
-            selectedModel = selectedModel,
-            onSelectModel = { model ->
-                if (model == null) {
-                    AppSettings.setCalibrationModel(null, null, null)
-                    AppSettings.setDevicePresetEnabled(false)
-                } else {
-                    AudioCalibrationManager.selectModel(model)
-                    AppSettings.setCalibrationModel(model.id, model.name, model.brand)
-                    AppSettings.setDevicePresetEnabled(true)
-                    AppSettings.setAudioCalibrationEnabled(true)
-                }
-                showModelPicker = false
-            },
-            onDismiss = { showModelPicker = false },
-        )
-    }
-
     // Modal Sheet: Audio Personalization Wizard (Adaptive Threshold Test)
     if (showPersonalizationWizard) {
         AudioPersonalizationWizard(
