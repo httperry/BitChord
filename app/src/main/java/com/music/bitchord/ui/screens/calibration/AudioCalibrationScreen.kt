@@ -11,12 +11,10 @@
 package com.music.bitchord.ui.screens.calibration
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -30,6 +28,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,7 +38,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
@@ -72,15 +70,18 @@ import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.playback.AudioOutputStatus
 import com.music.bitchord.playback.AudioRouting
 import com.music.bitchord.playback.calibration.AcousticModelCatalog
-import com.music.bitchord.ui.components.GLASS_EDGE_COLOR
-import com.music.bitchord.ui.components.GLASS_EDGE_WIDTH
 import com.music.bitchord.ui.components.IosSwitch
-import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
-import com.music.bitchord.ui.components.isGlassSupported
-import com.music.bitchord.ui.components.lightweightLiquidGlass
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
 import com.music.bitchord.ui.icons.SfIcons
+import com.music.bitchord.ui.screens.GROUP_INSET
+import com.music.bitchord.ui.screens.GroupShape
+import com.music.bitchord.ui.screens.ICON_GAP
+import com.music.bitchord.ui.screens.ICON_SIZE
+import com.music.bitchord.ui.screens.ROW_INSET
+import com.music.bitchord.ui.screens.RowDivider
+import com.music.bitchord.ui.screens.SettingsPageTitle
+import com.music.bitchord.ui.screens.SettingsRow
 import java.util.Locale
 
 /**
@@ -131,61 +132,18 @@ fun AudioCalibrationScreen(
     var showPersonalizationWizard by remember { mutableStateOf(false) }
 
     val isPhoneSpeaker = outputStatus.routeKind == AudioRouting.Kind.PHONE
-    val isGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
     val haptics = rememberHaptics()
-
-    val controlsAlpha by animateFloatAsState(
-        targetValue = if (isPhoneSpeaker) 0.38f else 1.0f,
-        label = "ControlsAlpha",
-    )
 
     val presetCurveColor = Color(0xFF38BDF8)   // Electric Cyan
     val personalCurveColor = Color(0xFFF59E0B) // Amber / Warm Gold
 
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(contentPadding)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(contentPadding),
     ) {
-        // --- Top Bar: Back Button & Title ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = if (isPhoneSpeaker) 10.dp else 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isGlass) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.surfaceContainer
-                    ),
-            ) {
-                Icon(
-                    imageVector = SfIcons.ChevronLeft,
-                    contentDescription = stringResource(R.string.back),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            Text(
-                text = stringResource(R.string.audio_personalisation),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 22.sp,
-                    letterSpacing = (-0.3).sp,
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        SettingsPageTitle(stringResource(R.string.audio_personalisation))
 
         // --- Speaker State Notice (Displayed directly below title when routed to phone speaker) ---
         AnimatedVisibility(
@@ -193,278 +151,140 @@ fun AudioCalibrationScreen(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (isGlass) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-                        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                    )
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
-                        RoundedCornerShape(12.dp),
-                    )
-                    .padding(horizontal = 14.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(
-                    imageVector = SfIcons.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    text = stringResource(R.string.connect_audio_device_notice),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                )
-            }
+            Text(
+                text = stringResource(R.string.connect_audio_device_notice),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            )
         }
 
         // --- Main Control Card Container (Device Preset + Personal EQ) ---
-        val containerShape = RoundedCornerShape(18.dp)
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(
-                    if (isGlass) {
-                        Modifier
-                            .lightweightLiquidGlass(
-                                shape = containerShape,
-                                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                            )
-                            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, containerShape)
-                    } else {
-                        Modifier
-                            .clip(containerShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                                shape = containerShape,
-                            )
-                    }
-                ),
+                .padding(horizontal = GROUP_INSET)
+                .clip(GroupShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // ROW 1: Device Preset
+            // ROW 1: Device Preset
+            val presetSubtitle = when {
+                modelName != null -> "${modelBrand ?: ""} $modelName".trim()
+                selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
+                else -> stringResource(R.string.select_device_preset)
+            }
+            SettingsRow(
+                icon = SfIcons.Headphones,
+                title = stringResource(R.string.device_preset),
+                subtitle = presetSubtitle,
+                onClick = {
+                    haptics.play(Haptic.Tap)
+                    showModelPicker = true
+                },
+                enabled = !isPhoneSpeaker,
+            )
+
+            RowDivider()
+
+            // ROW 2: Personal EQ (Dual-Action Row: Body opens wizard, Switch toggles ON/OFF)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (!isPhoneSpeaker) 1f else 0.45f)
+                    .height(IntrinsicSize.Min),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Left area: Tapping anywhere except the switch opens the Personal EQ Setup/Wizard
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .clickable(enabled = !isPhoneSpeaker) {
                             haptics.play(Haptic.Tap)
-                            showModelPicker = true
+                            showPersonalizationWizard = true
                         }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .heightIn(min = 52.dp)
+                        .padding(start = ROW_INSET, end = 12.dp, top = 12.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(presetCurveColor.copy(alpha = 0.12f * controlsAlpha)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = SfIcons.Headphones,
-                            contentDescription = null,
-                            tint = presetCurveColor.copy(alpha = controlsAlpha),
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-
-                    Spacer(Modifier.width(14.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.Center,
-                    ) {
+                    Icon(
+                        imageVector = SfIcons.Hearing,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(ICON_SIZE),
+                    )
+                    Spacer(Modifier.width(ICON_GAP))
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.device_preset),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 16.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = controlsAlpha),
+                            text = stringResource(R.string.personal_eq),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.height(2.dp))
-                        val subtitleText = when {
-                            isPhoneSpeaker -> stringResource(R.string.disabled_on_phone_speaker)
-                            !devicePresetEnabled -> "Preset disabled"
-                            modelName != null -> "${modelBrand ?: ""} $modelName".trim()
-                            selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
-                            else -> stringResource(R.string.select_device_preset)
-                        }
                         Text(
-                            text = subtitleText,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                            color = if (isPhoneSpeaker) {
-                                MaterialTheme.colorScheme.error.copy(alpha = 0.85f)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = controlsAlpha)
-                            },
+                            text = stringResource(R.string.personal_eq_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-
-                    Spacer(Modifier.width(8.dp))
-
-                    Icon(
-                        imageVector = SfIcons.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f * controlsAlpha),
-                        modifier = Modifier.size(16.dp),
-                    )
                 }
 
-                // Hairline Divider
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f * controlsAlpha),
-                    thickness = 0.8.dp,
-                    modifier = Modifier.padding(start = 68.dp),
+                // Vertical hairline divider
+                VerticalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outline,
                 )
 
-                // ROW 2: Personal EQ (Dual-Action Row)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Min),
-                    verticalAlignment = Alignment.CenterVertically,
+                // Dedicated Switch Toggle
+                Box(
+                    modifier = Modifier.padding(horizontal = ROW_INSET),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    // Left area: Tapping anywhere except the switch opens the Personal EQ Setup/Wizard
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable(enabled = !isPhoneSpeaker) {
-                                haptics.play(Haptic.Tap)
-                                showPersonalizationWizard = true
-                            }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(personalCurveColor.copy(alpha = 0.12f * controlsAlpha)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = SfIcons.Hearing,
-                                contentDescription = null,
-                                tint = personalCurveColor.copy(alpha = controlsAlpha),
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-
-                        Spacer(Modifier.width(14.dp))
-
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.personal_eq),
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 16.sp,
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = controlsAlpha),
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = stringResource(R.string.personal_eq_subtitle), // "Audio tuning for your ears"
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = controlsAlpha),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-
-                    // Vertical Divider
-                    VerticalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f * controlsAlpha),
-                        thickness = 0.8.dp,
-                        modifier = Modifier.padding(vertical = 10.dp),
-                    )
-
-                    // Right area: Dedicated Switch Toggle
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        IosSwitch(
-                            checked = personalizationEnabled && personalizationCompleted,
-                            enabled = !isPhoneSpeaker,
-                            onCheckedChange = { desired ->
-                                if (desired) {
-                                    if (!personalizationCompleted) {
-                                        showPersonalizationWizard = true
-                                    } else {
-                                        AppSettings.setPersonalizationEnabled(true)
-                                        AppSettings.setAudioCalibrationEnabled(true)
-                                    }
+                    IosSwitch(
+                        checked = personalizationEnabled && personalizationCompleted,
+                        enabled = !isPhoneSpeaker,
+                        onCheckedChange = { desired ->
+                            if (desired) {
+                                if (!personalizationCompleted) {
+                                    showPersonalizationWizard = true
                                 } else {
-                                    AppSettings.setPersonalizationEnabled(false)
+                                    AppSettings.setPersonalizationEnabled(true)
+                                    AppSettings.setAudioCalibrationEnabled(true)
                                 }
-                            },
-                        )
-                    }
+                            } else {
+                                AppSettings.setPersonalizationEnabled(false)
+                            }
+                        },
+                    )
                 }
             }
         }
 
-        Spacer(Modifier.height(26.dp))
-
-        // --- SECTION: Current EQ ---
+        // --- SECTION: Current EQ Header ---
         Text(
             text = stringResource(R.string.current_eq).uppercase(Locale.ROOT),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.2.sp,
-                fontSize = 12.sp,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(
+                start = GROUP_INSET + 4.dp,
+                end = GROUP_INSET,
+                top = 26.dp,
+                bottom = 8.dp,
             ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = controlsAlpha),
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
         )
 
         // --- Current EQ Graph Card Container ---
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .alpha(controlsAlpha)
-                .then(
-                    if (isGlass) {
-                        Modifier
-                            .lightweightLiquidGlass(
-                                shape = containerShape,
-                                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                            )
-                            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, containerShape)
-                    } else {
-                        Modifier
-                            .clip(containerShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                                shape = containerShape,
-                            )
-                    }
-                )
+                .padding(horizontal = GROUP_INSET)
+                .clip(GroupShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(16.dp),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
                 // Interactive Canvas Graph
                 val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
                 val baselineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
@@ -612,11 +432,10 @@ fun AudioCalibrationScreen(
 
                 // Footer: Device Name & Curve Legend
                 val deviceDisplayName = when {
-                    isPhoneSpeaker -> stringResource(R.string.disabled_on_phone_speaker)
                     modelName != null -> "${modelBrand ?: ""} $modelName".trim()
                     selectedModel != null -> "${selectedModel.brand} ${selectedModel.name}"
-                    outputStatus.deviceName.isNotBlank() -> outputStatus.deviceName
-                    else -> "No Device Selected"
+                    outputStatus.deviceName.isNotBlank() && !isPhoneSpeaker -> outputStatus.deviceName
+                    else -> ""
                 }
 
                 Row(
@@ -624,17 +443,21 @@ fun AudioCalibrationScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = deviceDisplayName,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
+                    if (deviceDisplayName.isNotBlank()) {
+                        Text(
+                            text = deviceDisplayName,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
 
                     Spacer(Modifier.width(8.dp))
 
@@ -661,15 +484,15 @@ fun AudioCalibrationScreen(
                     }
                 }
 
-                // Studio Demo / Live A/B hold-to-preview button
-                Spacer(Modifier.height(16.dp))
-                LivePreviewBar(
-                    isBypassed = previewUncalibrated,
-                    isEnabled = !isPhoneSpeaker,
-                    onBypassChanged = { if (!isPhoneSpeaker) AppSettings.setPreviewUncalibrated(it) },
-                )
+                // Studio Demo / Live A/B hold-to-preview button (only shown when not on phone speaker)
+                if (!isPhoneSpeaker) {
+                    Spacer(Modifier.height(16.dp))
+                    LivePreviewBar(
+                        isBypassed = previewUncalibrated,
+                        onBypassChanged = { AppSettings.setPreviewUncalibrated(it) },
+                    )
+                }
             }
-        }
 
         Spacer(Modifier.height(24.dp))
     }
@@ -735,19 +558,13 @@ private fun LegendDot(
 @Composable
 private fun LivePreviewBar(
     isBypassed: Boolean,
-    isEnabled: Boolean = true,
     onBypassChanged: (Boolean) -> Unit,
 ) {
     val haptics = rememberHaptics()
-    val isGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
     val currentOnBypassChanged by rememberUpdatedState(onBypassChanged)
 
-    val bgColor = if (!isEnabled) {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-    } else if (isBypassed) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-    } else if (isGlass) {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    val bgColor = if (isBypassed) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     } else {
         MaterialTheme.colorScheme.surface
     }
@@ -755,35 +572,24 @@ private fun LivePreviewBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
-            .border(
-                width = 1.dp,
-                color = if (!isEnabled) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)
-                else if (isBypassed) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(12.dp),
-            )
-            .then(
-                if (isEnabled) {
-                    Modifier.pointerInput(Unit) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
+                    haptics.play(Haptic.Tap)
+                    currentOnBypassChanged(true)
+                    while (true) {
+                        val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                        val anyPressed = event.changes.any { it.pressed }
+                        if (!anyPressed) {
                             haptics.play(Haptic.Tap)
-                            currentOnBypassChanged(true)
-                            while (true) {
-                                val event = awaitPointerEvent(pass = PointerEventPass.Main)
-                                val anyPressed = event.changes.any { it.pressed }
-                                if (!anyPressed) {
-                                    haptics.play(Haptic.Tap)
-                                    currentOnBypassChanged(false)
-                                    break
-                                }
-                            }
+                            currentOnBypassChanged(false)
+                            break
                         }
                     }
-                } else Modifier
-            )
+                }
+            }
             .padding(vertical = 11.dp, horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -796,15 +602,12 @@ private fun LivePreviewBar(
                     .size(6.dp)
                     .clip(CircleShape)
                     .background(
-                        if (!isEnabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
-                        else if (isBypassed) MaterialTheme.colorScheme.primary
+                        if (isBypassed) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     ),
             )
             Text(
-                text = if (!isEnabled) {
-                    stringResource(R.string.disabled_on_phone_speaker)
-                } else if (isBypassed) {
+                text = if (isBypassed) {
                     stringResource(R.string.uncalibrated_preview_label)
                 } else {
                     stringResource(R.string.hold_to_preview_uncalibrated)
@@ -813,8 +616,7 @@ private fun LivePreviewBar(
                     fontWeight = if (isBypassed) FontWeight.SemiBold else FontWeight.Normal,
                     fontSize = 13.sp,
                 ),
-                color = if (!isEnabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                else if (isBypassed) MaterialTheme.colorScheme.primary
+                color = if (isBypassed) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
