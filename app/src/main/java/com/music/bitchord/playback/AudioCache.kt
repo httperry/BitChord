@@ -151,12 +151,6 @@ object AudioCache {
     private const val MAX_ANALYSIS_TRACK_BYTES = 16L * 1024 * 1024
 
     /**
-     * Sized for ~35-40 seconds of Opus audio (plenty for beat-grid intro analysis).
-     * Prevents downloading whole songs during head analysis.
-     */
-    private const val ANALYSIS_HEAD_REQUEST_BYTES = 768L * 1024
-
-    /**
      * Buffer size for cache disk writes. Media3 default is 20 KB which generates
      * excessive dirty page writeback churn. 256 KB buffers reduce flash writes by >90%.
      */
@@ -1891,6 +1885,8 @@ object AudioCache {
      * "openable with exactly these bytes".
      */
     private fun alignmentPrefixBytes(videoId: String): Long {
+        if (!::cache.isInitialized) return 0L
+        val directKeyPrefix = cache.getCachedLength(videoId, 0, HEAD_PROBE_BYTES).coerceAtLeast(0L)
         val watch = Uri.parse("bitchord://watch?v=$videoId")
         val opus = Uri.parse(AutomixAnalysisSource.opusUri(videoId))
         val renditions = renditionsOf(watch)
@@ -1899,13 +1895,14 @@ object AudioCache {
             .maxOfOrNull { it.cachedPrefix } ?: 0L
         if (sameSource >= MIN_ALIGNMENT_PREFIX_BYTES) return sameSource
         return maxOf(
+            directKeyPrefix,
             cachedPrefixBytes(opus),
             cachedPrefixBytes(watch),
             renditions.maxOfOrNull { it.cachedPrefix } ?: 0L,
         )
     }
 
-    fun requestAnalysisHead(uri: Uri) {
+    fun requestAnalysisHead(uri: Uri, force: Boolean = false) {
         // Each of these gates used to stop a head dead with nothing in the
         // log to show for it: an unwired cache or upstream looked from the
         // outside exactly like a network that refuses everything.
@@ -1918,6 +1915,11 @@ object AudioCache {
             return
         }
         val videoId = uri.getQueryParameter("v") ?: return
+        if (force) {
+            analysisHeads.remove(videoId)
+            analysisHeadsInFlight.remove(videoId)
+            renditionKeys.remove(videoId)
+        }
         // One round per track per session, and it is sized correctly up front
         // rather than grown into. See [analysisHeadSize] for why growing it was
         // the wrong shape.
@@ -1975,6 +1977,7 @@ object AudioCache {
                     )
                 }
                 if (total > 0) recordContentLength(videoId, total)
+                renditionKeys.remove(videoId)
                 val held = alignmentPrefixBytes(videoId)
                 if (held < MIN_ALIGNMENT_PREFIX_BYTES) {
                     // The one line that says *this* fetch failed, as opposed to
@@ -2014,7 +2017,7 @@ object AudioCache {
      * already, from resolving the stream, so asking first costs nothing.
      */
     private fun analysisHeadSize(total: Long): Long =
-        if (total > 0) minOf(total, ANALYSIS_HEAD_REQUEST_BYTES) else ANALYSIS_HEAD_REQUEST_BYTES
+        if (total > 0) minOf(total, MAX_ANALYSIS_TRACK_BYTES) else MAX_ANALYSIS_HEAD_BYTES
 
     /**
      * Makes sure [videoId]'s entry is either empty or already covers [want]
