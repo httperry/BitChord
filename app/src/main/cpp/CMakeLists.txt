@@ -13,6 +13,11 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(bitchord_analysis LANGUAGES C CXX)
 
+find_program(CCACHE_FOUND ccache)
+if(CCACHE_FOUND)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_FOUND}")
+endif()
+
 get_filename_component(BITCHORD_NATIVE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../native"
     ABSOLUTE)
