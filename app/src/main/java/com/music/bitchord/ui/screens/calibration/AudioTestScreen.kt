@@ -309,7 +309,7 @@ fun AudioTestScreen(
             )
         }
 
-        // --- 2. Top Progressive Blur / Scrim (Softens waves passing under status & top bar) ---
+        // --- 2. Progressive Blur (Applied ONLY when progressive blur is enabled) ---
         if (useProgressiveBlur) {
             Box(
                 modifier = Modifier
@@ -329,7 +329,7 @@ fun AudioTestScreen(
                         )
                     }
                     .hazeEffect(state = testHazeState) {
-                        backgroundColor = MaterialTheme.colorScheme.background
+                        backgroundColor = Color.Transparent
                         tints = emptyList()
                         blurRadius = 24.dp
                         noiseFactor = 0f
@@ -341,24 +341,7 @@ fun AudioTestScreen(
                         )
                     },
             )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp)
-                    .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                            0.65f to MaterialTheme.colorScheme.background.copy(alpha = 0.40f),
-                            1.0f to Color.Transparent,
-                        ),
-                    ),
-            )
-        }
 
-        // --- 3. Bottom Progressive Blur Floor / Scrim (Softens floor behind controls) ---
-        if (useProgressiveBlur) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -377,7 +360,7 @@ fun AudioTestScreen(
                         )
                     }
                     .hazeEffect(state = testHazeState) {
-                        backgroundColor = MaterialTheme.colorScheme.background
+                        backgroundColor = Color.Transparent
                         tints = emptyList()
                         blurRadius = 24.dp
                         noiseFactor = 0f
@@ -389,21 +372,37 @@ fun AudioTestScreen(
                         )
                     },
             )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            0.0f to Color.Transparent,
-                            0.30f to MaterialTheme.colorScheme.background.copy(alpha = 0.60f),
-                            1.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
-                        ),
-                    ),
-            )
         }
+
+        // --- 3. Top Dark Fade / Vignette Overlay (Drawn BEHIND content so text is never blurred) ---
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Black.copy(alpha = if (useProgressiveBlur) 0.88f else 0.75f),
+                        0.6f to Color.Black.copy(alpha = 0.35f),
+                        1.0f to Color.Transparent,
+                    ),
+                ),
+        )
+
+        // --- 4. Bottom Dark Fade / Vignette Overlay (Creates the loved edge darkening behind buttons) ---
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(340.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Transparent,
+                        0.30f to Color.Black.copy(alpha = if (useProgressiveBlur) 0.65f else 0.50f),
+                        1.0f to Color.Black.copy(alpha = 0.98f),
+                    ),
+                ),
+        )
 
         // --- 4. Foreground UI Content (Clear and sharp on top of progressive blur) ---
         Column(
