@@ -186,6 +186,10 @@ class TrackAnalyzer(
     /** Tracks whose result came from [analyzeHead] and is waiting to be superseded. */
     private val provisional = ConcurrentHashMap.newKeySet<String>()
 
+    /** Tracks whose full whole-track pass is currently running or has already been attempted. */
+    private val wholeTrackInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val wholeTrackAttempted = ConcurrentHashMap.newKeySet<String>()
+
     /**
      * Cached prefix size, in bytes, at the last head attempt on each
      * *rendition*. See [headWorthTrying].
@@ -491,7 +495,7 @@ class TrackAnalyzer(
         }
         val supersedable = when {
             recorded == null -> false
-            trackId in provisional -> isCurrentTrack && usableComplete
+            trackId in provisional -> isCurrentTrack && usableComplete && trackId !in wholeTrackInFlight && trackId !in wholeTrackAttempted
             else -> !recorded.isUsable && untried
         }
         if (recorded != null && !supersedable) {
@@ -547,7 +551,7 @@ class TrackAnalyzer(
                 // backlog without needing to reach into the executor's queue.
                 if (stopped) return@execute
                 if (trackId in provisional) {
-                    if (isCurrentTrack && usableComplete) {
+                    if (isCurrentTrack && usableComplete && trackId !in wholeTrackAttempted) {
                         runWholeTrackPass(trackId, analysisUri, durationSeconds)
                     }
                 } else {
@@ -611,44 +615,51 @@ class TrackAnalyzer(
         analysisUri: Uri,
         durationSeconds: Double,
     ) {
-        val wholeStart = SystemClock.elapsedRealtime()
-        TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
-        val outcome = analyze(trackId, analysisUri, durationSeconds, wholeStart)
-        val whole = outcome.analysis
-        if (whole != null) {
-            val wholeTook = SystemClock.elapsedRealtime() - wholeStart
-            TrackLog.d(
-                TAG,
-                "Automix finished whole-track pass for $trackId in ${wholeTook}ms: bpm=${whole.bpm.roundToInt()} " +
-                    "conf=${"%.2f".format(Locale.ROOT, whole.beatConfidence)} " +
-                    "mixOut=${"%.1f".format(Locale.ROOT, whole.contentEndTime)}s",
-                trackId,
-            )
-            results[trackId] = whole
-            provisional.remove(trackId)
-            shortDecodes.remove(trackId)
-            // Only the whole-track pass is persisted. A head result
-            // is missing everything past its window — the outro, the
-            // mix-out anchor, the energy curve — and storing one
-            // would freeze a deliberately partial answer in place of
-            // the complete one that supersedes it minutes later.
-            store.save(trackId, whole)
-            restoreAttempted.add(trackId)
-        } else if (outcome.decodedShort &&
-            shortDecodes.merge(trackId, 1, Int::plus)!! >= MAX_SHORT_DECODE_ATTEMPTS
-        ) {
-            // Bounded, so a container that is genuinely truncated
-            // isn't re-decoded on every tick for the rest of the
-            // session. Any provisional head result already published
-            // stays: a partial analysis beats an empty one.
-            Log.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes")
-            if (trackId !in provisional && results[trackId]?.isUsable != true) {
-                results[trackId] = TrackAnalysis(
-                    status = TrackAnalysis.STATUS_READY,
-                    trackId = trackId,
-                    duration = durationSeconds,
+        if (!wholeTrackInFlight.add(trackId)) return
+        try {
+            wholeTrackAttempted.add(trackId)
+            val wholeStart = SystemClock.elapsedRealtime()
+            TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
+            val outcome = analyze(trackId, analysisUri, durationSeconds, wholeStart)
+            val whole = outcome.analysis
+            if (whole != null) {
+                val wholeTook = SystemClock.elapsedRealtime() - wholeStart
+                TrackLog.d(
+                    TAG,
+                    "Automix finished whole-track pass for $trackId in ${wholeTook}ms: bpm=${whole.bpm.roundToInt()} " +
+                        "conf=${"%.2f".format(Locale.ROOT, whole.beatConfidence)} " +
+                        "mixOut=${"%.1f".format(Locale.ROOT, whole.contentEndTime)}s",
+                    trackId,
                 )
+                results[trackId] = whole
+                provisional.remove(trackId)
+                shortDecodes.remove(trackId)
+                // Only the whole-track pass is persisted. A head result
+                // is missing everything past its window — the outro, the
+                // mix-out anchor, the energy curve — and storing one
+                // would freeze a deliberately partial answer in place of
+                // the complete one that supersedes it minutes later.
+                store.save(trackId, whole)
+                restoreAttempted.add(trackId)
+            } else {
+                // Whole-track pass returned null or yielded. Clear provisional to avoid repeating every 2 seconds,
+                // but retain the provisional head pass in results so the track preserves its valid BPM/confidence.
+                provisional.remove(trackId)
+                if (outcome.decodedShort &&
+                    shortDecodes.merge(trackId, 1, Int::plus)!! >= MAX_SHORT_DECODE_ATTEMPTS
+                ) {
+                    Log.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes")
+                    if (results[trackId]?.isUsable != true) {
+                        results[trackId] = TrackAnalysis(
+                            status = TrackAnalysis.STATUS_READY,
+                            trackId = trackId,
+                            duration = durationSeconds,
+                        )
+                    }
+                }
             }
+        } finally {
+            wholeTrackInFlight.remove(trackId)
         }
     }
 

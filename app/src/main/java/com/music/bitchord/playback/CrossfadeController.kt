@@ -3046,6 +3046,7 @@ class CrossfadeController(
                 // unstretched track goes straight to the listener's speed.
                 beginEase(it, incomingPlaybackRate, incomingAnalysis)
             }
+            active().volume = 1f
             outgoing?.let(::retire)
             active().volume = 1f
         } else {
@@ -3058,7 +3059,9 @@ class CrossfadeController(
                     beginEase(out, outgoingPlaybackRate, out.currentMediaItem?.let(analysisFor) ?: TrackAnalysis())
                 }
             }
+            active().volume = 1f
             incoming?.let(::retire)
+            active().volume = 1f
         }
 
         outgoing = null
@@ -3086,18 +3089,12 @@ class CrossfadeController(
      * Puts a player back in the drawer: emptied, silent no longer, and on the
      * listener's own playback rate again.
      *
-     * Uses player.pause() instead of player.stop() to stop playback and decoders cleanly
-     * without firing Android AudioTrack.stop(), preventing OEM hardware fade-out
-     * (e.g. oplusAudioFade) on the shared Bluetooth stream.
-     *
-     * The volume matters as much as the emptying. A player left at the gain it
-     * faded out on is the next transition's *incoming* player, and it would
-     * arrive already turned down — so the reset is part of retiring it, not part
-     * of preparing it.
+     * Avoids volume=0 or pause() cycles on the shared session which can trigger
+     * OEM hardware stream fade-out (e.g. oplusAudioFade) on the shared Bluetooth stream.
+     * Clearing media items halts decoding cleanly while leaving the active player's
+     * sink unperturbed.
      */
     private fun retire(player: ExoPlayer) {
-        player.volume = 0f
-        player.pause()
         player.clearMediaItems()
         player.pauseAtEndOfMediaItems = false
         player.volume = 1f
