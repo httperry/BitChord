@@ -582,6 +582,8 @@ object LoopMix {
         val side = out.tailBeats
         if (side != null && side.bpm > 0 && side.downbeats.size >= 5) {
             val downs = side.downbeats
+            var best = -1.0
+            var bestDist = Double.MAX_VALUE
             // Prefer 8-bar phrase downbeats (32 beats)
             for (i in downs.indices step 8) {
                 val d = downs[i]

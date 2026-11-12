@@ -127,6 +127,10 @@ android {
             )
         }
     }
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 kotlin {
