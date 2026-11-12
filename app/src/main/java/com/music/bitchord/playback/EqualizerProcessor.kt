@@ -265,7 +265,12 @@ class EqualizerProcessor : BaseAudioProcessor() {
 
         val userPreamp = if (userEnabled) u.leftCurve.preampDb else 0f
         val calibPreamp = if (calibEnabled) minOf(c.leftCurve.preampDb, c.rightCurve.preampDb) else 0f
-        val combinedPreamp = minOf(userPreamp, calibPreamp, preampFor(leftGains, leftQs))
+        val combinedPreamp = minOf(
+            userPreamp,
+            calibPreamp,
+            preampFor(leftGains, leftQs),
+            preampFor(rightGains, rightQs),
+        )
         val combinedBalance = if (userEnabled) u.balance else 0f
 
         val combinedLeftCurve = EqCurve(leftGains, leftQs, combinedPreamp)

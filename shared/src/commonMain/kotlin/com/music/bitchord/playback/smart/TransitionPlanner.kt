@@ -421,16 +421,17 @@ private fun findPhraseDownbeat(
         if (v <= target) low = mid + 1 else high = mid - 1
     }
     if (preferEarlier) {
+        if (high < 0) return null
         var i = (high / 4) * 4
         if (i >= downbeats.size) i = ((downbeats.size - 1) / 4) * 4
         while (i >= 0) {
             val v = downbeats[i]
             if (v < minimum) break
-            if (target - v <= tolerance) {
+            if (v <= target && target - v <= tolerance) {
                 val i16 = i - (i % 16)
-                if (i16 >= 0 && downbeats[i16] >= minimum && target - downbeats[i16] <= tolerance) return downbeats[i16]
+                if (i16 >= 0 && downbeats[i16] >= minimum && downbeats[i16] <= target && target - downbeats[i16] <= tolerance) return downbeats[i16]
                 val i8 = i - (i % 8)
-                if (i8 >= 0 && downbeats[i8] >= minimum && target - downbeats[i8] <= tolerance) return downbeats[i8]
+                if (i8 >= 0 && downbeats[i8] >= minimum && downbeats[i8] <= target && target - downbeats[i8] <= tolerance) return downbeats[i8]
                 return v
             }
             i -= 4
@@ -1150,13 +1151,13 @@ fun planWsolaTransition(
     if (incomingCueTime < audibleStart - 0.05) return WsolaPlanResult.Refused("incoming-no-runway")
 
     val startTarget = overlapEndTarget - outgoingOverlapSeconds
-    val transitionStart = findPhraseDownbeat(
-        analysis.downbeats,
-        startTarget,
-        tolerance = 4 * outgoingBeatSeconds,
-        minimum = MIN_CLEARANCE_SECONDS,
+    val transitionStart = alignedTransitionStart(
+        analysis = analysis,
+        target = startTarget,
+        end = overlapEndTarget - 0.05,
         preferEarlier = true,
-    ) ?: (nearestAtOrBefore(analysis.downbeats, startTarget) ?: startTarget)
+        minimum = MIN_CLEARANCE_SECONDS,
+    )
     if (transitionStart < MIN_CLEARANCE_SECONDS) return WsolaPlanResult.Refused("outgoing-too-short")
     val transitionEnd = transitionStart + outgoingOverlapSeconds
     if (transitionEnd > outgoingLength + 0.05) return WsolaPlanResult.Refused("outgoing-overlap-overruns")
@@ -1637,8 +1638,8 @@ private fun planTransitionInner(
     val playbackTime = max(0.0, currentTime.orZero())
     if (length <= 0) return blocked("no-duration")
 
-    val safeMinFade = fadeSeconds.coerceAtLeast(minFadeSeconds).coerceAtLeast(4.0)
-    val standardFade = clamp(safeMinFade, 4.0, 12.0)
+    val safeMinFade = fadeSeconds.coerceAtLeast(minFadeSeconds).coerceAtLeast(5.0)
+    val standardFade = clamp(safeMinFade, 5.0, 12.0)
     if (mode != CrossfadeMode.SMART) {
         val userFade = clamp(fadeSeconds, minFadeSeconds, 12.0)
         return standardTransition(length, playbackTime, userFade, minFadeSeconds)
@@ -1694,14 +1695,21 @@ private fun planTransitionInner(
             val fourBars = 16.0 * beatSec
             val eightBars = 32.0 * beatSec
             when {
-                fourBars in 4.0..12.0 -> fourBars
-                eightBars in 4.0..12.0 -> eightBars
-                else -> safeMinFade.coerceIn(4.0, 12.0)
+                eightBars in 5.0..12.0 -> eightBars
+                fourBars in 5.0..12.0 -> fourBars
+                else -> safeMinFade.coerceIn(5.0, 12.0)
             }
         } else {
-            safeMinFade.coerceIn(4.0, 12.0)
+            safeMinFade.coerceIn(5.0, 12.0)
         }
-        val transitionStart = max(0.0, finalMixAnchor - musicalFallbackFade)
+        val targetStart = max(0.0, finalMixAnchor - musicalFallbackFade)
+        val transitionStart = alignedTransitionStart(
+            analysis = analysis,
+            target = targetStart,
+            end = finalMixAnchor - 0.05,
+            preferEarlier = true,
+            minimum = 0.0,
+        )
         val started = playbackTime >= transitionStart
         return TransitionPlan(
             shouldStart = started,
@@ -1730,14 +1738,21 @@ private fun planTransitionInner(
             val fourBars = 16.0 * beatSec
             val eightBars = 32.0 * beatSec
             when {
-                fourBars in 4.0..12.0 -> fourBars
-                eightBars in 4.0..12.0 -> eightBars
-                else -> safeMinFade.coerceIn(4.0, 12.0)
+                eightBars in 5.0..12.0 -> eightBars
+                fourBars in 5.0..12.0 -> fourBars
+                else -> safeMinFade.coerceIn(5.0, 12.0)
             }
         } else {
-            safeMinFade.coerceIn(4.0, 12.0)
+            safeMinFade.coerceIn(5.0, 12.0)
         }
-        val transitionStart = max(0.0, mixAnchor - musicalFade)
+        val targetStart = max(0.0, mixAnchor - musicalFade)
+        val transitionStart = alignedTransitionStart(
+            analysis = analysis,
+            target = targetStart,
+            end = mixAnchor - 0.05,
+            preferEarlier = true,
+            minimum = 0.0,
+        )
         val started = playbackTime >= transitionStart
         return TransitionPlan(
             shouldStart = started,
@@ -1765,14 +1780,21 @@ private fun planTransitionInner(
             val fourBars = 16.0 * beatSec
             val eightBars = 32.0 * beatSec
             when {
-                fourBars in 4.0..12.0 -> fourBars
-                eightBars in 4.0..12.0 -> eightBars
-                else -> safeMinFade.coerceIn(4.0, 12.0)
+                eightBars in 5.0..12.0 -> eightBars
+                fourBars in 5.0..12.0 -> fourBars
+                else -> safeMinFade.coerceIn(5.0, 12.0)
             }
         } else {
-            safeMinFade.coerceIn(4.0, 12.0)
+            safeMinFade.coerceIn(5.0, 12.0)
         }
-        val transitionStart = max(0.0, finalMixAnchor - musicalFade)
+        val targetStart = max(0.0, finalMixAnchor - musicalFade)
+        val transitionStart = alignedTransitionStart(
+            analysis = analysis,
+            target = targetStart,
+            end = finalMixAnchor - 0.05,
+            preferEarlier = true,
+            minimum = 0.0,
+        )
         val incomingCueTime = incomingStartPoint(nextAnalysis)
         val started = playbackTime >= transitionStart
         return TransitionPlan(
@@ -1878,7 +1900,14 @@ private fun planTransitionInner(
         nextLength,
     )
     if (finalPlan.fadeSeconds < safeMinFade && !finalPlan.blocked && finalPlan.transitionStyle != TransitionStyle.GAPLESS) {
-        val adjustedStart = max(0.0, finalPlan.transitionEnd - safeMinFade)
+        val targetStart = max(0.0, finalPlan.transitionEnd - safeMinFade)
+        val adjustedStart = alignedTransitionStart(
+            analysis = analysis,
+            target = targetStart,
+            end = finalPlan.transitionEnd - 0.05,
+            preferEarlier = true,
+            minimum = 0.0,
+        )
         return finalPlan.copy(
             transitionStart = adjustedStart,
             fadeSeconds = finalPlan.transitionEnd - adjustedStart,
@@ -1956,14 +1985,14 @@ private fun mixPlan(
         maxSeconds,
         mixEnd * 0.4,
         if (nextLength > 0) nextLength * 0.4 else maxSeconds,
-    )
+    ).coerceAtLeast(5.0)
     val handoffBeats = if (sameBeatBlend) 8 else 4
     val beatSeconds = if (handoffBpm > 0) 60 / handoffBpm else 0.5
     val handoffSeconds = if (handoffBpm > 0) {
-        clamp((handoffBeats * 60) / handoffBpm, 5.0, if (sameBeatBlend) 6.0 else 5.0)
+        max(5.0, (handoffBeats * 60) / handoffBpm)
     } else {
         5.0
-    }
+    }.coerceAtLeast(5.0)
     val analyzedPickup = nextAnalysis.audibleStartTime ?: nextAnalysis.pickupTime
     val pickupSeconds = if (analyzedPickup != null && analyzedPickup.isFinite() && analyzedPickup >= 0) {
         analyzedPickup
@@ -1988,7 +2017,7 @@ private fun mixPlan(
     val rawIncomingCueTime = incomingStartPoint(nextAnalysis)
 
     val finalIncomingCueTime: Double
-    val transitionStart: Double
+    var transitionStart: Double
 
     if (sameBeatBlend && beatSeconds > 0) {
         val introDropTime = incomingHandoffTime / max(0.8, incomingPlaybackRate)
@@ -2006,7 +2035,7 @@ private fun mixPlan(
         finalIncomingCueTime =
             max(0.0, incomingHandoffTime - (mixEnd - transitionStart) * incomingPlaybackRate)
     } else {
-        val clamped = clamp(overlap, min(handoffSeconds, maximumOverlap), maximumOverlap)
+        val clamped = clamp(overlap, handoffSeconds.coerceAtLeast(5.0), max(handoffSeconds.coerceAtLeast(5.0), maximumOverlap))
         val actualOverlap = if (traits != null) wholeBars(clamped, beatSeconds, maximumOverlap) else clamped
         val targetStart = max(0.0, mixEnd - actualOverlap)
         val earliestTransitionStart = max(0.0, mixEnd - maximumOverlap)
@@ -2023,7 +2052,18 @@ private fun mixPlan(
         finalIncomingCueTime = rawIncomingCueTime
     }
 
-    val alignedOverlap = mixEnd - transitionStart
+    var alignedOverlap = mixEnd - transitionStart
+    if (alignedOverlap < 5.0 && mixEnd >= 5.0) {
+        val targetStart = max(0.0, mixEnd - 5.0)
+        transitionStart = alignedTransitionStart(
+            analysis,
+            targetStart,
+            mixEnd - 0.05,
+            preferEarlier = true,
+            minimum = 0.0,
+        )
+        alignedOverlap = mixEnd - transitionStart
+    }
     val hasBassContent = analysis.lowEnergyCurve.isNotEmpty() || nextAnalysis.lowEnergyCurve.isNotEmpty()
     val measuredVocalOverlap = plannedVocalOverlap(
         analysis = analysis,
@@ -2067,9 +2107,15 @@ private fun mixPlan(
         // The two styles are alternatives, not a scale: a matched pair hands the
         // low end over on a beat and otherwise stays open, while an unmatched
         // pair has no shared grid to hand anything over on and instead pulls the
-        // outgoing track behind a closing low-pass. Left at zero on the blend
-        // branch so the renderer doesn't do both at once.
-        filterSweep = if (sameBeatBlend) 0.0 else FILTER_SWEEP,
+        // outgoing track behind a closing low-pass. When the outgoing track is
+        // singing into an incoming instrumental intro, maintain a closing filter sweep.
+        filterSweep = if (sameBeatBlend) {
+            val outVocal = vocalActivityBetween(analysis, transitionStart, mixEnd) ?: 0.0
+            val inVocal = vocalActivityBetween(nextAnalysis, finalIncomingCueTime, finalIncomingCueTime + alignedOverlap) ?: 0.0
+            if (outVocal >= VOCAL_ACTIVE_THRESHOLD && inVocal < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
+        } else {
+            FILTER_SWEEP
+        },
         filterVariant = if (sameBeatBlend) FilterTransitionVariant.SWEEP else resolvedFilterVariant,
         vocalOverlap = vocalOverlap,
         beatSeconds = gridBeatSeconds,

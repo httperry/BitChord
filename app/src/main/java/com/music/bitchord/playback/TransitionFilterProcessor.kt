@@ -195,13 +195,14 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         lowState.fill(0f)
         highState.fill(0f)
         crossoverState.fill(0f)
+        updateCrossoverCoefficients(CROSSOVER_HZ)
         filterStateDirty = false
     }
 
     val isFiltering: Boolean
         get() = targetLowPassHz < OPEN_HZ || targetHighPassHz > OFF_HZ ||
             currentLowPassHz < OPEN_HZ - SETTLED_HZ || currentHighPassHz > OFF_HZ + SETTLED_HZ ||
-            targetBassCut || currentBassCut || flipInProgress ||
+            targetBassCut || currentBassCut || flipInProgress || flipPendingZeroCross ||
             echoEngaged
 
     /**
@@ -291,7 +292,7 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         val targetHigh = targetHighPassHz
         val parked = targetLow >= OPEN_HZ && targetHigh <= OFF_HZ &&
             currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ &&
-            !targetBassCut && !currentBassCut && !flipInProgress
+            !targetBassCut && !currentBassCut && !flipInProgress && !flipPendingZeroCross
         if (parked) {
             clearStateIfNeeded()
             return
@@ -391,6 +392,7 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         flipInProgress = false
         flipPendingZeroCross = false
         currentBassCut = targetBassCut
+        updateCrossoverCoefficients(CROSSOVER_HZ)
         // Whatever the ring holds is from before the seek; start it clean.
         echoSeenGeneration = echoGeneration - 1
     }
@@ -422,7 +424,7 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         val targetHigh = targetHighPassHz
         val parked = targetLow >= OPEN_HZ && targetHigh <= OFF_HZ &&
             currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ &&
-            !targetBassCut && !currentBassCut && !flipInProgress
+            !targetBassCut && !currentBassCut && !flipInProgress && !flipPendingZeroCross
         if (parked) {
             clearStateIfNeeded()
             outputBuffer.put(inputBuffer)

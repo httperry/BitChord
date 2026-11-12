@@ -358,6 +358,51 @@ fun harmonicCompatibilityScore(outgoing: TrackAnalysis, incoming: TrackAnalysis)
     CamelotHarmonics.confidenceWeightedHarmonicScore(outgoing, incoming)
 
 /**
+ * Evaluates the overall transition viability and harmonic compatibility score between two tracks.
+ * Evaluates [CamelotHarmonics.scoreCompatibility] with confidence weighting, preferring relative,
+ * adjacent, and energy-boost keys (score >= 0.8) and penalizing discordant key clashes.
+ */
+fun scoreTransition(
+    currentKey: String?,
+    nextKey: String?,
+    currentConfidence: Double = 1.0,
+    nextConfidence: Double = 1.0,
+    baseScore: Double = 1.0,
+): Double {
+    val harmonicScore = CamelotHarmonics.scoreCompatibility(currentKey, nextKey)
+    val isClash = CamelotHarmonics.isClash(currentKey, nextKey)
+    val jointConfidence = (currentConfidence.coerceIn(0.0, 1.0) * nextConfidence.coerceIn(0.0, 1.0))
+
+    if (jointConfidence <= 0.0) return baseScore
+
+    val effectiveHarmonic = 0.5 + jointConfidence * (harmonicScore - 0.5)
+
+    // Discordant clash penalty (semitone or tritone clash)
+    val clashPenalty = if (isClash && jointConfidence >= 0.25) -0.35 else 0.0
+
+    // Prefer relative, adjacent, and energy-boost keys (harmonicScore >= 0.8)
+    val harmonicModifier = when {
+        harmonicScore >= 0.8 -> (effectiveHarmonic - 0.5) * 0.35
+        harmonicScore >= 0.65 -> (effectiveHarmonic - 0.5) * 0.2
+        else -> (effectiveHarmonic - 0.5) * 0.25
+    }
+
+    return (baseScore + harmonicModifier + clashPenalty).coerceIn(0.0, 1.0)
+}
+
+fun scoreTransition(
+    currentAnalysis: TrackAnalysis,
+    nextAnalysis: TrackAnalysis,
+    baseScore: Double = 1.0,
+): Double = scoreTransition(
+    currentKey = currentAnalysis.key,
+    nextKey = nextAnalysis.key,
+    currentConfidence = currentAnalysis.keyConfidence,
+    nextConfidence = nextAnalysis.keyConfidence,
+    baseScore = baseScore,
+)
+
+/**
  * Whether the two tracks have trusted keys that produce a dissonant collision
  * (semitone or tritone clash).
  */
@@ -374,11 +419,14 @@ fun penalizeKeyClashes(
     incoming: TrackAnalysis,
 ): Double {
     if (hasKeyClash(outgoing, incoming)) {
-        return (baseScore - 0.25).coerceAtLeast(0.0)
+        return (baseScore - 0.3).coerceAtLeast(0.0)
     }
-    val score = harmonicCompatibilityScore(outgoing, incoming)
-    return if (score >= 0.7) {
-        (baseScore + (score - 0.5) * 0.2).coerceAtMost(1.0)
+    val score = CamelotHarmonics.scoreCompatibility(outgoing.key, incoming.key)
+    val confidence = (outgoing.keyConfidence.coerceIn(0.0, 1.0) * incoming.keyConfidence.coerceIn(0.0, 1.0))
+    return if (score >= 0.8 && confidence >= 0.25) {
+        (baseScore + (score - 0.5) * 0.25).coerceAtMost(1.0)
+    } else if (score >= 0.65 && confidence >= 0.25) {
+        (baseScore + (score - 0.5) * 0.15).coerceAtMost(1.0)
     } else {
         baseScore
     }
@@ -406,8 +454,15 @@ fun rankMixInCandidates(
 
     val keyClash = outgoingAnalysis != null && hasKeyClash(outgoingAnalysis, analysis)
     val harmonicModifier = if (outgoingAnalysis != null) {
-        val harmScore = harmonicCompatibilityScore(outgoingAnalysis, analysis)
-        if (keyClash) -0.15 else (harmScore - 0.5) * 0.2
+        val harmScore = CamelotHarmonics.scoreCompatibility(outgoingAnalysis.key, analysis.key)
+        val jointConfidence = outgoingAnalysis.keyConfidence.coerceIn(0.0, 1.0) * analysis.keyConfidence.coerceIn(0.0, 1.0)
+        if (keyClash) {
+            -0.2
+        } else if (harmScore >= 0.8 && jointConfidence >= 0.25) {
+            (harmScore - 0.5) * 0.25
+        } else {
+            (harmonicCompatibilityScore(outgoingAnalysis, analysis) - 0.5) * 0.2
+        }
     } else {
         0.0
     }
@@ -526,12 +581,17 @@ fun rankMixOutCandidates(
                     candidate.time in (span.start - 0.5)..(span.end + 0.5)
                 } == true
                 if (isActivelySinging) {
+                    rankScore -= 2.5
+                }
+                // Check immediate vocal activity around candidate (instantaneous mask check)
+                val vocalInstant = vocalActivityBetween(analysis, candidate.time - 0.5, candidate.time + 0.5)
+                if (vocalInstant != null && vocalInstant >= VOCAL_ACTIVE_THRESHOLD) {
                     rankScore -= 2.0
                 }
-                // Check vocal activity around candidate; penalize so content_end wins over early cut during active vocals
+                // Check vocal activity around candidate window; penalize so content_end wins over early cut during active vocals
                 val vocalNear = vocalActivityBetween(analysis, candidate.time - 4.0, candidate.time + 2.0)
                 if (vocalNear != null && vocalNear >= VOCAL_ACTIVE_THRESHOLD) {
-                    rankScore -= 0.6
+                    rankScore -= 0.8
                 }
             } else {
                 // For content_end, ensure it remains a valid, smooth musical exit point (never zero overlap)
@@ -550,6 +610,13 @@ fun rankMixOutCandidates(
             // Reject any mix-out candidate whose time is before the last sung lyrics end
             if (lastSung != null && candidate.type != "content_end" && candidate.time < lastSung + 0.5) {
                 return@filter false
+            }
+            // Reject any mix-out candidate that falls directly inside active singing lyrics (never cut out mid-word)
+            if (candidate.type != "content_end") {
+                val midLyric = sungOut?.any { span -> candidate.time in span.start..span.end } == true
+                if (midLyric) return@filter false
+                val vocalAtPoint = vocalActivityBetween(analysis, candidate.time - 0.25, candidate.time + 0.25)
+                if (vocalAtPoint != null && vocalAtPoint >= VOCAL_ACTIVE_THRESHOLD) return@filter false
             }
             if (candidate.type == "content_end") return@filter true
             val maxAllowed = when (candidate.type) {

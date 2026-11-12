@@ -484,6 +484,36 @@ object CamelotHarmonics {
     }
 
     /**
+     * O(1) harmonic compatibility score (0.0 to 1.0) between two keys.
+     * Evaluates compatibility on the Camelot wheel:
+     * - 1.0 for same key (e.g. 8A -> 8A)
+     * - 0.9 for relative key (e.g. 8A -> 8B)
+     * - 0.9 for adjacent key (e.g. 8A -> 7A, 9A)
+     * - 0.8 for energy-boost key (+/- 2 whole step shift, or diagonal adjacent +/- 1)
+     * - 0.2 for discordant key clashes (semitone +/- 1 half-step or tritone 6 semitones)
+     */
+    fun scoreCompatibility(idA: Int, idB: Int): Double {
+        if (idA !in 0 until TOTAL_KEYS || idB !in 0 until TOTAL_KEYS) return 0.5
+        val raw = harmonicScore(idA, idB)
+        if (isClash(idA, idB)) return 0.2
+        val wheelDist = wheelDistance(idA, idB)
+        val isSameMode = (idA < 12) == (idB < 12)
+        if (isSameMode && wheelDist == 2) return 0.8
+        if (!isSameMode && wheelDist == 1) return 0.8
+        return raw
+    }
+
+    fun scoreCompatibility(currentKey: String?, nextKey: String?): Double {
+        val idA = parseKeyId(currentKey)
+        val idB = parseKeyId(nextKey)
+        if (idA == KEY_ID_UNKNOWN || idB == KEY_ID_UNKNOWN) return 0.5
+        return scoreCompatibility(idA, idB)
+    }
+
+    fun scoreCompatibility(currentKey: CamelotKey, nextKey: CamelotKey): Double =
+        scoreCompatibility(currentKey.id, nextKey.id)
+
+    /**
      * Returns true if two keys meet the harmonic compatibility threshold (default 0.65).
      */
     fun isHarmonicallyCompatible(idA: Int, idB: Int, minScore: Double = 0.65): Boolean {

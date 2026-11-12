@@ -47,8 +47,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
@@ -68,6 +70,7 @@ import java.util.Locale
 class TrackAnalyzer(
     private val context: Context,
     private val cache: AudioCache,
+    private val currentPlaybackPositionMs: () -> Long = { -1L },
     private val isPlaybackActive: () -> Boolean = { false },
     private val isTransitioning: () -> Boolean = { false },
 ) {
@@ -262,6 +265,81 @@ class TrackAnalyzer(
         }
     }
 
+    private val decodeExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "bitchord-audio-decoder").apply {
+            isDaemon = true
+            priority = Thread.NORM_PRIORITY
+        }
+    }
+
+    private enum class PacingStage {
+        POST_DSP,
+        BETWEEN_WINDOWS,
+    }
+
+    private fun getPlaybackPositionSeconds(trackStartTimeMs: Long): Double {
+        val reportedMs = runCatching { currentPlaybackPositionMs() }.getOrNull() ?: -1L
+        if (reportedMs >= 0) {
+            return reportedMs / 1000.0
+        }
+        val elapsedMs = SystemClock.elapsedRealtime() - trackStartTimeMs
+        return maxOf(0.0, elapsedMs / 1000.0)
+    }
+
+    private fun getHeadroomSeconds(mixOutSeconds: Double, trackStartTimeMs: Long): Double {
+        val posSec = getPlaybackPositionSeconds(trackStartTimeMs)
+        return maxOf(0.0, mixOutSeconds - posSec)
+    }
+
+    /**
+     * Dynamically paces analysis to reduce SoC thermal heating when headroom is abundant,
+     * while guaranteeing full-throttle priority if the transition deadline is near.
+     */
+    private fun paceForHeadroom(
+        trackId: String,
+        mixOutSeconds: Double,
+        trackStartTimeMs: Long,
+        stage: PacingStage = PacingStage.BETWEEN_WINDOWS,
+    ) {
+        val mode = AppSettings.automixPerformanceMode.value
+        if (mode == AutomixPerformanceMode.PERFORMANCE) return
+
+        val headroom = getHeadroomSeconds(mixOutSeconds, trackStartTimeMs)
+
+        // Hard Deadline Protection:
+        // When headroom < 20.0s: run at full throttle (zero sleep).
+        if (headroom < 20.0) {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
+            TrackLog.d(
+                TAG,
+                "Automix deadline tight (${"%.1f".format(Locale.ROOT, headroom)}s remaining): full-throttle mode engaged",
+                trackId,
+            )
+            return
+        }
+
+        val sleepMs = when (mode) {
+            AutomixPerformanceMode.PERFORMANCE -> 0L
+            AutomixPerformanceMode.BALANCED -> when {
+                headroom > 45.0 -> if (stage == PacingStage.POST_DSP) 300L else 200L
+                else -> if (stage == PacingStage.POST_DSP) 100L else 50L
+            }
+            AutomixPerformanceMode.EFFICIENT -> when {
+                headroom > 45.0 -> if (stage == PacingStage.POST_DSP) 500L else 250L
+                else -> if (stage == PacingStage.POST_DSP) 150L else 100L
+            }
+        }
+
+        if (sleepMs > 0) {
+            TrackLog.d(
+                TAG,
+                "Automix thermal pacing (${mode.name}): headroom=${"%.1f".format(Locale.ROOT, headroom)}s, yielding ${sleepMs}ms",
+                trackId,
+            )
+            safeSleep(sleepMs)
+        }
+    }
+
     private fun safeSleep(ms: Long) {
         val start = SystemClock.elapsedRealtime()
         while (!stopped && SystemClock.elapsedRealtime() - start < ms) {
@@ -434,9 +512,9 @@ class TrackAnalyzer(
         // The strike count belongs to the attempt that was given up on, not to
         // the track for the rest of the session; a reopened track starts level.
         if (recorded != null && !recorded.isUsable) shortDecodes.remove(trackId)
-        val shouldAnalyzeWhole = isCurrentTrack && usableComplete
-        val headRendition = if (shouldAnalyzeWhole) null else (headWorthTrying(trackId, analysisUri, durationSeconds) ?: complete.firstOrNull())
-        if (!shouldAnalyzeWhole && headRendition == null) {
+        val isProvisionalEscalation = trackId in provisional
+        val headRendition = if (local || isProvisionalEscalation) null else (headWorthTrying(trackId, analysisUri, durationSeconds) ?: complete.firstOrNull())
+        if (!isProvisionalEscalation && !local && headRendition == null) {
             // Nothing on disk worth decoding, so ask for something.
             cache.requestAnalysisHead(analysisUri, force = isCurrentTrack)
             return
@@ -468,50 +546,15 @@ class TrackAnalyzer(
                 // task behind that one turns into this return, which drains the
                 // backlog without needing to reach into the executor's queue.
                 if (stopped) return@execute
-                if (shouldAnalyzeWhole) {
-                    val wholeStart = SystemClock.elapsedRealtime()
-                    TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
-                    val outcome = analyze(trackId, analysisUri, durationSeconds)
-                    val whole = outcome.analysis
-                    if (whole != null) {
-                        val wholeTook = SystemClock.elapsedRealtime() - wholeStart
-                        TrackLog.d(
-                            TAG,
-                            "Automix finished whole-track pass for $trackId in ${wholeTook}ms: bpm=${whole.bpm.roundToInt()} " +
-                                "conf=${"%.2f".format(Locale.ROOT, whole.beatConfidence)} " +
-                                "mixOut=${"%.1f".format(Locale.ROOT, whole.contentEndTime)}s",
-                            trackId,
-                        )
-                        results[trackId] = whole
-                        provisional.remove(trackId)
-                        shortDecodes.remove(trackId)
-                        // Only the whole-track pass is persisted. A head result
-                        // is missing everything past its window — the outro, the
-                        // mix-out anchor, the energy curve — and storing one
-                        // would freeze a deliberately partial answer in place of
-                        // the complete one that supersedes it minutes later.
-                        store.save(trackId, whole)
-                        restoreAttempted.add(trackId)
-                    } else if (outcome.decodedShort &&
-                        shortDecodes.merge(trackId, 1, Int::plus)!! >= MAX_SHORT_DECODE_ATTEMPTS
-                    ) {
-                        // Bounded, so a container that is genuinely truncated
-                        // isn't re-decoded on every tick for the rest of the
-                        // session. Any provisional head result already published
-                        // stays: a partial analysis beats an empty one.
-                        Log.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes")
-                        if (trackId !in provisional && results[trackId]?.isUsable != true) {
-                            results[trackId] = TrackAnalysis(
-                                status = TrackAnalysis.STATUS_READY,
-                                trackId = trackId,
-                                duration = durationSeconds,
-                            )
-                        }
+                if (trackId in provisional) {
+                    if (isCurrentTrack && usableComplete) {
+                        runWholeTrackPass(trackId, analysisUri, durationSeconds)
                     }
                 } else {
                     val headStart = SystemClock.elapsedRealtime()
                     TrackLog.d(TAG, "Automix head pass started for $trackId", trackId)
-                    analyzeHead(trackId, analysisUri, durationSeconds, headRendition!!)?.let { head ->
+                    val head = analyzeHead(trackId, analysisUri, durationSeconds, headRendition)
+                    if (head != null) {
                         val headTook = SystemClock.elapsedRealtime() - headStart
                         TrackLog.d(
                             TAG,
@@ -520,6 +563,16 @@ class TrackAnalyzer(
                         )
                         provisional.add(trackId)
                         results[trackId] = head
+
+                        // Escalation: Once the provisional head pass is published, if isCurrentTrack && usableComplete,
+                        // schedule the full whole-track pass to refine outro downbeats, vocal mask, and mix-out anchor.
+                        if (isCurrentTrack && usableComplete && !stopped) {
+                            TrackLog.d(TAG, "Automix escalating $trackId to whole-track pass following head pass", trackId)
+                            runWholeTrackPass(trackId, analysisUri, durationSeconds)
+                        }
+                    } else if (isCurrentTrack && usableComplete && !stopped) {
+                        TrackLog.d(TAG, "Automix head pass failed for $trackId; escalating to whole-track pass", trackId)
+                        runWholeTrackPass(trackId, analysisUri, durationSeconds)
                     }
                 }
             } catch (error: Throwable) {
@@ -549,6 +602,52 @@ class TrackAnalyzer(
                 // Retain warm sessions in memory across tracks while Automix is active,
                 // eliminating multi-second graph reparsing and NPU driver recompilation spikes.
                 // Complete teardown occurs when release() is invoked on shutdown.
+            }
+        }
+    }
+
+    private fun runWholeTrackPass(
+        trackId: String,
+        analysisUri: Uri,
+        durationSeconds: Double,
+    ) {
+        val wholeStart = SystemClock.elapsedRealtime()
+        TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
+        val outcome = analyze(trackId, analysisUri, durationSeconds, wholeStart)
+        val whole = outcome.analysis
+        if (whole != null) {
+            val wholeTook = SystemClock.elapsedRealtime() - wholeStart
+            TrackLog.d(
+                TAG,
+                "Automix finished whole-track pass for $trackId in ${wholeTook}ms: bpm=${whole.bpm.roundToInt()} " +
+                    "conf=${"%.2f".format(Locale.ROOT, whole.beatConfidence)} " +
+                    "mixOut=${"%.1f".format(Locale.ROOT, whole.contentEndTime)}s",
+                trackId,
+            )
+            results[trackId] = whole
+            provisional.remove(trackId)
+            shortDecodes.remove(trackId)
+            // Only the whole-track pass is persisted. A head result
+            // is missing everything past its window — the outro, the
+            // mix-out anchor, the energy curve — and storing one
+            // would freeze a deliberately partial answer in place of
+            // the complete one that supersedes it minutes later.
+            store.save(trackId, whole)
+            restoreAttempted.add(trackId)
+        } else if (outcome.decodedShort &&
+            shortDecodes.merge(trackId, 1, Int::plus)!! >= MAX_SHORT_DECODE_ATTEMPTS
+        ) {
+            // Bounded, so a container that is genuinely truncated
+            // isn't re-decoded on every tick for the rest of the
+            // session. Any provisional head result already published
+            // stays: a partial analysis beats an empty one.
+            Log.w(TAG, "Giving up on $trackId after $MAX_SHORT_DECODE_ATTEMPTS short decodes")
+            if (trackId !in provisional && results[trackId]?.isUsable != true) {
+                results[trackId] = TrackAnalysis(
+                    status = TrackAnalysis.STATUS_READY,
+                    trackId = trackId,
+                    duration = durationSeconds,
+                )
             }
         }
     }
@@ -692,9 +791,11 @@ class TrackAnalyzer(
         trackId: String,
         uri: Uri,
         durationSeconds: Double,
-        rendition: AudioCache.Rendition,
+        rendition: AudioCache.Rendition?,
     ): TrackAnalysis? {
-        fun openSource(): MediaDataSource? = cache.renditionDataSource(uri, rendition)
+        fun openSource(): MediaDataSource? =
+            rendition?.let { cache.renditionDataSource(uri, it) }
+                ?: if (LocalAudioSource.isLocal(uri)) LocalAudioSource.open(resolver, uri) else null
 
         // Same guard the whole-track pass applies, for the same reason: a
         // sibling rendition can be a different cut, and a beat grid borrowed
@@ -703,7 +804,7 @@ class TrackAnalyzer(
         // will not parse yet is not held against the rendition — more bytes may
         // well fix it — but a length that genuinely disagrees is.
         val expected = durationSeconds.takeIf { it.isFinite() && it > 0 }
-        if (expected != null && rendition.key != cache.cacheKeyOf(uri)) {
+        if (expected != null && rendition != null && rendition.key != cache.cacheKeyOf(uri)) {
             val length = openSource()?.use(AudioDecoder::containerDurationSeconds)
             if (length == null || length <= 0) {
                 // Logged rather than returned quietly. This is the likeliest way
@@ -733,7 +834,7 @@ class TrackAnalyzer(
                 // publishes only a non-null result — so the track is simply
                 // left unmeasured, which is what it is.
                 if (stopped) return null
-                Log.d(TAG, "Head pass for $trackId could not decode rendition ${rendition.key}")
+                Log.d(TAG, "Head pass for $trackId could not decode ${rendition?.key ?: uri}")
                 return null
             }
         // What was decoded, not what was asked for: the source stops where the
@@ -1099,7 +1200,12 @@ class TrackAnalyzer(
      * produces a confident-looking analysis that is wrong by minutes rather than
      * merely absent, and the only one that counts as a strike.
      */
-    private fun analyze(trackId: String, uri: Uri, durationSeconds: Double): WholeTrack {
+    private fun analyze(
+        trackId: String,
+        uri: Uri,
+        durationSeconds: Double,
+        wholeStart: Long = SystemClock.elapsedRealtime(),
+    ): WholeTrack {
         val copy = copyToRead(trackId, uri, durationSeconds) ?: return WholeTrack(null)
         // Recorded before the outcome is known, because what this gates is
         // whether a *written-off* track is worth reopening, and the answer is
@@ -1144,12 +1250,12 @@ class TrackAnalyzer(
         if (stopped) return WholeTrack(null)
         if (structural.decodedShort) return WholeTrack(null, decodedShort = true)
         val features = structural.features ?: return WholeTrack(empty(trackId, effectiveDuration))
+        val mixOut = if (features.contentEndTime > 0) features.contentEndTime else effectiveDuration
 
         // Yield after the heavy whole-track DSP pass so CPU frequencies can settle
         waitForPlaybackHeadroom()
-        if (AppSettings.automixPerformanceMode.value != AutomixPerformanceMode.PERFORMANCE) {
-            safeSleep(150L)
-        }
+        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.POST_DSP)
+        if (stopped) return WholeTrack(null)
 
         // Pass 2 (Phases 2 and 3, models): the Beat This! grid and the open-unmix vocal mask, over
         // the opening and the ending only. A transition only ever reads the tail of the outgoing
@@ -1163,18 +1269,105 @@ class TrackAnalyzer(
         val headEnd = minOf(effectiveDuration, HEAD_MODEL_WINDOWS * span - (HEAD_MODEL_WINDOWS - 1) * WINDOW_OVERLAP_SECONDS)
         val tailStart = max(0.0, effectiveDuration - (TAIL_MODEL_WINDOWS * span - (TAIL_MODEL_WINDOWS - 1) * WINDOW_OVERLAP_SECONDS))
         val regions = ArrayList<Region>()
-        for ((from, to) in modelWindows(headEnd, tailStart, effectiveDuration, span)) {
-            // Checked between windows: an abort leaves a window missing, which
-            // is indistinguishable from one the models found nothing in — and
-            // that would be published, and persisted, with the DSP estimate
-            // standing in. A result assembled out of a half-finished analysis
-            // is worse than none.
+
+        if (tailStart <= headEnd) {
+            // Short track: single span covering entire track
+            val spanWindows = windowsForSpan(0.0, effectiveDuration, span)
+            val decoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, effectiveDuration) { stopped } }
+            if (decoded != null) {
+                val (stereo, actualStart) = decoded
+                for ((from, to) in spanWindows) {
+                    if (stopped) return WholeTrack(null)
+                    waitForPlaybackHeadroom()
+                    val winStart = SystemClock.elapsedRealtime()
+                    val sliced = sliceStereoPcm(stereo, actualStart, from, to)
+                    val reg = sliced?.let { (sStereo, sStart) -> analyzeStereoRegion(sStereo, sStart, features) }
+                    if (reg != null) {
+                        regions.add(reg)
+                        val winTook = SystemClock.elapsedRealtime() - winStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                            trackId,
+                        )
+                        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.BETWEEN_WINDOWS)
+                    }
+                }
+            }
+        } else {
+            // Standard track: 2-span chunked decode with asynchronous pipeline overlap
+            val tailWindows = windowsForSpan(tailStart, effectiveDuration, span)
+            val headWindows = windowsForSpan(0.0, headEnd, span)
+
+            // Step 1: Decode Tail Span on current thread
+            val tailDecoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, tailStart, effectiveDuration) { stopped } }
             if (stopped) return WholeTrack(null)
-            waitForPlaybackHeadroom()
-            region(openSource, from, to, features)?.let(regions::add)
-            // Cooperative yield between ONNX model windows
-            if (AppSettings.automixPerformanceMode.value != AutomixPerformanceMode.PERFORMANCE) {
-                safeSleep(50L)
+
+            // Step 2: Asynchronously kick off Head Span decode while GPU executes Tail windows
+            val headFuture = CompletableFuture.supplyAsync({
+                if (stopped) null
+                else {
+                    Process.setThreadPriority(
+                        if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.EFFICIENT) {
+                            Process.THREAD_PRIORITY_BACKGROUND
+                        } else {
+                            Process.THREAD_PRIORITY_DEFAULT
+                        },
+                    )
+                    openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+                }
+            }, decodeExecutor)
+
+            // Step 3: Run Tail windows on GPU from the decoded Tail buffer
+            if (tailDecoded != null) {
+                val (tailStereo, tailActualStart) = tailDecoded
+                for ((from, to) in tailWindows) {
+                    if (stopped) {
+                        headFuture.cancel(true)
+                        return WholeTrack(null)
+                    }
+                    waitForPlaybackHeadroom()
+                    val winStart = SystemClock.elapsedRealtime()
+                    val sliced = sliceStereoPcm(tailStereo, tailActualStart, from, to)
+                    val reg = sliced?.let { (sStereo, sStart) -> analyzeStereoRegion(sStereo, sStart, features) }
+                    if (reg != null) {
+                        regions.add(reg)
+                        val winTook = SystemClock.elapsedRealtime() - winStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                            trackId,
+                        )
+                        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.BETWEEN_WINDOWS)
+                    }
+                }
+            }
+
+            // Step 4: Retrieve pre-decoded Head Span (typically completed while GPU was running)
+            val headDecoded = runCatching { headFuture.get(15, TimeUnit.SECONDS) }.getOrNull()
+                ?: openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+            if (stopped) return WholeTrack(null)
+
+            // Step 5: Run Head windows on GPU from the decoded Head buffer
+            if (headDecoded != null) {
+                val (headStereo, headActualStart) = headDecoded
+                for ((from, to) in headWindows) {
+                    if (stopped) return WholeTrack(null)
+                    waitForPlaybackHeadroom()
+                    val winStart = SystemClock.elapsedRealtime()
+                    val sliced = sliceStereoPcm(headStereo, headActualStart, from, to)
+                    val reg = sliced?.let { (sStereo, sStart) -> analyzeStereoRegion(sStereo, sStart, features) }
+                    if (reg != null) {
+                        regions.add(reg)
+                        val winTook = SystemClock.elapsedRealtime() - winStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix window [${"%.1f".format(Locale.ROOT, from)}s, ${"%.1f".format(Locale.ROOT, to)}s] for $trackId took ${winTook}ms",
+                            trackId,
+                        )
+                        paceForHeadroom(trackId, mixOut, wholeStart, PacingStage.BETWEEN_WINDOWS)
+                    }
+                }
             }
         }
         if (stopped) return WholeTrack(null)
@@ -1280,30 +1473,30 @@ class TrackAnalyzer(
      * neighbour by [WINDOW_OVERLAP_SECONDS] so the beat at a seam is seen from
      * both sides. A short track, where the two spans meet, is covered once.
      */
+    private fun windowsForSpan(from: Double, to: Double, span: Double): List<Pair<Double, Double>> {
+        val length = to - from
+        if (length < 1.0) return emptyList()
+        if (length <= span) return listOf(from to to)
+        // As few windows as cover the span with at least the overlap between
+        // neighbours, spread evenly from its start to its end.
+        val count = ceil((length - WINDOW_OVERLAP_SECONDS) / (span - WINDOW_OVERLAP_SECONDS) - 1e-6).toInt()
+        val stride = (length - span) / (count - 1)
+        val windows = ArrayList<Pair<Double, Double>>(count)
+        for (index in 0 until count) {
+            val start = from + index * stride
+            windows += start to minOf(to, start + span)
+        }
+        return windows
+    }
+
     private fun modelWindows(headEnd: Double, tailStart: Double, duration: Double, span: Double): List<Pair<Double, Double>> {
         val spans = if (tailStart <= headEnd) {
             listOf(0.0 to duration)
         } else {
-            listOf(0.0 to headEnd, tailStart to duration)
+            // Process the tail span first so the outgoing track's mix-out grid is ready immediately
+            listOf(tailStart to duration, 0.0 to headEnd)
         }
-        val windows = ArrayList<Pair<Double, Double>>()
-        for ((from, to) in spans) {
-            val length = to - from
-            if (length < 1.0) continue
-            if (length <= span) {
-                windows += from to to
-                continue
-            }
-            // As few windows as cover the span with at least the overlap between
-            // neighbours, spread evenly from its start to its end.
-            val count = ceil((length - WINDOW_OVERLAP_SECONDS) / (span - WINDOW_OVERLAP_SECONDS) - 1e-6).toInt()
-            val stride = (length - span) / (count - 1)
-            for (index in 0 until count) {
-                val start = from + index * stride
-                windows += start to minOf(to, start + span)
-            }
-        }
-        return windows
+        return spans.flatMap { (from, to) -> windowsForSpan(from, to, span) }
     }
 
     /** One beat list across the windows: at each overlap, the earlier window's beats before its midpoint, the later's after. */
@@ -1369,40 +1562,41 @@ class TrackAnalyzer(
      * The extractor seeks to a sync sample at or before what was asked for, so the region's real
      * start (not [startSeconds]) is what its beat times must be stated against.
      */
-    private fun region(
-        openSource: () -> MediaDataSource?,
-        startSeconds: Double,
-        endSeconds: Double,
+    private fun sliceStereoPcm(
+        spanStereo: AudioDecoder.StereoPcm,
+        spanActualStart: Double,
+        from: Double,
+        to: Double,
+    ): Pair<AudioDecoder.StereoPcm, Double>? {
+        val sampleRate = spanStereo.sampleRate
+        if (sampleRate <= 0.0 || spanStereo.left.isEmpty()) return null
+        val offsetSeconds = max(0.0, from - spanActualStart)
+        val startIndex = (offsetSeconds * sampleRate).toInt().coerceIn(0, spanStereo.left.size)
+        val endOffsetSeconds = max(offsetSeconds, to - spanActualStart)
+        val endIndex = (endOffsetSeconds * sampleRate).toInt().coerceIn(startIndex, spanStereo.left.size)
+        if (endIndex - startIndex < sampleRate) return null
+        val actualStart = spanActualStart + (startIndex.toDouble() / sampleRate)
+        val sliced = AudioDecoder.StereoPcm(
+            left = spanStereo.left.copyOfRange(startIndex, endIndex),
+            right = spanStereo.right.copyOfRange(startIndex, endIndex),
+            sampleRate = sampleRate,
+        )
+        return sliced to actualStart
+    }
+
+    private fun analyzeStereoRegion(
+        stereo: AudioDecoder.StereoPcm,
+        actualStart: Double,
         features: TrackFeatures.Features?,
         deriveFeatures: Boolean = false,
     ): Region? {
-        val decoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, startSeconds, endSeconds) { stopped } }
-            ?: run {
-                // The two ways this comes back empty mean opposite things and
-                // were reported identically, which cost a round of guessing:
-                // this one is the extractor refusing the container outright, so
-                // the bytes are wrong or not enough of them are there to parse.
-                Log.d(TAG, "Region [$startSeconds, $endSeconds) would not open")
-                return null
-            }
-        val (stereo, actualStart) = decoded
         if (stereo.left.size < stereo.sampleRate) {
-            // And this one is a container that parsed fine and yielded under a
-            // second of audio — a decode that started and ran out, not one that
-            // never started.
-            Log.d(TAG, "Region [$startSeconds, $endSeconds) decoded ${stereo.left.size} frames; too few")
+            Log.d(TAG, "Region decoded ${stereo.left.size} frames; too few")
             return null
         }
 
         val seconds = stereo.left.size / stereo.sampleRate
-        // In a frame of its own so the full-rate mono downmix is released before either model runs.
-        // It is 23 MB for this window at 48 kHz — the same size as each of the two channels it
-        // averages — and it is read exactly twice, to make the resampled model input and the DSP
-        // one. As a local it would nonetheless stay reachable through `tracker.track` and
-        // `vocalMask` below, which is where the analysis allocates most heavily and where the
-        // process was dying. Same reasoning [derived] already had, one level further out.
         val inputs = regionInputs(stereo, seconds, deriveFeatures)
-
         val vocalValues = vocalValues(stereo)
         return Region(
             grid = inputs.forModel?.let { tracker.track(it, offsetSeconds = actualStart) },
@@ -1413,6 +1607,22 @@ class TrackAnalyzer(
             vocalWindow = vocalValues?.let { CurveWindow(actualStart, VocalSpectrogram.frameRate, it) },
             levelWindow = levelCurve(stereo, actualStart),
         )
+    }
+
+    private fun region(
+        openSource: () -> MediaDataSource?,
+        startSeconds: Double,
+        endSeconds: Double,
+        features: TrackFeatures.Features?,
+        deriveFeatures: Boolean = false,
+    ): Region? {
+        val decoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, startSeconds, endSeconds) { stopped } }
+            ?: run {
+                Log.d(TAG, "Region [$startSeconds, $endSeconds) would not open")
+                return null
+            }
+        val (stereo, actualStart) = decoded
+        return analyzeStereoRegion(stereo, actualStart, features, deriveFeatures)
     }
 
     /**
@@ -1635,6 +1845,7 @@ class TrackAnalyzer(
 
     fun release() {
         executor.shutdownNow()
+        decodeExecutor.shutdownNow()
         sourceResolutionScope.cancel()
         sourceAnalysisUris.clear()
         sourceResolutions.clear()

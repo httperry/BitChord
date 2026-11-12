@@ -656,6 +656,7 @@ class PlaybackService : MediaLibraryService() {
         com.music.bitchord.playback.smart.TrackAnalyzer(
             context = this,
             cache = AudioCache,
+            currentPlaybackPositionMs = { player?.currentPosition ?: -1L },
             isPlaybackActive = { player?.isPlaying == true },
             isTransitioning = { crossfade?.isTransitioning() == true },
         )
@@ -2019,7 +2020,9 @@ class PlaybackService : MediaLibraryService() {
                 loudnessB.setBlendTrim(trim)
             },
             onSettled = {
-                setupLoudness(player?.currentMediaItem?.mediaId)
+                val currentMediaId = player?.currentMediaItem?.mediaId
+                setupLoudness(currentMediaId)
+                scheduleLoudnessRetry(currentMediaId)
                 if (boundedEditState.hasPendingEdits) {
                     scope.launch {
                         applyDeferredBoundedQueueEdit()

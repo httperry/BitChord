@@ -642,6 +642,9 @@ class CrossfadeController(
      */
     fun isTransitioning(): Boolean = phase != Phase.IDLE
 
+    /** Active player's live playback position in milliseconds. */
+    fun currentPlaybackPositionMs(): Long = runCatching { active().currentPosition }.getOrNull() ?: -1L
+
     /** Applies the listener's speed without exposing AudioTrack's parameter-change click. */
     fun applyPlaybackSpeed(speed: Float) {
         if (isTransitioning()) return
@@ -2941,9 +2944,13 @@ class CrossfadeController(
             if (target == null) return "none"
             val analysis = analysisFor(target)
             val state = stateOf(target, analysis)
-            if (state == TrackAnalysisState.ANALYSING) return "analysing…"
+            if (state == TrackAnalysisState.ANALYSING || analysisRunningFor(target)) return "analysing…"
             if (state == TrackAnalysisState.WAITING) return "waiting"
-            if (state == TrackAnalysisState.FAILED || !analysis.isUsable) return "failed"
+            if (state == TrackAnalysisState.REFINING) return "analysing…"
+            if (state == TrackAnalysisState.FAILED) return "failed"
+            if (!analysis.isUsable) {
+                return if (analysisRunningFor(target)) "analysing…" else "waiting"
+            }
             val side = if (outgoing) analysis.tailBeats else analysis.headBeats
             val bpm = side?.bpm ?: analysis.bpm
             val confidence = side?.confidence ?: analysis.beatConfidence

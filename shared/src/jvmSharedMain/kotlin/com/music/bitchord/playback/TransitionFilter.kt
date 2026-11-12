@@ -112,17 +112,42 @@ class TransitionFilter {
 
     val isBassCut: Boolean get() = targetBassCut || currentBassCut || flipInProgress
 
-    /** Parks both sections and disengages bass cut. */
+    /** Parks both sections and disengages bass cut cleanly in pure pass-through. */
     fun open() {
-        setCutoffs(OPEN_HZ, OFF_HZ)
-        setBassCut(false, instant = false)
+        snapOpen()
+    }
+
+    /**
+     * Immediately parks both filters in pure pass-through without residual crossover attenuation.
+     * Clears all integrator states and resets target and current cutoffs.
+     */
+    fun snapOpen() {
+        targetLowPassHz = OPEN_HZ
+        targetHighPassHz = OFF_HZ
+        currentLowPassHz = OPEN_HZ
+        currentHighPassHz = OFF_HZ
+        targetBassCut = false
+        currentBassCut = false
+        flipInProgress = false
+        flipPendingZeroCross = false
+        zeroCrossSearchFramesLeft = 0
+        prevSample = 0f
+        flipSampleIndex = 0
+        flipFromBassCut = false
+        flipToBassCut = false
+        lowState.fill(0f)
+        highState.fill(0f)
+        crossoverState.fill(0f)
+        updateCrossoverCoefficients(CROSSOVER_HZ)
+        lowOn = false
+        highOn = false
     }
 
     /** Parked at both ends, settled, and no bass cut active. */
     val parked: Boolean
         get() = targetLowPassHz >= OPEN_HZ && targetHighPassHz <= OFF_HZ &&
             currentLowPassHz >= OPEN_HZ - SETTLED_HZ && currentHighPassHz <= OFF_HZ + SETTLED_HZ &&
-            !targetBassCut && !currentBassCut && !flipInProgress
+            !targetBassCut && !currentBassCut && !flipInProgress && !flipPendingZeroCross
 
     /** Moves the cutoffs one sub-block closer to their targets and recomputes coefficients. */
     fun advance() {
@@ -154,18 +179,17 @@ class TransitionFilter {
 
         if (flipInProgress) {
             val gain = windowGains[flipSampleIndex]
-            val hp = crossoverHighPass(channel, value)
-            value = if (flipFromBassCut) {
-                // Cut -> Uncut: smoothly restore low-end
-                (1f - gain) * hp + gain * value
+            val cutoff = if (flipFromBassCut) {
+                CROSSOVER_HZ + gain * (MIN_HZ - CROSSOVER_HZ)
             } else {
-                // Uncut -> Cut: smoothly cut low-end
-                (1f - gain) * value + gain * hp
+                MIN_HZ + gain * (CROSSOVER_HZ - MIN_HZ)
             }
-        } else if (currentBassCut) {
+            updateCrossoverCoefficients(cutoff)
             value = crossoverHighPass(channel, value)
-        } else if (highOn) {
-            value = highPass(channel, value)
+            if (highOn) value = highPass(channel, value)
+        } else {
+            if (currentBassCut) value = crossoverHighPass(channel, value)
+            if (highOn) value = highPass(channel, value)
         }
 
         if (channel == channelCount - 1 && flipInProgress) {
@@ -176,6 +200,7 @@ class TransitionFilter {
                 if (!currentBassCut) {
                     crossoverState.fill(0f)
                 }
+                updateCrossoverCoefficients(CROSSOVER_HZ)
             }
         }
         return value
@@ -184,7 +209,7 @@ class TransitionFilter {
     /** Block processing with zero allocation for batch audio blocks. */
     fun process(samples: FloatArray, frameCount: Int, channelCount: Int) {
         if (frameCount == 0 || channelCount < 1 || sampleRate <= 0) return
-        if (parked && !targetBassCut && !currentBassCut && !flipInProgress) return
+        if (parked && !targetBassCut && !currentBassCut && !flipInProgress && !flipPendingZeroCross) return
 
         var remaining = frameCount
         var frameOffset = 0
@@ -210,15 +235,17 @@ class TransitionFilter {
 
                 if (flipInProgress) {
                     val gain = windowGains[flipSampleIndex]
+                    val cutoff = if (flipFromBassCut) {
+                        CROSSOVER_HZ + gain * (MIN_HZ - CROSSOVER_HZ)
+                    } else {
+                        MIN_HZ + gain * (CROSSOVER_HZ - MIN_HZ)
+                    }
+                    updateCrossoverCoefficients(cutoff)
                     for (c in 0 until channelCount) {
                         var sample = samples[baseIdx + c]
                         if (lowOn) sample = lowPass(c, sample)
-                        val hp = crossoverHighPass(c, sample)
-                        sample = if (flipFromBassCut) {
-                            (1f - gain) * hp + gain * sample
-                        } else {
-                            (1f - gain) * sample + gain * hp
-                        }
+                        sample = crossoverHighPass(c, sample)
+                        if (highOn) sample = highPass(c, sample)
                         samples[baseIdx + c] = sample
                     }
                     flipSampleIndex++
@@ -228,18 +255,13 @@ class TransitionFilter {
                         if (!currentBassCut) {
                             crossoverState.fill(0f)
                         }
+                        updateCrossoverCoefficients(CROSSOVER_HZ)
                     }
-                } else if (currentBassCut) {
+                } else {
                     for (c in 0 until channelCount) {
                         var sample = samples[baseIdx + c]
                         if (lowOn) sample = lowPass(c, sample)
-                        sample = crossoverHighPass(c, sample)
-                        samples[baseIdx + c] = sample
-                    }
-                } else if (lowOn || highOn) {
-                    for (c in 0 until channelCount) {
-                        var sample = samples[baseIdx + c]
-                        if (lowOn) sample = lowPass(c, sample)
+                        if (currentBassCut) sample = crossoverHighPass(c, sample)
                         if (highOn) sample = highPass(c, sample)
                         samples[baseIdx + c] = sample
                     }
@@ -260,6 +282,7 @@ class TransitionFilter {
         flipInProgress = false
         flipPendingZeroCross = false
         currentBassCut = targetBassCut
+        updateCrossoverCoefficients(CROSSOVER_HZ)
     }
 
     fun reset() {
@@ -286,9 +309,9 @@ class TransitionFilter {
     private fun usableCutoff(hz: Float): Float =
         hz.coerceIn(MIN_HZ, sampleRate * MAX_CUTOFF_FRACTION)
 
-    private fun updateCrossoverCoefficients() {
+    private fun updateCrossoverCoefficients(hz: Float = CROSSOVER_HZ) {
         if (sampleRate <= 0) return
-        val g = tan(Math.PI * usableCutoff(CROSSOVER_HZ) / sampleRate).toFloat()
+        val g = tan(Math.PI * usableCutoff(hz) / sampleRate).toFloat()
         for (stage in 0 until STAGES) {
             val k = 1f / BUTTERWORTH_Q[stage]
             val a1 = 1f / (1f + g * (g + k))
@@ -391,8 +414,8 @@ class TransitionFilter {
         /** Two cascaded second-order sections: 24 dB/octave, the usual DJ-filter slope. */
         private const val STAGES = 2
 
-        /** Section Qs for a maximally flat (Butterworth) fourth-order response. */
-        private val BUTTERWORTH_Q = floatArrayOf(0.54120f, 1.30656f)
+        /** Section Qs for Linkwitz-Riley 4th-order critically damped response (two cascaded Butterworth 2nd-order stages). */
+        private val BUTTERWORTH_Q = floatArrayOf(0.70710678f, 0.70710678f)
 
         /** Per-sub-block glide fraction. */
         private const val GLIDE_RATE = 0.05f

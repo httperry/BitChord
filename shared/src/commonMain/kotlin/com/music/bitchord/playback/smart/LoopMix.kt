@@ -324,12 +324,23 @@ object LoopMix {
                 val mid = (low + high) ushr 1
                 if (downs[mid] < from) low = mid + 1 else high = mid - 1
             }
-            for (i in low until downs.size) {
+            val stepDowns = if (bars >= 4) 4 else 1
+            val startIdx = if (stepDowns > 1) ((low + stepDowns - 1) / stepDowns) * stepDowns else low
+            for (i in startIdx until downs.size step stepDowns) {
                 val start = downs[i]
                 val target = start + bars * 4 * beat
                 val end = nearest(downs, target)
                 if (abs(end - target) > beat / 4 || end > to) continue
                 loops += Loop(start, end)
+            }
+            if (loops.isEmpty() && stepDowns > 1) {
+                for (i in low until downs.size) {
+                    val start = downs[i]
+                    val target = start + bars * 4 * beat
+                    val end = nearest(downs, target)
+                    if (abs(end - target) > beat / 4 || end > to) continue
+                    loops += Loop(start, end)
+                }
             }
             if (loops.isNotEmpty()) return loops
         }
@@ -571,9 +582,8 @@ object LoopMix {
         val side = out.tailBeats
         if (side != null && side.bpm > 0 && side.downbeats.size >= 5) {
             val downs = side.downbeats
-            var best = -1.0
-            var bestDist = Double.POSITIVE_INFINITY
-            for (i in downs.indices step 4) {
+            // Prefer 8-bar phrase downbeats (32 beats)
+            for (i in downs.indices step 8) {
                 val d = downs[i]
                 if (d < outFirst || d > outEnd || d < minSafeTime) continue
                 val dist = abs(d - target)
@@ -584,7 +594,9 @@ object LoopMix {
             }
             if (best >= 0.0) return best
 
-            for (d in downs) {
+            // Fallback to 4-bar phrase downbeats (16 beats)
+            for (i in downs.indices step 4) {
+                val d = downs[i]
                 if (d < outFirst || d > outEnd || d < minSafeTime) continue
                 val dist = abs(d - target)
                 if (dist < bestDist) {
