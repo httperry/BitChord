@@ -32,6 +32,7 @@ import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
+import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.model.SearchFilter
@@ -51,6 +52,7 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.roundToInt
 import java.util.Locale
 
 /**
