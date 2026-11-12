@@ -86,7 +86,15 @@ class TrackAnalyzer(
         // The shared trackers report model failures and their timings through
         // this; with no sink they went nowhere on the phone, which is how a
         // beat model that found nothing went unnoticed.
-        AnalysisLog.install { message, error -> Log.w(TAG, message, error) }
+        AnalysisLog.install { message, error ->
+            if (error != null) {
+                Log.w(TAG, message, error)
+                TrackLog.w(TAG, message, error)
+            } else {
+                Log.d(TAG, message)
+                TrackLog.d(TAG, message)
+            }
+        }
     }
 
     /**
@@ -152,7 +160,7 @@ class TrackAnalyzer(
     private val overheated: Boolean
         get() {
             thermalWatch
-            return thermalStatus >= PowerManager.THERMAL_STATUS_MODERATE
+            return thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
         }
 
     /**
@@ -324,7 +332,7 @@ class TrackAnalyzer(
      * to wait for and nothing to escalate through. See [LocalAudioSource] for
      * why that needed saying at all.
      */
-    fun request(trackId: String, uri: Uri, durationSeconds: Double) {
+    fun request(trackId: String, uri: Uri, durationSeconds: Double, isCurrentTrack: Boolean = true) {
         if (trackId.isBlank()) return
         if (!AppSettings.smartFadeEnabled.value) {
             restoreOnce(trackId)
@@ -338,6 +346,7 @@ class TrackAnalyzer(
         // A track measured in an earlier session costs nothing to restore, so
         // only the work below waits for the phone to cool.
         if (overheated) {
+            TrackLog.w(TAG, "Analysis skipped for $trackId: thermal status $thermalStatus >= SEVERE (waiting for device to cool)", trackId)
             restoreOnce(trackId)
             return
         }
@@ -379,6 +388,12 @@ class TrackAnalyzer(
         val usableComplete = local || complete.isNotEmpty()
 
         val recorded = results[trackId]
+        // If this is an upcoming queue track (!isCurrentTrack), and we already have ANY valid result
+        // (from cache/head/previous pass), do not queue anything. Upcoming tracks only need intro/mixIn.
+        if (!isCurrentTrack && recorded != null && recorded.isUsable) {
+            return
+        }
+
         // Two things are worth superseding, and nothing else is. A provisional
         // head result, because replacing it with the whole-track pass is the
         // entire point of it — and a recorded failure, but only once a copy of
@@ -396,7 +411,7 @@ class TrackAnalyzer(
         }
         val supersedable = when {
             recorded == null -> false
-            trackId in provisional -> usableComplete
+            trackId in provisional -> isCurrentTrack && usableComplete
             else -> !recorded.isUsable && untried
         }
         if (recorded != null && !supersedable) {
@@ -408,26 +423,20 @@ class TrackAnalyzer(
             // rest, and a queued track reaches its own transition carrying an
             // entry-only estimate: no content end, no mix-out anchor, no vocal
             // mask, which is most of what the outgoing half of a blend reads.
-            if (trackId in provisional && !usableComplete) cache.requestAnalysisHead(analysisUri)
+            if (isCurrentTrack && trackId in provisional && !usableComplete) {
+                TrackLog.d(TAG, "Automix waiting for cache to complete on $trackId to run whole-track pass", trackId)
+                cache.requestAnalysisHead(analysisUri, force = true)
+            }
             return
         }
         // The strike count belongs to the attempt that was given up on, not to
         // the track for the rest of the session; a reopened track starts level.
         if (recorded != null && !recorded.isUsable) shortDecodes.remove(trackId)
-        // One head attempt per track: a partial container that will not parse
-        // now is unlikely to parse ten ticks later, and retrying a decode every
-        // 250ms would cost more than the analysis it is trying to bring
-        // forward. Skipped entirely for a local file, which is `usableComplete`
-        // from the first tick: the head pass exists to get ahead of a download,
-        // and there is no download to get ahead of.
-        val headRendition = if (usableComplete) null else headWorthTrying(trackId, analysisUri, durationSeconds)
-        if (!usableComplete && headRendition == null) {
-            // Nothing on disk worth decoding, so ask for something. Every other
-            // writer either fetches this track's opening too late to matter or
-            // never fetches it at all — see [AudioCache.requestAnalysisHead],
-            // which is a no-op after the first call and for anything that isn't
-            // a YouTube-backed track.
-            cache.requestAnalysisHead(analysisUri)
+        val shouldAnalyzeWhole = isCurrentTrack && usableComplete
+        val headRendition = if (shouldAnalyzeWhole) null else (headWorthTrying(trackId, analysisUri, durationSeconds) ?: complete.firstOrNull())
+        if (!shouldAnalyzeWhole && headRendition == null) {
+            // Nothing on disk worth decoding, so ask for something.
+            cache.requestAnalysisHead(analysisUri, force = isCurrentTrack)
             return
         }
         if (!running.add(trackId)) return
@@ -451,16 +460,26 @@ class TrackAnalyzer(
                 // seven seconds recomputing the identical numbers. A provisional
                 // result is exempt: superseding one is the whole point of it.
                 val landed = results[trackId]
-                if (landed != null && landed.isUsable && trackId !in provisional) return@execute
+                if (landed != null && landed.isUsable && (!isCurrentTrack || trackId !in provisional)) return@execute
                 // The queue this task sat in is single-threaded, so a party
                 // started while the track ahead of it was being measured. Every
                 // task behind that one turns into this return, which drains the
                 // backlog without needing to reach into the executor's queue.
                 if (stopped) return@execute
-                if (usableComplete) {
+                if (shouldAnalyzeWhole) {
+                    val wholeStart = SystemClock.elapsedRealtime()
+                    TrackLog.d(TAG, "Automix whole-track pass started for $trackId", trackId)
                     val outcome = analyze(trackId, analysisUri, durationSeconds)
                     val whole = outcome.analysis
                     if (whole != null) {
+                        val wholeTook = SystemClock.elapsedRealtime() - wholeStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix finished whole-track pass for $trackId in ${wholeTook}ms: bpm=${whole.bpm.roundToInt()} " +
+                                "conf=${"%.2f".format(Locale.ROOT, whole.beatConfidence)} " +
+                                "mixOut=${"%.1f".format(Locale.ROOT, whole.contentEndTime)}s",
+                            trackId,
+                        )
                         results[trackId] = whole
                         provisional.remove(trackId)
                         shortDecodes.remove(trackId)
@@ -488,10 +507,15 @@ class TrackAnalyzer(
                         }
                     }
                 } else {
-                    // Marked before it is published, so a reader on the playback
-                    // thread can never see a provisional result that is not
-                    // flagged as one.
+                    val headStart = SystemClock.elapsedRealtime()
+                    TrackLog.d(TAG, "Automix head pass started for $trackId", trackId)
                     analyzeHead(trackId, analysisUri, durationSeconds, headRendition!!)?.let { head ->
+                        val headTook = SystemClock.elapsedRealtime() - headStart
+                        TrackLog.d(
+                            TAG,
+                            "Automix finished head pass for $trackId in ${headTook}ms: bpm=${head.bpm.roundToInt()} conf=${"%.2f".format(Locale.ROOT, head.beatConfidence)}",
+                            trackId,
+                        )
                         provisional.add(trackId)
                         results[trackId] = head
                     }

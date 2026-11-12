@@ -152,7 +152,7 @@ class CrossfadeController(
      * recording from a differently-cut one before reusing an analysis across
      * them, and this class is the only place that already knows it.
      */
-    private val requestAnalysis: (MediaItem, Long) -> Unit = { _, _ -> },
+    private val requestAnalysis: (MediaItem, Long, Boolean) -> Unit = { _, _, _ -> },
     /**
      * The low-pass and high-pass riding each side of a transition. This is what
      * makes a plan's
@@ -889,6 +889,14 @@ class CrossfadeController(
      */
     private fun considerAutoTransition() {
         val player = active()
+        val currentItem = player.currentMediaItem
+        if (currentItem != null && !currentItem.isVideoOrigin && AppSettings.smartFadeEnabled.value) {
+            val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+                ?: queuedDurationMs(currentItem).takeIf { it > 0L }
+                ?: (analysisFor(currentItem).duration * 1000).roundToLong().takeIf { it > 0L }
+                ?: 0L
+            requestAnalysis(currentItem, duration, true)
+        }
         // Paused or buffering: the transition is no nearer, and a hold already
         // in place is still exactly as right as it was. The seek bar's marker
         // is the exception — see [refreshMarkerWhilePaused].
@@ -993,8 +1001,12 @@ class CrossfadeController(
             return
         }
 
-        val duration = player.duration
-        if (duration == C.TIME_UNSET || duration <= 0L) return
+        val currentItem = player.currentMediaItem
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+            ?: currentItem?.let { queuedDurationMs(it) }?.takeIf { it > 0L }
+            ?: currentItem?.let { (analysisFor(it).duration * 1000).roundToLong() }?.takeIf { it > 0L }
+            ?: 0L
+        if (duration <= 0L) return
 
         // Repeating one track would crossfade it into itself, so nothing is
         // armed and no window is marked — but the queue behind the loop has not
@@ -1295,12 +1307,13 @@ class CrossfadeController(
      */
     private fun requestAnalysisAround(player: ExoPlayer, duration: Long) {
         val currentItem = player.currentMediaItem ?: return
+        if (currentItem.isVideoOrigin) return
+        requestAnalysis(currentItem, duration, true)
         val nextIndex = player.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return
         val nextItem = player.getMediaItemAt(nextIndex)
-        if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) return
-        requestAnalysis(currentItem, duration)
-        requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
+        if (nextItem.isVideoOrigin) return
+        requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem), false)
     }
 
     /**
