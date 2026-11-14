@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.ui.components.LocalAppBackdrop
 import com.music.bitchord.ui.components.backdrop.Backdrop
 import com.music.bitchord.ui.components.backdrop.backdrops.LayerBackdrop
@@ -486,14 +488,22 @@ private class PillSquashModel {
 internal fun Modifier.pillPlacement(center: () -> Offset, size: () -> Size): Modifier =
     layout { measurable, constraints ->
         val s = size()
-        val w = s.width.roundToInt().coerceAtLeast(1)
-        val h = s.height.roundToInt().coerceAtLeast(1)
-        val placeable = measurable.measure(Constraints.fixed(w, h))
-        layout(constraints.minWidth, constraints.minHeight) {
-            val c = center()
-            placeable.place((c.x - w / 2f).roundToInt(), (c.y - h / 2f).roundToInt())
+        if (s.width <= 0f || s.height <= 0f) {
+            val placeable = measurable.measure(Constraints.fixed(0, 0))
+            layout(constraints.minWidth, constraints.minHeight) {
+                // Not yet measured or zero size: do not place
+            }
+        } else {
+            val w = s.width.roundToInt().coerceAtLeast(1)
+            val h = s.height.roundToInt().coerceAtLeast(1)
+            val placeable = measurable.measure(Constraints.fixed(w, h))
+            layout(constraints.minWidth, constraints.minHeight) {
+                val c = center()
+                placeable.place((c.x - w / 2f).roundToInt(), (c.y - h / 2f).roundToInt())
+            }
         }
     }
+
 
 /** The flat pill: a fill and nothing else. */
 @Composable
@@ -514,6 +524,10 @@ internal fun FlatSelectionPill(
  * the first things shed on landing, and refraction that eases out behind them.
  * At the end of that it is drawing the bar, the fill and the tabs with no lens,
  * which is exactly what [FlatSelectionPill] under the tabs draws.
+ *
+ * Under [AppSettings.glassPerformance] it makes the same moves with no lens. The
+ * fill stays on throughout, because with nothing bending behind it, a clear pill
+ * would be a rim around nothing.
  */
 @Composable
 internal fun GlassSelectionPill(
@@ -525,9 +539,11 @@ internal fun GlassSelectionPill(
 ) {
     val page = LocalAppBackdrop.current
     val shape = remember { RoundedCornerShape(percent = 50) }
-    val backdrop = remember(page, barGlass, tabRow, fillColor) {
+    val glassPerformance by AppSettings.glassPerformance.collectAsStateWithLifecycle()
+    val backdrop = remember(page, barGlass, tabRow, fillColor, glassPerformance) {
         SelectionPillBackdrop(page, barGlass, tabRow) {
-            fillColor.copy(alpha = fillColor.alpha * (1f - motion.material))
+            if (glassPerformance) fillColor
+            else fillColor.copy(alpha = fillColor.alpha * (1f - motion.material))
         }
     }
     Box(
@@ -535,7 +551,7 @@ internal fun GlassSelectionPill(
             backdrop = backdrop,
             shape = { shape },
             effects = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (!glassPerformance && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     lens(
                         refractionHeight = LENS_HEIGHT.toPx() * motion.glassPresence,
                         refractionAmount = LENS_AMOUNT.toPx() * motion.material,

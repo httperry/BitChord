@@ -162,45 +162,31 @@ val FLOATING_BAR_MAX_WIDTH = 440.dp
  */
 val SHELF_CARD_WIDTH = 150.dp
 
+private val CommonArtShape8 = RoundedCornerShape(8.dp)
+private val CommonBarsShape6 = RoundedCornerShape(6.dp)
+private val CommonPillShape11 = RoundedCornerShape(11.dp)
+private val CommonSignInShape22 = RoundedCornerShape(22.dp)
+private val CommonRowLiftPadding = PaddingValues(horizontal = PAGE_GUTTER)
+private val PlayingBarsBgColor = Color.Black.copy(alpha = 0.52f)
+
 /**
  * A track's thumbnail box at [height]: square for a song, 16:9 at the same
  * height for a music video — its picture's own shape, as YouTube Music lists
- * one, rather than a still cropped into a square.
+ * one, rather than a still cropped into a square — unless the listener asked
+ * for square, see [VideoThumbnails].
  */
 fun Modifier.trackArtSize(height: Dp, isVideo: Boolean): Modifier =
-    if (isVideo) size(width = height * (16f / 9f), height = height) else size(height)
-
-/** Share of the row a lead-shelf card takes, so the next one peeks in past it. */
-private const val HERO_CARD_FRACTION = 0.70f
+    if (isVideo && !VideoThumbnails.square) size(width = height * (16f / 9f), height = height) else size(height)
 
 /**
- * How wide a lead-shelf card is ever allowed to get.
- *
- * The fraction alone is a phone measurement wearing a percent sign: 70% of a
- * tablet is a card the better part of a foot across, and a hero card is a
- * caption over some artwork rather than a canvas — blown up that far it stops
- * being the top of a feed and becomes a poster with a shelf hiding under it.
- *
- * Set just clear of what the widest phone asks for (0.70 of 448dp is 314dp), so
- * every phone keeps the width the fraction gives it and only a screen wider than
- * any phone is held back to it.
+ * The "Square video thumbnails" setting, as every surface that sizes a music
+ * video reads it. Compose state rather than a flow so a plain read anywhere in
+ * composition follows it, [trackArtSize] and [VIDEO_CARD_WIDTH][com.music.bitchord.ui.screens.VIDEO_CARD_WIDTH]
+ * included, without each caller collecting it.
  */
-private val HERO_CARD_MAX_WIDTH = 320.dp
-
-/** A lead-shelf card's proportions: a touch taller than it is wide. */
-const val HERO_CARD_RATIO = 0.92f
-
-/**
- * How wide a lead-shelf card should be in a row [available] wide — the shared
- * answer for the real shelf and for the skeleton that stands in for it, which
- * have to agree to the pixel or the feed jumps when the data lands.
- *
- * Given the row's own width rather than the window's, so it is still right in
- * the narrower column a tablet leaves once the player has taken its pane.
- * Height follows from [HERO_CARD_RATIO], so the card keeps its shape at any
- * width.
- */
-fun heroCardWidth(available: Dp): Dp = minOf(available * HERO_CARD_FRACTION, HERO_CARD_MAX_WIDTH)
+object VideoThumbnails {
+    var square by mutableStateOf(false)
+}
 
 /** Share of the row a page of tracks takes, so the next page peeks in past it. */
 private const val TRACK_COLUMN_FRACTION = 0.88f
@@ -208,7 +194,7 @@ private const val TRACK_COLUMN_FRACTION = 0.88f
 /**
  * How wide a sideways-paging column of track rows is ever allowed to get.
  *
- * Same trap [HERO_CARD_MAX_WIDTH] answers, and worse for a list: a track row is
+ * A fraction alone is a phone measurement wearing a percent sign, and a track row is
  * artwork, a title and a subtitle, none of which have any use for more room. At
  * 88% of a tablet the row's contents stay their own size and the space all lands
  * between the title and the overflow button, so four songs eat the width of the
@@ -533,12 +519,12 @@ private fun SongRowContent(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(if (unavailable) 0.45f else 1f)
+            .graphicsLayer { this.alpha = if (unavailable) 0.45f else 1f }
             .background(activeBackground)
             .longPressMenuClickable(
                 onClick = onClick,
                 onLongClick = onLongPress,
-                liftPadding = PaddingValues(horizontal = PAGE_GUTTER),
+                liftPadding = CommonRowLiftPadding,
             )
             .contextClick(onMore ?: onLongPress)
             .padding(horizontal = PAGE_GUTTER, vertical = 4.dp),
@@ -572,14 +558,16 @@ private fun SongRowContent(
             }
         } else {
             Box(Modifier.trackArtSize(52.dp, song.isVideo)) {
+                val rawUrl = com.music.bitchord.ui.player.rememberRemoteArtworkUrl(song)
+                val artworkModel = remember(rawUrl) { rawUrl?.artworkAt(ROW_ART_PX) }
                 AsyncImage(
-                    model = com.music.bitchord.ui.player.rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
+                    model = artworkModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .matchParentSize()
-                        .clip(RoundedCornerShape(8.dp))
-                        .thumbnailBorder(RoundedCornerShape(8.dp))
+                        .clip(CommonArtShape8)
+                        .thumbnailBorder(CommonArtShape8)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 )
                 if (searchPlayingStyle && isCurrent && isPlaying) {
@@ -598,10 +586,12 @@ private fun SongRowContent(
                 color = titleColor,
             )
             Spacer(Modifier.height(2.dp))
-            val subtitle = listOfNotNull(
-                song.artist.takeIf { it.isNotBlank() },
-                song.downloadFormat,
-            ).joinToString(" · ")
+            val subtitle = remember(song.artist, song.downloadFormat) {
+                listOfNotNull(
+                    song.artist.takeIf { it.isNotBlank() },
+                    song.downloadFormat,
+                ).joinToString(" · ")
+            }
             val quality = if (showSourceQuality) song.sourceQualityBadge() else null
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (quality != null) {
@@ -780,8 +770,8 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(24.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color.Black.copy(alpha = 0.52f)),
+            .clip(CommonBarsShape6)
+            .background(PlayingBarsBgColor),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(width = 13.dp, height = 14.dp)) {
@@ -789,7 +779,8 @@ fun SearchPlayingBars(modifier: Modifier = Modifier) {
             val step = barWidth + 2.dp.toPx()
             val corner = CornerRadius(minOf(2.dp.toPx(), barWidth / 2f))
             val ms = elapsedNanos.longValue / 1_000_000L
-            PLAYING_BAR_MINIMUMS.forEachIndexed { index, minimum ->
+            for (index in PLAYING_BAR_MINIMUMS.indices) {
+                val minimum = PLAYING_BAR_MINIMUMS[index]
                 val height = size.height * playingBarHeight(index, minimum, ms)
                 drawRoundRect(
                     color = Color.White,
@@ -890,7 +881,7 @@ fun SignInBanner(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(22.dp))
+            .clip(CommonSignInShape22)
             .clickable(interactionSource = interaction, indication = null, onClick = onSignIn),
     ) {
         // A card is a few hundred dp the reader is looking straight at, which
@@ -999,7 +990,7 @@ fun PillTextField(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(container, RoundedCornerShape(11.dp))
+            .background(container, CommonPillShape11)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

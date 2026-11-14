@@ -5,6 +5,7 @@ import com.music.bitchord.ui.components.contextClick
 import com.music.bitchord.ui.AppUi
 import com.music.bitchord.sharedui.resources.*
 import org.jetbrains.compose.resources.painterResource
+import com.music.bitchord.ui.festive.GoldenLogo
 import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.Image
 import org.jetbrains.compose.resources.stringResource
@@ -31,7 +32,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import com.music.bitchord.ui.components.ShelfRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,11 +50,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cached
@@ -65,7 +65,6 @@ import androidx.compose.material.icons.rounded.Storage
 import com.music.bitchord.ui.icons.BitChordIcons
 import coil3.compose.AsyncImage
 import com.music.bitchord.data.model.CARD_ART_PX
-import com.music.bitchord.data.model.HEADER_ART_PX
 import com.music.bitchord.data.model.HomeShelf
 import com.music.bitchord.data.model.ROW_ART_PX
 import com.music.bitchord.data.model.ShelfItem
@@ -76,18 +75,17 @@ import com.music.bitchord.data.model.TopPickMood
 import com.music.bitchord.data.model.UiState
 import java.util.Locale
 import com.music.bitchord.data.model.artworkAt
-import com.music.bitchord.ui.components.HERO_CARD_RATIO
 import com.music.bitchord.ui.components.MessageState
 import com.music.bitchord.ui.components.PAGE_GUTTER
 import com.music.bitchord.ui.components.RowMoreButton
 import com.music.bitchord.ui.components.PullToRefresh
 import com.music.bitchord.ui.components.SHELF_CARD_WIDTH
+import com.music.bitchord.ui.components.VideoThumbnails
 import com.music.bitchord.ui.components.SearchPlayingBars
 import com.music.bitchord.ui.components.SignInBanner
 import com.music.bitchord.ui.components.feedMoreSkeleton
 import com.music.bitchord.ui.components.feedSkeleton
 import com.music.bitchord.ui.components.recentlyPlayedSkeleton
-import com.music.bitchord.ui.components.heroCardWidth
 import com.music.bitchord.ui.components.thumbnailBorder
 import com.music.bitchord.ui.components.trackColumnWidth
 import com.music.bitchord.ui.player.MeshGradientBackground
@@ -98,6 +96,18 @@ private val HOME_TITLE_LIFT = 28.dp
 
 private const val RECENTS_TITLE = "Recents"
 private const val RECENT_TRACKS_PER_COLUMN = 4
+
+private val TrackArtShape7 = RoundedCornerShape(7.dp)
+private val CardArtShape12 = RoundedCornerShape(12.dp)
+private val ShelfPadding = PaddingValues(horizontal = PAGE_GUTTER)
+private val ShelfArrangement14 = Arrangement.spacedBy(14.dp)
+private val ShelfArrangement12 = Arrangement.spacedBy(12.dp)
+
+private val LocalDownloadsColors = listOf(Color(0xFF1E3C72), Color(0xFF2A5298))
+private val LocalAllColors = listOf(Color(0xFF134E5E), Color(0xFF71B280))
+private val LocalCacheColors = listOf(Color(0xFF42275A), Color(0xFF734B6D))
+private val LocalWebdavColors = listOf(Color(0xFF3A1C71), Color(0xFFD76D77))
+private val LocalSmbColors = listOf(Color(0xFF0F2027), Color(0xFF2C5364))
 
 private fun List<ShelfItem>.playingItemMatcher(song: Song?): (ShelfItem) -> Boolean {
     song ?: return { false }
@@ -124,6 +134,10 @@ fun HomeScreen(
     contentPadding: PaddingValues,
     /** The page's heading, or null for none — the desktop's pages carry no heading. */
     title: String?,
+    /** Casts the wordmark above the heading in glowing gold, for a festival. */
+    festiveLogo: Boolean = false,
+    /** Tapping the festive wordmark, e.g. to bring its greeting back. */
+    onFestiveLogoClick: (() -> Unit)? = null,
     signedIn: Boolean = true,
     onSignIn: (() -> Unit)? = null,
     /**
@@ -137,12 +151,6 @@ fun HomeScreen(
     onLoadMore: (() -> Unit)? = null,
     loadingMore: Boolean = false,
     recentlyPlayedLoading: Boolean = false,
-    /**
-     * Whether the feed's first shelf gets the big full-bleed cards. The phone
-     * leads with them; on a window as wide as a desktop's they are posters, so
-     * there every shelf is the ordinary row.
-     */
-    leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
     /**
@@ -184,20 +192,22 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
             // The heading sits higher than the other tabs' first row: pull the
             // whole feed up by [HOME_TITLE_LIFT] with it.
-            contentPadding = if (title != null) {
-                PaddingValues(
-                    top = (contentPadding.calculateTopPadding() - HOME_TITLE_LIFT).coerceAtLeast(0.dp),
-                    bottom = contentPadding.calculateBottomPadding(),
-                )
-            } else {
-                contentPadding
+            contentPadding = remember(contentPadding, title) {
+                if (title != null) {
+                    PaddingValues(
+                        top = (contentPadding.calculateTopPadding() - HOME_TITLE_LIFT).coerceAtLeast(0.dp),
+                        bottom = contentPadding.calculateBottomPadding(),
+                    )
+                } else {
+                    contentPadding
+                }
             },
         ) {
             if (title != null) {
-                item { HomeTitle(title) }
+                item(key = "home:title") { HomeTitle(title, festiveLogo = festiveLogo, onFestiveLogoClick = onFestiveLogoClick) }
             }
             if (!signedIn && onSignIn != null) {
-                item {
+                item(key = "home:sign-in-banner") {
                     // Read in this item, so a scroll starting or ending
                     // recomposes the banner alone.
                     SignInBanner(
@@ -224,24 +234,16 @@ fun HomeScreen(
                 is UiState.Loading -> {
                     if (recentlyPlayedLoading) {
                         recentlyPlayedSkeleton()
-                        // Recents owns the leading layout while its request is
-                        // pending, so the feed behind it starts with ordinary
-                        // shelf placeholders rather than another hero card.
-                        feedSkeleton(firstIsHero = false)
-                    } else {
-                        feedSkeleton(firstIsHero = leadHero)
                     }
+                    feedSkeleton()
                 }
-                is UiState.Error -> item {
+                is UiState.Error -> item(key = "home:error") {
                     MessageState(state.message, actionLabel = stringResource(Res.string.retry), onAction = onRetry)
                 }
                 is UiState.Success -> {
                     if (recentlyPlayedLoading) {
                         recentlyPlayedSkeleton()
                     }
-                    // The loading skeleton already owns the hero slot. Until
-                    // Recently Played lands, every real shelf must retain its
-                    // compact-card layout instead of briefly becoming a hero.
                     itemsIndexedShelves(
                         shelves = state.data,
                         onMoodClick = onMoodClick,
@@ -250,7 +252,6 @@ fun HomeScreen(
                         onItemLongPress = onItemLongPress,
                         currentSong = currentSong,
                         isPlaying = isPlaying,
-                        firstIsHero = leadHero && !recentlyPlayedLoading,
                     )
                     if (loadingMore) feedMoreSkeleton()
                 }
@@ -281,17 +282,13 @@ fun HomeScreen(
     }
 }
 
-/**
- * Recents mirrors the artist page's top-tracks pager. Any other lead shelf keeps
- * Apple's full-bleed treatment, while the remaining shelves use square cards.
- */
+/** Recents mirrors the artist page's top-tracks pager; other shelves use square cards. */
 private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
     shelves: List<HomeShelf>,
     onItemClick: (ShelfItem, String) -> Unit,
     onItemLongPress: ((ShelfItem) -> Unit)?,
     currentSong: Song?,
     isPlaying: Boolean,
-    firstIsHero: Boolean = true,
     onMoodClick: ((TopPickMood, String) -> Unit)? = null,
     onMoodsShowAll: () -> Unit = {},
 ) {
@@ -300,22 +297,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
         if (index == 1 && onMoodClick != null) {
             item(key = "find-your-mood") { FindYourMoodShelf(onMoodClick, onMoodsShowAll) }
         }
-        item(key = shelf.title + index) {
-            val openItem: (ShelfItem) -> Unit = { item -> onItemClick(item, shelf.title) }
+        item(key = "shelf:${shelf.title}_$index") {
+            val openItem = remember(shelf.title, onItemClick) {
+                { item: ShelfItem -> onItemClick(item, shelf.title) }
+            }
             // Listen again and Quick picks are lists on the web player, as
             // Recents is here: one pager for all three.
             if (shelf.layout == ShelfLayout.LIST ||
                 (index == 0 && shelf.title.equals(RECENTS_TITLE, ignoreCase = true))
             ) {
                 RecentShelf(
-                    shelf = shelf,
-                    onItemClick = openItem,
-                    onItemLongPress = onItemLongPress,
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                )
-            } else if (index == 0 && firstIsHero && shelf.layout == ShelfLayout.CARDS) {
-                HeroShelf(
                     shelf = shelf,
                     onItemClick = openItem,
                     onItemLongPress = onItemLongPress,
@@ -346,22 +337,27 @@ private fun RecentShelf(
 ) {
     Column(Modifier.padding(bottom = 26.dp)) {
         RecentSectionHeader(title = localizeShelfTitle(shelf.title), subtitle = localizeShelfSubtitle(shelf.subtitle))
-        val isCurrentItem = shelf.items.playingItemMatcher(currentSong)
+        val isCurrentItem = remember(shelf.items, currentSong) { shelf.items.playingItemMatcher(currentSong) }
+        val columns = remember(shelf.items) { shelf.items.chunked(RECENT_TRACKS_PER_COLUMN) }
         BoxWithConstraints {
             val columnWidth = trackColumnWidth(maxWidth)
             ShelfRow(
-                contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = ShelfPadding,
+                horizontalArrangement = ShelfArrangement12,
             ) {
-                items(shelf.items.chunked(RECENT_TRACKS_PER_COLUMN)) { column ->
+                items(
+                    items = columns,
+                    key = { col -> col.firstOrNull()?.let { it.videoId ?: it.browseId ?: it.title } ?: col.hashCode() },
+                ) { column ->
                     Column(Modifier.width(columnWidth)) {
                         column.forEach { item ->
+                            val isCurr = isCurrentItem(item)
                             RecentTrackRow(
                                 item = item,
-                                onClick = { onItemClick(item) },
-                                onLongPress = onItemLongPress?.let { { it(item) } },
-                                isCurrent = isCurrentItem(item),
-                                isPlaying = isCurrentItem(item) && isPlaying,
+                                onItemClick = onItemClick,
+                                onItemLongPress = onItemLongPress,
+                                isCurrent = isCurr,
+                                isPlaying = isCurr && isPlaying,
                             )
                         }
                     }
@@ -400,17 +396,19 @@ private fun RecentSectionHeader(title: String, subtitle: String) {
 @Composable
 private fun RecentTrackRow(
     item: ShelfItem,
-    onClick: () -> Unit,
-    onLongPress: (() -> Unit)?,
+    onItemClick: (ShelfItem) -> Unit,
+    onItemLongPress: ((ShelfItem) -> Unit)?,
     isCurrent: Boolean,
     isPlaying: Boolean,
 ) {
+    val click = remember(item, onItemClick) { { onItemClick(item) } }
+    val longPress = remember(item, onItemLongPress) { onItemLongPress?.let { { it(item) } } }
     CompactTrackRow(
         title = item.title,
         subtitle = item.subtitle,
         thumbnailUrl = item.thumbnailUrl,
-        onClick = onClick,
-        onLongPress = onLongPress,
+        onClick = click,
+        onLongPress = longPress,
         isCurrent = isCurrent,
         isPlaying = isPlaying,
         isVideo = item.isVideo,
@@ -443,14 +441,15 @@ fun CompactTrackRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.trackArtSize(48.dp, isVideo)) {
+            val model = remember(thumbnailUrl) { thumbnailUrl.artworkAt(ROW_ART_PX) }
             AsyncImage(
-                model = thumbnailUrl.artworkAt(ROW_ART_PX),
+                model = model,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .matchParentSize()
-                    .clip(RoundedCornerShape(7.dp))
-                    .thumbnailBorder(RoundedCornerShape(7.dp))
+                    .clip(TrackArtShape7)
+                    .thumbnailBorder(TrackArtShape7)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             )
             if (isCurrent && isPlaying) SearchPlayingBars(Modifier.align(Alignment.Center))
@@ -487,19 +486,33 @@ fun CompactTrackRow(
  * system font scale.
  */
 @Composable
-private fun HomeTitle(title: String, modifier: Modifier = Modifier) {
+private fun HomeTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+    festiveLogo: Boolean = false,
+    onFestiveLogoClick: (() -> Unit)? = null,
+) {
     val style = MaterialTheme.typography.displayLarge
     val logoHeight = with(LocalDensity.current) { (style.fontSize * LOGO_TO_FONT).toDp() }
     Column(modifier = modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp)) {
-        Icon(
-            painter = painterResource(Res.drawable.ic_logo),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier
-                .padding(bottom = 14.dp)
-                .height(logoHeight)
-                .aspectRatio(LOGO_ASPECT),
-        )
+        val logoModifier = Modifier
+            .padding(bottom = 14.dp)
+            .height(logoHeight)
+            .aspectRatio(LOGO_ASPECT)
+        if (festiveLogo) {
+            GoldenLogo(
+                painter = painterResource(Res.drawable.ic_logo),
+                modifier = logoModifier,
+                onClick = onFestiveLogoClick,
+            )
+        } else {
+            Icon(
+                painter = painterResource(Res.drawable.ic_logo),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = logoModifier,
+            )
+        }
         // "Listen now" is hidden for now; the wordmark above stays.
         // Text(
         //     text = title,
@@ -694,137 +707,46 @@ internal fun localizeShelfSubtitle(subtitle: String): String {
 internal fun localizeCardSubtitle(subtitle: String): String {
     if (subtitle.isBlank()) return subtitle
     val delimiter = " • "
-    val parts = subtitle.split(delimiter)
     val songLabel = stringResource(Res.string.shelf_song_item)
     val singleLabel = stringResource(Res.string.shelf_single)
     val chartLabel = stringResource(Res.string.shelf_chart)
     val playlistLabel = stringResource(Res.string.playlist)
-    val localizedParts = parts.map { part ->
-        val trimmed = part.trim()
-        val lower = trimmed.lowercase(Locale.ROOT)
-        when {
-            trimmed.equals("Song", ignoreCase = true) || trimmed.equals("Titre", ignoreCase = true) ||
-                trimmed.equals("Bài hát", ignoreCase = true) || trimmed.equals("曲", ignoreCase = true) -> songLabel
-            trimmed.equals("Single", ignoreCase = true) || trimmed.equals("Đĩa đơn", ignoreCase = true) ||
-                trimmed.equals("シングル", ignoreCase = true) -> singleLabel
-            trimmed.equals("Chart", ignoreCase = true) || trimmed.equals("Bảng xếp hạng", ignoreCase = true) ||
-                trimmed.equals("チャート", ignoreCase = true) -> chartLabel
-            trimmed.equals("Playlist", ignoreCase = true) || trimmed.equals("Danh sách phát", ignoreCase = true) ||
-                trimmed.equals("再生リスト", ignoreCase = true) -> playlistLabel
-            lower.endsWith(" views") || lower.endsWith(" view") || lower.endsWith(" lượt xem") ||
-                lower.endsWith(" 回視聴") || lower.endsWith("回視聴") -> {
-                val count = trimmed.substringBeforeLast(' ', "").trim()
-                if (count.any { it.isDigit() }) stringResource(Res.string.card_views_format, count) else part
-            }
-            lower.endsWith(" plays") || lower.endsWith(" play") || lower.endsWith(" lượt phát") ||
-                lower.endsWith(" 回再生") || lower.endsWith("回再生") -> {
-                val count = trimmed.substringBeforeLast(' ', "").trim()
-                if (count.any { it.isDigit() }) stringResource(Res.string.card_plays_format, count) else part
-            }
-            lower.endsWith(" songs") || lower.endsWith(" song") || lower.endsWith(" bài hát") ||
-                lower.endsWith(" 曲") || lower.endsWith("曲") -> {
-                val count = trimmed.substringBeforeLast(' ', "").trim()
-                if (count.any { it.isDigit() }) stringResource(Res.string.card_songs_format, count) else part
-            }
-            else -> part
-        }
-    }
-    return localizedParts.joinToString(delimiter)
-}
-
-@Composable
-private fun HeroShelf(
-    shelf: HomeShelf,
-    onItemClick: (ShelfItem) -> Unit,
-    onItemLongPress: ((ShelfItem) -> Unit)? = null,
-    currentSong: Song? = null,
-    isPlaying: Boolean = false,
-) {
-    Column(Modifier.padding(bottom = 26.dp)) {
-        SectionHeader(shelf.title, shelf.subtitle)
-        val isCurrentItem = shelf.items.playingItemMatcher(currentSong)
-        // Measured rather than taken as a share of the parent, because the card
-        // has a ceiling as well as a fraction — see [heroCardWidth]. A fixed
-        // width is also the only one of the two the aspect ratio below can turn
-        // into a height, so the card keeps its shape however it was arrived at.
-        BoxWithConstraints {
-            val cardWidth = heroCardWidth(maxWidth)
-            ShelfRow(
-                state = rememberLazyListState(),
-                contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                items(shelf.items) { item ->
-                    HeroCard(
-                        item = item,
-                        onClick = { onItemClick(item) },
-                        onLongPress = onItemLongPress?.let { { it(item) } },
-                        modifier = Modifier.width(cardWidth),
-                        isCurrent = isCurrentItem(item),
-                        isPlaying = isCurrentItem(item) && isPlaying,
-                    )
+    val viewsFormat = stringResource(Res.string.card_views_format, "%COUNT%")
+    val playsFormat = stringResource(Res.string.card_plays_format, "%COUNT%")
+    val songsFormat = stringResource(Res.string.card_songs_format, "%COUNT%")
+    return remember(subtitle, songLabel, singleLabel, chartLabel, playlistLabel, viewsFormat, playsFormat, songsFormat) {
+        val parts = subtitle.split(delimiter)
+        val localizedParts = parts.map { part ->
+            val trimmed = part.trim()
+            val lower = trimmed.lowercase(Locale.ROOT)
+            when {
+                trimmed.equals("Song", ignoreCase = true) || trimmed.equals("Titre", ignoreCase = true) ||
+                    trimmed.equals("Bài hát", ignoreCase = true) || trimmed.equals("曲", ignoreCase = true) -> songLabel
+                trimmed.equals("Single", ignoreCase = true) || trimmed.equals("Đĩa đơn", ignoreCase = true) ||
+                    trimmed.equals("シングル", ignoreCase = true) -> singleLabel
+                trimmed.equals("Chart", ignoreCase = true) || trimmed.equals("Bảng xếp hạng", ignoreCase = true) ||
+                    trimmed.equals("チャート", ignoreCase = true) -> chartLabel
+                trimmed.equals("Playlist", ignoreCase = true) || trimmed.equals("Danh sách phát", ignoreCase = true) ||
+                    trimmed.equals("再生リスト", ignoreCase = true) -> playlistLabel
+                lower.endsWith(" views") || lower.endsWith(" view") || lower.endsWith(" lượt xem") ||
+                    lower.endsWith(" 回視聴") || lower.endsWith("回視聴") -> {
+                    val count = trimmed.substringBeforeLast(' ', "").trim()
+                    if (count.any { it.isDigit() }) viewsFormat.replace("%COUNT%", count) else part
                 }
+                lower.endsWith(" plays") || lower.endsWith(" play") || lower.endsWith(" lượt phát") ||
+                    lower.endsWith(" 回再生") || lower.endsWith("回再生") -> {
+                    val count = trimmed.substringBeforeLast(' ', "").trim()
+                    if (count.any { it.isDigit() }) playsFormat.replace("%COUNT%", count) else part
+                }
+                lower.endsWith(" songs") || lower.endsWith(" song") || lower.endsWith(" bài hát") ||
+                    lower.endsWith(" 曲") || lower.endsWith("曲") -> {
+                    val count = trimmed.substringBeforeLast(' ', "").trim()
+                    if (count.any { it.isDigit() }) songsFormat.replace("%COUNT%", count) else part
+                }
+                else -> part
             }
         }
-    }
-}
-
-/** Big card: artwork with the caption laid over a scrim, as on Listen Now. */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun HeroCard(
-    item: ShelfItem,
-    onClick: () -> Unit,
-    onLongPress: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
-    isCurrent: Boolean = false,
-    isPlaying: Boolean = false,
-) {
-    Box(
-        modifier = modifier
-            .aspectRatio(HERO_CARD_RATIO)
-            .clip(RoundedCornerShape(18.dp))
-            .thumbnailBorder(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .longPressMenuClickable(onClick = onClick, onLongClick = onLongPress)
-            .contextClick(onLongPress),
-    ) {
-        AsyncImage(
-            model = item.thumbnailUrl.artworkAt(HEADER_ART_PX),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (isCurrent && isPlaying) SearchPlayingBars(Modifier.align(Alignment.Center))
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomStart)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)),
-                    ),
-                )
-                .padding(start = 16.dp, end = 16.dp, top = 34.dp, bottom = 14.dp),
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (item.subtitle.isNotBlank()) {
-                val displaySubtitle = localizeCardSubtitle(item.subtitle)
-                Text(
-                    text = displaySubtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.72f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        localizedParts.joinToString(delimiter)
     }
 }
 
@@ -847,28 +769,33 @@ internal fun Shelf(
 ) {
     Column(Modifier.padding(bottom = 26.dp)) {
         SectionHeader(shelf.title, shelf.subtitle)
-        val isCurrentItem = shelf.items.playingItemMatcher(currentSong)
+        val isCurrentItem = remember(shelf.items, currentSong) { shelf.items.playingItemMatcher(currentSong) }
         ShelfRow(
-            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = ShelfPadding,
+            horizontalArrangement = ShelfArrangement14,
         ) {
             leadingCard?.let { card -> item(key = "leading") { card() } }
-            items(shelf.items) { item ->
+            items(
+                items = shelf.items,
+                key = { item -> item.videoId ?: item.browseId ?: "${item.title}_${item.subtitle}" },
+            ) { item ->
+                val isCurr = isCurrentItem(item)
+                val isPlay = isCurr && isPlaying
                 if (shelf.layout == ShelfLayout.VIDEO) {
                     VideoShelfCard(
                         item = item,
-                        onClick = { onItemClick(item) },
-                        onLongPress = onItemLongPress?.let { { it(item) } },
-                        isCurrent = isCurrentItem(item),
-                        isPlaying = isCurrentItem(item) && isPlaying,
+                        onItemClick = onItemClick,
+                        onItemLongPress = onItemLongPress,
+                        isCurrent = isCurr,
+                        isPlaying = isPlay,
                     )
                 } else {
                     ShelfCard(
                         item = item,
-                        onClick = { onItemClick(item) },
-                        onLongPress = onItemLongPress?.let { { it(item) } },
-                        isCurrent = isCurrentItem(item),
-                        isPlaying = isCurrentItem(item) && isPlaying,
+                        onItemClick = onItemClick,
+                        onItemLongPress = onItemLongPress,
+                        isCurrent = isCurr,
+                        isPlaying = isPlay,
                     )
                 }
             }
@@ -881,6 +808,34 @@ internal fun Shelf(
  * 16:9 rather than cropped into a square, the title and credit under it. About
  * as tall as the square cards, so a video shelf sits in the feed's rhythm.
  */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun VideoShelfCard(
+    item: ShelfItem,
+    onItemClick: (ShelfItem) -> Unit,
+    onItemLongPress: ((ShelfItem) -> Unit)? = null,
+    modifier: Modifier = Modifier.width(VIDEO_CARD_WIDTH),
+    isCurrent: Boolean = false,
+    isPlaying: Boolean = false,
+    titleColor: Color = MaterialTheme.colorScheme.onBackground,
+    subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    placeholderColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+) {
+    val click = remember(item, onItemClick) { { onItemClick(item) } }
+    val longPress = remember(item, onItemLongPress) { onItemLongPress?.let { { it(item) } } }
+    VideoShelfCard(
+        item = item,
+        onClick = click,
+        onLongPress = longPress,
+        modifier = modifier,
+        isCurrent = isCurrent,
+        isPlaying = isPlaying,
+        titleColor = titleColor,
+        subtitleColor = subtitleColor,
+        placeholderColor = placeholderColor,
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoShelfCard(
@@ -903,8 +858,8 @@ fun VideoShelfCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(VIDEO_ASPECT)
-                .clip(RoundedCornerShape(12.dp))
-                .thumbnailBorder(RoundedCornerShape(12.dp))
+                .clip(CardArtShape12)
+                .thumbnailBorder(CardArtShape12)
                 .background(placeholderColor),
         ) {
             AsyncImage(
@@ -935,11 +890,11 @@ fun VideoShelfCard(
     }
 }
 
-/** A music video's frame. */
-const val VIDEO_ASPECT = 16f / 9f
+/** A music video's frame, or a square one when the listener asked for that — see [VideoThumbnails]. */
+val VIDEO_ASPECT: Float get() = if (VideoThumbnails.square) 1f else 16f / 9f
 
 /** Wide enough that a 16:9 card stands about as tall as a square [SHELF_CARD_WIDTH] one. */
-val VIDEO_CARD_WIDTH = 248.dp
+val VIDEO_CARD_WIDTH: Dp get() = if (VideoThumbnails.square) SHELF_CARD_WIDTH else 248.dp
 
 /**
  * A card that isn't a thing yet — the dashed "New playlist" tile at the head
@@ -963,7 +918,7 @@ internal fun NewShelfCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(CardArtShape12)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
@@ -1015,7 +970,7 @@ private fun ServiceCard(colors: List<Color>, trackKey: String, icon: ImageVector
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(12.dp)),
+            .clip(CardArtShape12),
         contentAlignment = Alignment.Center,
     ) {
         MeshGradientBackground(
@@ -1037,6 +992,30 @@ private fun ServiceCard(colors: List<Color>, trackKey: String, icon: ImageVector
 @Composable
 internal fun ShelfCard(
     item: ShelfItem,
+    onItemClick: (ShelfItem) -> Unit,
+    onItemLongPress: ((ShelfItem) -> Unit)? = null,
+    modifier: Modifier = Modifier.width(SHELF_CARD_WIDTH),
+    isPinned: Boolean = false,
+    isCurrent: Boolean = false,
+    isPlaying: Boolean = false,
+) {
+    val click = remember(item, onItemClick) { { onItemClick(item) } }
+    val longPress = remember(item, onItemLongPress) { onItemLongPress?.let { { it(item) } } }
+    ShelfCard(
+        item = item,
+        onClick = click,
+        onLongPress = longPress,
+        modifier = modifier,
+        isPinned = isPinned,
+        isCurrent = isCurrent,
+        isPlaying = isPlaying,
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun ShelfCard(
+    item: ShelfItem,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier.width(SHELF_CARD_WIDTH),
@@ -1052,12 +1031,12 @@ internal fun ShelfCard(
     ) {
         when (item.browseId) {
             "local:downloads" -> {
-                val palette = remember { MeshPalette(listOf(Color(0xFF1E3C72), Color(0xFF2A5298))) }
+                val palette = remember { MeshPalette(LocalDownloadsColors) }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(CardArtShape12),
                     contentAlignment = Alignment.Center,
                 ) {
                     MeshGradientBackground(
@@ -1075,22 +1054,22 @@ internal fun ShelfCard(
                 }
             }
             "local:all" -> ServiceCard(
-                colors = listOf(Color(0xFF134E5E), Color(0xFF71B280)),
+                colors = LocalAllColors,
                 trackKey = "local:all",
                 icon = Icons.Rounded.LibraryMusic,
             )
             "local:cache" -> ServiceCard(
-                colors = listOf(Color(0xFF42275A), Color(0xFF734B6D)),
+                colors = LocalCacheColors,
                 trackKey = "local:cache",
                 icon = Icons.Rounded.Cached,
             )
             "local:webdav" -> ServiceCard(
-                colors = listOf(Color(0xFF3A1C71), Color(0xFFD76D77)),
+                colors = LocalWebdavColors,
                 trackKey = "local:webdav",
                 icon = Icons.Rounded.Folder,
             )
             "local:smb" -> ServiceCard(
-                colors = listOf(Color(0xFF0F2027), Color(0xFF2C5364)),
+                colors = LocalSmbColors,
                 trackKey = "local:smb",
                 icon = Icons.Rounded.Storage,
             )
@@ -1099,12 +1078,13 @@ internal fun ShelfCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .thumbnailBorder(RoundedCornerShape(12.dp))
+                        .clip(CardArtShape12)
+                        .thumbnailBorder(CardArtShape12)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
+                    val model = remember(item.thumbnailUrl) { item.thumbnailUrl.artworkAt(CARD_ART_PX) }
                     AsyncImage(
-                        model = item.thumbnailUrl.artworkAt(CARD_ART_PX),
+                        model = model,
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),

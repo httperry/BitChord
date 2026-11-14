@@ -414,12 +414,16 @@ internal fun AndroidCanvasArtworkPlayer(
     // one — see [refreshFrameEveryMs]. A separate effect rather than a loop
     // folded into the one above: that one is keyed on [rendered] so it fires
     // again on every fade-in, and this one only needs to start once a fade-in
-    // has actually happened and then keep going for as long as it holds.
-    LaunchedEffect(rendered, refreshFrameEveryMs, frameCapturePx, clipAspect, contentMode, alignPortraitTop) {
+    // has actually happened and then keep going for as long as it holds. Not
+    // while the clip holds still, whose next frame would be this one again.
+    LaunchedEffect(
+        rendered, refreshFrameEveryMs, frameCapturePx, clipAspect, contentMode, alignPortraitTop,
+        isPlaying, pausedForTransition,
+    ) {
         val interval = refreshFrameEveryMs ?: return@LaunchedEffect
         if (frameCapturePx <= 0) return@LaunchedEffect
         Log.d(TAG, "periodic frame refresh started, interval=$interval")
-        if (!rendered) return@LaunchedEffect
+        if (!rendered || !isPlaying || pausedForTransition) return@LaunchedEffect
         while (isActive) {
             delay(interval)
             val view = textureView ?: continue
@@ -656,7 +660,11 @@ private fun TextureView.captureAt(
         val right = (frame.width - left).coerceAtLeast(left + 1)
         val bottom = if (alignPortraitTop) contentHeight.toInt().coerceIn(1, frame.height) else
             (frame.height - top).coerceAtLeast(top + 1)
-        Bitmap.createBitmap(frame, left, top, right - left, bottom - top)
+        val cropped = Bitmap.createBitmap(frame, left, top, right - left, bottom - top)
+        if (cropped != frame) {
+            frame.recycle()
+        }
+        cropped
     }.getOrNull()
 }
 
@@ -772,6 +780,12 @@ private fun TextureView.applyContentTransform(
  * [RenderEffect] is API 31+; below that [FadingBottomFrame] does the same job
  * the older way, with a saveLayer and a Porter-Duff mask.
  */
+/** Precomputed stop positions and smootherstep alphas to avoid per-frame allocations during bottom fade. */
+private val FADE_POSITIONS = FloatArray(FADE_CURVE_STOPS + 1) { i -> i / FADE_CURVE_STOPS.toFloat() }
+private val FADE_COLORS = IntArray(FADE_CURVE_STOPS + 1) { i ->
+    android.graphics.Color.argb(1f - smootherStep(i / FADE_CURVE_STOPS.toFloat()), 0f, 0f, 0f)
+}
+
 @RequiresApi(Build.VERSION_CODES.S)
 private fun TextureView.setBottomFade(fraction: Float, bounds: IntSize, endPx: Float?) {
     val endY = endPx?.coerceIn(0f, bounds.height.toFloat()) ?: bounds.height.toFloat()
@@ -786,10 +800,8 @@ private fun TextureView.setBottomFade(fraction: Float, bounds: IntSize, endPx: F
         endY * (1f - fraction.coerceAtMost(1f)),
         0f,
         endY,
-        IntArray(FADE_CURVE_STOPS + 1) { i ->
-            android.graphics.Color.argb(1f - smootherStep(i / FADE_CURVE_STOPS.toFloat()), 0f, 0f, 0f)
-        },
-        FloatArray(FADE_CURVE_STOPS + 1) { i -> i / FADE_CURVE_STOPS.toFloat() },
+        FADE_COLORS,
+        FADE_POSITIONS,
         Shader.TileMode.CLAMP,
     )
     // createOffsetEffect(0, 0) is the identity effect over the node's own
@@ -910,10 +922,8 @@ private class FadingBottomFrame(context: Context) : FrameLayout(context) {
             endY * (1f - fade),
             0f,
             endY,
-            IntArray(FADE_CURVE_STOPS + 1) { i ->
-                android.graphics.Color.argb(1f - smootherStep(i / FADE_CURVE_STOPS.toFloat()), 0f, 0f, 0f)
-            },
-            FloatArray(FADE_CURVE_STOPS + 1) { i -> i / FADE_CURVE_STOPS.toFloat() },
+            FADE_COLORS,
+            FADE_POSITIONS,
             Shader.TileMode.CLAMP,
         ).also {
             gradient = it

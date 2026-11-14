@@ -2,7 +2,6 @@ package com.music.bitchord.ui.player
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -33,6 +32,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -535,13 +535,13 @@ internal fun LyricsStatusWithChange(
 ) {
     val haptics = rememberHaptics()
     Row(
-        modifier = modifier,
+        modifier = modifier.additiveChrome(LocalPlayerChrome.current),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = status,
             style = MaterialTheme.typography.titleMedium,
-            color = LocalPlayerTint.current.copy(alpha = 0.55f),
+            color = chromeWhite(0.55f),
             textDecoration = if (onStatusClick != null) TextDecoration.Underline else null,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -571,6 +571,13 @@ internal fun adjustedLyricsSeekTarget(lineTimeMs: Long, offsetMs: Int): Long =
     (lineTimeMs + offsetMs.toLong()).coerceAtLeast(0L)
 
 /**
+ * A shared frame clock for lyrics across [NowPlayingScreen], [CurrentLyricStrip],
+ * and [LyricsPanel], so that only a single 120Hz `withFrameNanos` loop runs across
+ * the entire player screen.
+ */
+internal val LocalLyricClock = compositionLocalOf<MutableLongState?> { null }
+
+/**
  * The current lyric, one line, directly above the scrubber — or the line
  * saying why there isn't one.
  */
@@ -591,10 +598,10 @@ internal fun CurrentLyricStrip(
     val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
     var stripRtl by remember { mutableStateOf(false) }
     var activeText by remember { mutableStateOf("") }
-    if (isSynced) {
-        val clock = rememberLyricClock(trackKey, playhead, isPlaying)
+    val clock = if (isSynced) {
+        val c = LocalLyricClock.current ?: rememberLyricClock(trackKey, playhead, isPlaying)
         val index by remember(lines) {
-            derivedStateOf { lines.indexOfLast { it.timeMs <= clock.longValue } }
+            derivedStateOf { lines.indexOfLast { it.timeMs <= c.longValue } }
         }
         val current = lines.getOrNull(index)
         val instrumental = current == null || current.isGap
@@ -608,11 +615,17 @@ internal fun CurrentLyricStrip(
             else -> current.text
         }
         stripRtl = isRtl(activeText)
+        c
+    } else {
+        null
     }
 
     val align: Alignment = if (stripRtl) Alignment.CenterStart else Alignment.CenterStart
 
-    CompositionLocalProvider(LocalLayoutDirection provides if (stripRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+    CompositionLocalProvider(
+        LocalLayoutDirection provides if (stripRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
+        LocalLyricClock provides (clock ?: LocalLyricClock.current),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -630,6 +643,7 @@ internal fun CurrentLyricStrip(
                     isPlaying = isPlaying,
                     durationMs = durationMs,
                     onClick = onClick,
+                    clock = clock,
                     modifier = Modifier
                         .align(align),
                 )
@@ -702,7 +716,7 @@ private fun nanosToMs(nanos: Long): Double = nanos / 1_000_000.0
  * whole line would recompose sixty times a second.
  */
 @Composable
-private fun rememberLyricClock(
+internal fun rememberLyricClock(
     trackKey: Any,
     playhead: LyricPlayhead,
     isPlaying: Boolean,
@@ -957,21 +971,18 @@ private fun SweptLyricLine(
             maxLines = maxLines,
             overflow = overflow,
             // The feather erases into this layer, so the layer has to exist —
-            // and only while it is being drawn. Every line carrying one would
-            // put the whole panel through an offscreen buffer to soften an edge
-            // that at most two of them have.
-            modifier = riseAgainst(
-                Modifier
-                    .graphicsLayer {
-                        compositingStrategy = if (feather) {
-                            CompositingStrategy.Offscreen
-                        } else {
-                            CompositingStrategy.Auto
-                        }
+            // and only while it is being drawn. Sits outside riseAgainst so the
+            // entire line shares a single offscreen compositing pass rather than
+            // allocating and blitting an FBO per-character slice in riseWith.
+            modifier = Modifier
+                .graphicsLayer {
+                    compositingStrategy = if (feather) {
+                        CompositingStrategy.Offscreen
+                    } else {
+                        CompositingStrategy.Auto
                     }
-                    .then(room)
-                    .then(sweep),
-            ),
+                }
+                .then(riseAgainst(Modifier.then(room).then(sweep))),
         )
     }
 }
@@ -1465,10 +1476,11 @@ internal fun TranslationToggleButton(
     onClick: () -> Unit,
 ) {
     val active = showingTranslation || state is LyricsTranslationUiState.Loading
+    val chrome = LocalPlayerChrome.current
     val tint = when {
-        !enabled || state is LyricsTranslationUiState.SameLanguage -> LocalPlayerTint.current.copy(alpha = 0.42f)
-        active -> LocalPlayerTint.current
-        else -> LocalPlayerTint.current.copy(alpha = 0.78f)
+        !enabled || state is LyricsTranslationUiState.SameLanguage -> chromeWhite(0.42f)
+        active -> Color.White.copy(alpha = if (chrome) CHROME_FULL_ALPHA else 1f)
+        else -> chromeWhite(0.78f)
     }
     val discAlpha by animateFloatAsState(
         targetValue = if (active) 0.34f else 0.18f,
@@ -1478,7 +1490,8 @@ internal fun TranslationToggleButton(
         modifier = Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .background(LocalPlayerTint.current.copy(alpha = discAlpha))
+            .additiveChrome(chrome)
+            .background(Color.White.copy(alpha = discAlpha))
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -1516,10 +1529,11 @@ internal fun RomanizationToggleButton(
     onClick: () -> Unit,
 ) {
     val active = showingRomanization || state is LyricsTranslationUiState.Loading
+    val chrome = LocalPlayerChrome.current
     val tint = when {
-        !enabled || state is LyricsTranslationUiState.SameLanguage -> LocalPlayerTint.current.copy(alpha = 0.42f)
-        active -> LocalPlayerTint.current
-        else -> LocalPlayerTint.current.copy(alpha = 0.78f)
+        !enabled || state is LyricsTranslationUiState.SameLanguage -> chromeWhite(0.42f)
+        active -> Color.White.copy(alpha = if (chrome) CHROME_FULL_ALPHA else 1f)
+        else -> chromeWhite(0.78f)
     }
     val discAlpha by animateFloatAsState(
         targetValue = if (active) 0.34f else 0.18f,
@@ -1529,7 +1543,8 @@ internal fun RomanizationToggleButton(
         modifier = Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .background(LocalPlayerTint.current.copy(alpha = discAlpha))
+            .additiveChrome(chrome)
+            .background(Color.White.copy(alpha = discAlpha))
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -1797,7 +1812,7 @@ internal fun LyricsPanel(
     modifier: Modifier = Modifier,
 ) {
     val panelPlaying = isPlaying && active
-    val clock = rememberLyricClock(trackKey, playhead, panelPlaying)
+    val clock = LocalLyricClock.current ?: rememberLyricClock(trackKey, playhead, panelPlaying)
     val subReveal = rememberSubLyricsReveal(subLines, trackKey)
 
     val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
@@ -2067,7 +2082,12 @@ internal fun LyricsPanel(
         ),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        itemsIndexed(lines) { index, line ->
+        itemsIndexed(
+            items = lines,
+            key = { index, line ->
+                if (line.timeMs > 0L) "${line.timeMs}_$index" else "${line.text.hashCode()}_$index"
+            },
+        ) { index, line ->
             if (!isSynced && isGeniusSectionHeader(line.text)) {
                 val sectionTitle = line.text.removePrefix("[").removeSuffix("]").trim()
                 Column(
@@ -2577,15 +2597,6 @@ private fun PanelVoice(
         val vazirmatn = Font(Res.font.vazirmatn_regular)
         remember(style, vazirmatn) { style.copy(fontFamily = FontFamily(vazirmatn)) }
     } else style
-    // The line being sung is white; every other one — sung or still to come —
-    // takes the sleeve's tint, as the rest of the player's secondary text does
-    // (see [LocalPlayerTint]). Faded across the handover rather than cut, so a
-    // line warms to white as it is reached and cools as it is left. Lyrics
-    // with no timing have no line being sung, and stay white throughout.
-    val color by animateColorAsState(
-        targetValue = if (isActive || !synced) Color.White else LocalPlayerTint.current,
-        label = "lyricLineColor",
-    )
     if (line.isWordSynced && !browsing) {
         // Every word-synced line goes through the sweep, not just the playing
         // one — a line that has already been sung is fully revealed and one
@@ -2613,7 +2624,7 @@ private fun PanelVoice(
             alignEnd = alignEnd,
             laneLocked = laneLocked,
             translationProgress = translationProgress,
-            color = color,
+            color = Color.White,
         )
     } else if (line.isWordSynced) {
         // Browsing: keep the sweep so sung lines stay fully lit and unsung
@@ -2636,7 +2647,7 @@ private fun PanelVoice(
             alignEnd = alignEnd,
             laneLocked = laneLocked,
             translationProgress = translationProgress,
-            color = color,
+            color = Color.White,
         )
     } else {
         // No word timings, so there is no sweep to light the words as they are
@@ -2656,7 +2667,7 @@ private fun PanelVoice(
         Text(
             text = line.text,
             style = lyricStyle,
-            color = color.copy(alpha = lit),
+            color = Color.White.copy(alpha = lit),
             onTextLayout = { layout = it },
             modifier = modifier.lyricParticles(layout, translationProgress, room).padding(room),
         )
@@ -2802,6 +2813,7 @@ private fun CurrentLyricLine(
     durationMs: Long,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    clock: MutableLongState? = null,
 ) {
     val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
     // One line box whatever the script: left to the font, a Devanagari or
@@ -2848,10 +2860,10 @@ private fun CurrentLyricLine(
         return
     }
 
-    val clock = rememberLyricClock(trackKey, playhead, isPlaying)
+    val activeClock = clock ?: LocalLyricClock.current ?: rememberLyricClock(trackKey, playhead, isPlaying)
 
     val index by remember(lines) {
-        derivedStateOf { lines.indexOfLast { it.timeMs <= clock.longValue } }
+        derivedStateOf { lines.indexOfLast { it.timeMs <= activeClock.longValue } }
     }
     val current = lines.getOrNull(index)
     // Before the first line, and through instrumental breaks, show the note.
@@ -2942,13 +2954,13 @@ private fun CurrentLyricLine(
                     ?: (start + 4_000L)
                 val fade = ((end - start) * LYRIC_FADE_FRACTION)
                     .coerceIn(LYRIC_FADE_MIN_MS, LYRIC_FADE_MAX_MS)
-                val remaining = (end - clock.longValue).toFloat()
+                val remaining = (end - activeClock.longValue).toFloat()
                 alpha = 0.78f * (remaining / fade).coerceIn(0f, 1f)
             }
             if (swept != null) {
                 SweptLyricLine(
                     line = swept,
-                    clock = clock,
+                    clock = activeClock,
                     style = voiceStyle(stripStyle, text, alignEnd = false, laneLocked = false),
                     dimAlpha = UNSUNG_ALPHA_STRIP,
                     maxLines = 1,

@@ -1,12 +1,14 @@
 package com.music.bitchord.ui.player
 
 import com.music.bitchord.wear.WearBridge
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.database.ContentObserver
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,6 +25,7 @@ import com.music.bitchord.data.lyrics.LyricsTranslation
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.settings.LastPlayerScreen
+import com.music.bitchord.playback.MusicOnlyPlayback
 import com.music.bitchord.playback.AudioOutputStatus
 import com.music.bitchord.playback.AudioRouting
 import com.music.bitchord.playback.audio.bitperfect.BitPerfectOutput
@@ -69,7 +72,7 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
         override val hideVolumeBar get() = AppSettings.hideVolumeBar
         override val hideStatusBar get() = AppSettings.hideStatusBarInPlayer
         override val lastPlayerScreen get() = AppSettings.lastPlayerScreen
-        override val legacyMeshGradient get() = AppSettings.legacyMeshGradient
+        override val playerTheme get() = AppSettings.playerTheme
         override val lyricsBlur get() = AppSettings.lyricsBlur
         override val lyricsOffsetMs get() = AppSettings.lyricsOffsetMs
         override val lyricsSourceOrder get() = AppSettings.lyricsSourceOrder
@@ -79,6 +82,7 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
         override val prioritizeSpotifyCanvas get() = AppSettings.prioritizeSpotifyCanvas
         override val reduceAnimation get() = AppSettings.reduceAnimation
         override val reduceDynamicBlur get() = AppSettings.reduceDynamicBlur
+        override val disableBlendEffects get() = AppSettings.disableBlendEffects
         override val showNerdStats get() = AppSettings.showNerdStats
         override val showListenTogetherButton get() = AppSettings.showListenTogetherButton
         override val smartAnalysis get() = AppSettings.smartAnalysis
@@ -88,6 +92,7 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
         override val smartMixBlend get() = AppSettings.smartMixBlend
         override val smartMixView get() = AppSettings.smartMixView
         override val smartMixProgress get() = AppSettings.smartMixProgress
+        override val smartMixPreview get() = AppSettings.smartMixPreview
         override val smartTransitionWindow get() = AppSettings.smartTransitionWindow
         override val spotifyCanvasAutoHide get() = AppSettings.spotifyCanvasAutoHide
         override val syncedLyrics get() = AppSettings.syncedLyrics
@@ -96,6 +101,9 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
 
         override fun setLastPlayerScreen(value: LastPlayerScreen) = AppSettings.setLastPlayerScreen(value)
         override fun setLyricsOffsetMs(value: Int) = AppSettings.setLyricsOffsetMs(value)
+        override fun setMixViewOpen(open: Boolean) {
+            AppSettings.mixViewOpen.value = open
+        }
     }
 
     override fun cachedCanvas(song: Song): CanvasArtwork? = CanvasRepository.cached(song)
@@ -110,6 +118,8 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
     @Composable
     override fun MusicVideo(videoId: String, fit: Boolean, onRenderedChanged: (Boolean) -> Unit, modifier: Modifier) =
         AndroidMusicVideo(videoId, fit, onRenderedChanged, modifier)
+
+    override fun showsMusicVideoPicture(videoId: String): Boolean = MusicOnlyPlayback.showsPicture(videoId)
 
     override val musicVideoAspect: StateFlow<Float> get() = MusicVideoEngine.aspect
 
@@ -315,7 +325,8 @@ private class CastAwareVolume(
 
 /**
  * The music stream's volume. Hardware keys and the system panel change it
- * behind the app's back, so Settings is watched and the level follows.
+ * behind the app's back, so the system volume change broadcast is watched
+ * and the level follows.
  */
 private class MusicStreamVolume(private val context: Context) : SystemVolume {
     private val manager = context.getSystemService(AudioManager::class.java)
@@ -323,13 +334,23 @@ private class MusicStreamVolume(private val context: Context) : SystemVolume {
     override val level: StateFlow<Float> = _level.asStateFlow()
 
     init {
-        context.contentResolver.registerContentObserver(
-            Settings.System.CONTENT_URI,
-            true,
-            object : ContentObserver(Handler(Looper.getMainLooper())) {
-                override fun onChange(selfChange: Boolean) = refresh()
-            },
-        )
+        val filter = IntentFilter(VOLUME_CHANGED_ACTION)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val streamType = intent?.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1) ?: -1
+                if (streamType == AudioManager.STREAM_MUSIC || streamType == -1) {
+                    refresh()
+                }
+            }
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(receiver, filter)
+            }
+        }
     }
 
     private fun max(): Int = manager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
@@ -343,6 +364,11 @@ private class MusicStreamVolume(private val context: Context) : SystemVolume {
 
     override fun refresh() {
         _level.value = read()
+    }
+
+    companion object {
+        private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
+        private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
     }
 }
 

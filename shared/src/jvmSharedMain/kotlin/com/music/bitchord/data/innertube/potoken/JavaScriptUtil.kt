@@ -84,10 +84,27 @@ fun stringToU8(identifier: String): String {
  * and converts it to the specific base64 representation for poTokens.
  */
 fun u8ToBase64(poToken: String): String {
-    return poToken.split(",")
-        .map { it.toUByte().toByte() }
-        .toByteArray()
-        .toByteString()
+    if (poToken.isEmpty()) return ""
+    var count = 1
+    for (i in 0 until poToken.length) {
+        if (poToken[i] == ',') count++
+    }
+    val bytes = ByteArray(count)
+    var idx = 0
+    var current = 0
+    for (i in 0 until poToken.length) {
+        val c = poToken[i]
+        if (c == ',') {
+            bytes[idx++] = current.toByte()
+            current = 0
+        } else if (c in '0'..'9') {
+            current = current * 10 + (c - '0')
+        }
+    }
+    if (idx < count) {
+        bytes[idx] = current.toByte()
+    }
+    return bytes.toByteString()
         .base64()
         .replace("+", "-")
         .replace("/", "_")

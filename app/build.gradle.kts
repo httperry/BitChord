@@ -53,6 +53,18 @@ val listenTogetherServer: String = (
         ?: "https://bitchord-listen-together.onrender.com"
     ).trim().trimEnd('/')
 
+/*
+ * The service that checks this app's hardware key attestation and issues addon
+ * tokens. See AddonAuth. Overridable for a staging deployment. A fork that
+ * points this at its own server gains nothing: addons only trust tokens signed
+ * by the official service's key.
+ */
+val addonAuthServer: String = (
+    localProps.getProperty("ADDON_AUTH_SERVER")
+        ?: System.getenv("ADDON_AUTH_SERVER")
+        ?: "https://bitchord-auth.kushagrasingh.in"
+    ).trim().trimEnd('/')
+
 // See the root build.gradle.kts: one version for the phone and its watch app.
 val betaSuffix = rootProject.extra["bitchordBetaSuffix"] as String
 
@@ -79,6 +91,11 @@ android {
             "String",
             "LISTEN_TOGETHER_SERVER",
             "\"${listenTogetherServer.replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
+        buildConfigField(
+            "String",
+            "ADDON_AUTH_URL",
+            "\"${addonAuthServer.replace("\\", "\\\\").replace("\"", "\\\"")}\"",
         )
         // Which release assets are this app's: the phone and TV APKs ship in
         // the same GitHub release, told apart by file name. See
@@ -115,8 +132,8 @@ android {
     productFlavors {
         create("dev") {
             dimension = "env"
-            applicationId = "com.dev.bitchord"
-            resValue("string", "app_name", "BitChord Dev")
+            applicationId = "com.music.bitchord.opt"
+            resValue("string", "app_name", "BitChord Opt")
         }
         create("prod") {
             dimension = "env"
@@ -146,6 +163,14 @@ android {
     buildTypes {
         debug {
             if (betaSuffix.isNotEmpty()) versionNameSuffix = "-$betaSuffix"
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             // Carried here too — see [betaSuffix]. A sideloaded beta is a
@@ -172,7 +197,7 @@ android {
             )
             // Null without a keystore to sign with: the build then produces
             // app-release-unsigned.apk instead of failing outright.
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         /*
          * The release build, installable next to the dev and prod apps: same R8,
@@ -530,3 +555,4 @@ if (providers.gradleProperty("bitchord.bundleWear").orNull != "false" && findPro
         variant.sources.assets?.addGeneratedSourceDirectory(bundle, BundleWearApk::outputDir)
     }
 }
+

@@ -36,9 +36,12 @@ object LikeState {
     /** Seeds only ratings not already changed explicitly during this session. */
     fun seedLiked(videoIds: Set<String>) {
         if (videoIds.isEmpty()) return
-        val next = _overrides.value.toMutableMap()
-        videoIds.forEach { next.putIfAbsent(it, LikeStatus.LIKE) }
-        if (next != _overrides.value) _overrides.value = next
+        val current = _overrides.value
+        val newKeys = videoIds.filter { it !in current }
+        if (newKeys.isEmpty()) return
+        val next = current.toMutableMap()
+        newKeys.forEach { next[it] = LikeStatus.LIKE }
+        _overrides.value = next
     }
 
     fun clear() {

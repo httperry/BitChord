@@ -367,7 +367,7 @@ private const val MAX_SLEW = 0.25
 private const val MAX_SLOW = 0.5
 
 /** Behind by this much, the words catch up over [GLIDE_MS] rather than by running fast. */
-private const val GLIDE_FROM_MS = 300.0
+private const val GLIDE_FROM_MS = 800.0
 
 /** am-lyrics eases its rewinds over 260 ms with the same smoothstep. */
 private const val GLIDE_MS = 260.0

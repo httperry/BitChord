@@ -45,6 +45,7 @@ import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -221,7 +222,11 @@ fun FloatingTabBar(
     SharedTransitionLayout(modifier = modifier) {
         AnimatedContent(
             targetState = scrollConnection.isInline,
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            transitionSpec = {
+                (fadeIn() togetherWith fadeOut()).using(
+                    SizeTransform(clip = false)
+                )
+            },
             contentAlignment = Alignment.BottomCenter
         ) { isInline ->
             if (isInline) {
@@ -284,15 +289,15 @@ class FloatingTabBarScrollConnection(
     }
 
     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-        // If behavior is Never, don't change state
-        if (inlineBehavior == FloatingTabBarInlineBehavior.Never) {
+        // If behavior is Never or scroll is not from user touch, don't change state
+        if (inlineBehavior == FloatingTabBarInlineBehavior.Never || source != NestedScrollSource.UserInput) {
             return Offset.Zero
         }
 
         val scrollDelta = available.y
 
-        // Reset accumulated scroll if changing direction
-        if ((accumulatedScroll > 0 && scrollDelta < 0) || (accumulatedScroll < 0 && scrollDelta > 0)) {
+        // Reset accumulated scroll only if changing direction significantly (> 1px)
+        if ((accumulatedScroll > 1f && scrollDelta < -1f) || (accumulatedScroll < -1f && scrollDelta > 1f)) {
             accumulatedScroll = 0f
         }
 
@@ -523,7 +528,7 @@ private fun SharedTransitionScope.InlineTab(
                     Modifier.sharedElement(
                         sharedContentState = rememberSharedContentState("tab#${inlineTab.key}-icon"),
                         animatedVisibilityScope = animatedVisibilityScope,
-                        zIndexInOverlay = 1f
+                        zIndexInOverlay = 2f
                     )
                 ) {
                     inlineTab.icon()
@@ -732,6 +737,27 @@ private fun SharedTransitionScope.ExpandedAccessory(
         )
     }
 }
+
+private class TabRowLayoutState {
+    var widthPx: Float = 0f
+    var heightPx: Float = 0f
+    var tabWidthPx: Float = 0f
+    var tabStepPx: Float = 0f
+
+    fun update(width: Int, height: Int, tabCount: Int, tabSpacingPx: Float, density: Float, pill: GlassPillMotion) {
+        widthPx = width.toFloat()
+        heightPx = height.toFloat()
+        if (width > 0 && tabCount > 0) {
+            tabWidthPx = (widthPx - tabSpacingPx * (tabCount - 1)) / tabCount
+            tabStepPx = (widthPx + tabSpacingPx) / tabCount
+            pill.stepDp = tabStepPx / density
+        } else {
+            tabWidthPx = 0f
+            tabStepPx = 0f
+        }
+    }
+}
+
 @Composable
 private fun SharedTransitionScope.ExpandedTabs(
     scope: FloatingTabBarScopeImpl,
@@ -765,7 +791,7 @@ private fun SharedTransitionScope.ExpandedTabs(
     val barGlass = rememberLayerBackdrop()
     val tabRow = rememberLayerBackdrop()
 
-    var rowSize by remember { mutableStateOf(IntSize.Zero) }
+    val rowLayout = remember { TabRowLayoutState() }
     var lastHapticTab by remember { mutableIntStateOf(selectedTabIndex) }
     var lastSelectedTabIndex by remember { mutableIntStateOf(selectedTabIndex) }
     val density = LocalDensity.current
@@ -773,20 +799,6 @@ private fun SharedTransitionScope.ExpandedTabs(
     val isRtl = layoutDirection == LayoutDirection.Rtl
     val tabCount = scope.tabs.size
     val tabSpacingPx = with(density) { sizes.tabSpacing.toPx() }
-    val tabWidthPx = if (rowSize.width > 0 && tabCount > 0) {
-        (rowSize.width - tabSpacingPx * (tabCount - 1)) / tabCount
-    } else {
-        0f
-    }
-    val tabStepPx = if (rowSize.width > 0 && tabCount > 0) {
-        (rowSize.width + tabSpacingPx) / tabCount
-    } else {
-        0f
-    }
-    pill.stepDp = tabStepPx / density.density
-    // For the row's drag, which runs in one coroutine for the life of the row
-    // and would otherwise keep the step from its first touch.
-    val currentTabStepPx by rememberUpdatedState(tabStepPx)
     val currentIsRtl by rememberUpdatedState(isRtl)
 
     // The pill rests in its tab's cell and lifts to stand [PILL_GROW_HEIGHT]
@@ -795,21 +807,26 @@ private fun SharedTransitionScope.ExpandedTabs(
     val padLeftPx = with(density) { contentPadding.calculateLeftPadding(layoutDirection).toPx() }
     val padTopPx = with(density) { contentPadding.calculateTopPadding().toPx() }
     val padBottomPx = with(density) { contentPadding.calculateBottomPadding().toPx() }
-    val rowHeightPx = rowSize.height.toFloat()
-    val restSize = Size(tabWidthPx, rowHeightPx)
-    val liftedHeightPx = rowHeightPx + padTopPx + padBottomPx +
-        with(density) { PILL_GROW_HEIGHT.toPx() }
-    val liftedSize = if (rowHeightPx > 0f) {
-        Size(liftedHeightPx * tabWidthPx / rowHeightPx, liftedHeightPx)
-    } else {
-        restSize
-    }
+    val pillGrowHeightPx = with(density) { PILL_GROW_HEIGHT.toPx() }
+
     // Where the pill's centre is in the row, for a position in tab steps.
     val pillCenterInRow: (Float) -> Offset = { position ->
-        val x = position * tabStepPx + tabWidthPx / 2f
-        Offset(if (isRtl) rowSize.width - x else x, rowHeightPx / 2f)
+        val w = rowLayout.widthPx
+        val h = rowLayout.heightPx
+        val step = rowLayout.tabStepPx
+        val tabW = rowLayout.tabWidthPx
+        val x = position * step + tabW / 2f
+        Offset(if (isRtl) w - x else x, h / 2f)
     }
-    val showPill = selectedTabIndex >= 0 && tabWidthPx > 0f
+    val pillLiveSize: () -> Size = {
+        val tabW = rowLayout.tabWidthPx
+        val h = rowLayout.heightPx
+        val rest = Size(tabW, h)
+        val liftedH = h + padTopPx + padBottomPx + pillGrowHeightPx
+        val lifted = if (h > 0f) Size(liftedH * tabW / h, liftedH) else rest
+        pill.liveSize(rest, lifted)
+    }
+    val showPill = selectedTabIndex >= 0
 
     LaunchedEffect(selectedTabIndex) {
         if (selectedTabIndex >= 0) {
@@ -834,8 +851,8 @@ private fun SharedTransitionScope.ExpandedTabs(
                 zIndexInOverlay = 1f
             )
     ) {
-        // The bar's glass is exported for the lens to refract.
-        CompositionLocalProvider(LocalGlassExport provides barGlass) {
+        // The bar's glass is exported for the lens to refract only when the lens is active.
+        CompositionLocalProvider(LocalGlassExport provides (if (glassPill && !pill.isFlat) barGlass else null)) {
             Box(
                 modifier = Modifier
                     .shadow(
@@ -849,7 +866,6 @@ private fun SharedTransitionScope.ExpandedTabs(
                     .clip(shapes.tabBarShape)
                     .then(tabBarContentModifier())
                     .padding(contentPadding)
-                    .animateContentSize()
             ) {
                 if (showPill && (!glassPill || pill.isFlat)) {
                     FlatSelectionPill(
@@ -858,7 +874,7 @@ private fun SharedTransitionScope.ExpandedTabs(
                             .matchParentSize()
                             .pillPlacement(
                                 center = { pillCenterInRow(pill.position) },
-                                size = { pill.liveSize(restSize, liftedSize) },
+                                size = pillLiveSize,
                             ),
                     )
                 }
@@ -867,8 +883,17 @@ private fun SharedTransitionScope.ExpandedTabs(
                     horizontalArrangement = Arrangement.spacedBy(sizes.tabSpacing),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onSizeChanged { rowSize = it }
-                        .layerBackdrop(tabRow)
+                        .onSizeChanged { size ->
+                            rowLayout.update(
+                                width = size.width,
+                                height = size.height,
+                                tabCount = tabCount,
+                                tabSpacingPx = tabSpacingPx,
+                                density = density.density,
+                                pill = pill,
+                            )
+                        }
+                        .then(if (glassPill && !pill.isFlat) Modifier.layerBackdrop(tabRow) else Modifier)
                         .pointerInput(Unit) {
                             var totalDrag = 0f
                             var dragStartIndex = currentSelectedTabIndex
@@ -880,7 +905,7 @@ private fun SharedTransitionScope.ExpandedTabs(
                             var holding = false
                             detectHorizontalDragGestures(
                                 onDragStart = {
-                                    step = currentTabStepPx
+                                    step = rowLayout.tabStepPx
                                     holding = currentSelectedTabIndex >= 0 && step > 0f
                                     if (!holding) return@detectHorizontalDragGestures
                                     // In tab order, whichever way the row runs.
@@ -922,6 +947,7 @@ private fun SharedTransitionScope.ExpandedTabs(
                 ) {
                     scope.tabs.forEach { tab ->
                         val isSelected = tab.key == selectedTabKey
+                        val isInlineTab = tab.key == inlineTab?.key
                         val iconScale by animateFloatAsState(
                             targetValue = if (isSelected) 1.08f else 1f,
                             animationSpec = selectionSpec,
@@ -930,17 +956,14 @@ private fun SharedTransitionScope.ExpandedTabs(
                         Tab(
                             icon = {
                                 Box(
-                                    modifier = (if (tab.key == inlineTab?.key) {
+                                    modifier = (if (isInlineTab) {
                                         Modifier.sharedElement(
                                             sharedContentState = rememberSharedContentState("tab#${tab.key}-icon"),
                                             animatedVisibilityScope = animatedVisibilityScope,
-                                            zIndexInOverlay = 1f
+                                            zIndexInOverlay = 2f
                                         )
                                     } else {
-                                        Modifier.animateEnterExitTab(
-                                            sharedTransitionScope = this@ExpandedTabs,
-                                            animatedVisibilityScope = animatedVisibilityScope
-                                        )
+                                        Modifier
                                     }).graphicsLayer {
                                         scaleX = iconScale
                                         scaleY = iconScale
@@ -950,12 +973,16 @@ private fun SharedTransitionScope.ExpandedTabs(
                                 }
                             },
                             title = {
-                                Box(
-                                    Modifier.animateEnterExitTab(
-                                        sharedTransitionScope = this@ExpandedTabs,
-                                        animatedVisibilityScope = animatedVisibilityScope
-                                    )
-                                ) {
+                                if (isInlineTab) {
+                                    Box(
+                                        Modifier.animateEnterExitTab(
+                                            sharedTransitionScope = this@ExpandedTabs,
+                                            animatedVisibilityScope = animatedVisibilityScope
+                                        )
+                                    ) {
+                                        tab.title()
+                                    }
+                                } else {
                                     tab.title()
                                 }
                             },
@@ -967,6 +994,16 @@ private fun SharedTransitionScope.ExpandedTabs(
                                 .weight(1f)
                                 .skipToLookaheadSize()
                                 .clip(shapes.tabShape)
+                                .then(
+                                    if (!isInlineTab) {
+                                        Modifier.animateEnterExitTab(
+                                            sharedTransitionScope = this@ExpandedTabs,
+                                            animatedVisibilityScope = animatedVisibilityScope
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                )
                                 .clickable(
                                     onClick = tab.onClick,
                                     indication = tab.indication?.invoke(),
@@ -989,7 +1026,7 @@ private fun SharedTransitionScope.ExpandedTabs(
                     .matchParentSize()
                     .pillPlacement(
                         center = { pillCenterInRow(pill.position) + Offset(padLeftPx, padTopPx) },
-                        size = { pill.liveSize(restSize, liftedSize) },
+                        size = pillLiveSize,
                     ),
             )
         }
@@ -1144,7 +1181,7 @@ private fun Modifier.animateEnterExitTab(
             // pay for a blur of nothing — on a bar that is on screen the whole
             // time the app is.
             renderEffect =
-                if (animatedBlur > 0f) BlurEffect(animatedBlur, animatedBlur) else null
+                if (animatedAlpha > 0.01f && animatedBlur >= 0.5f) BlurEffect(animatedBlur, animatedBlur) else null
         }
     }
 }

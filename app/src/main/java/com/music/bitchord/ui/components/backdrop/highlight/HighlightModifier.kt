@@ -26,7 +26,9 @@ import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.requireGraphicsContext
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.fastCoerceAtMost
 import com.music.bitchord.ui.components.backdrop.RuntimeShaderCacheImpl
 import com.music.bitchord.ui.components.backdrop.internal.ShapeProvider
@@ -91,11 +93,20 @@ internal class HighlightNode(
 
     private val runtimeShaderCache = RuntimeShaderCacheImpl()
 
-    private var prevStyle: HighlightStyle? = null
+    private var hasRecorded = false
+    private var lastSafeSize = IntSize.Zero
+    private var lastDensity = -1f
+    private var lastFontScale = -1f
+    private var lastLayoutDirection: LayoutDirection? = null
+    private var lastShape: Any? = null
+    private var lastHighlightWidth: Dp = Dp.Unspecified
+    private var lastHighlightBlur: Dp = Dp.Unspecified
+    private var lastHighlightStyle: HighlightStyle? = null
 
     override fun ContentDrawScope.draw() {
         val highlight = highlight()
         if (highlight == null || highlight.width.value <= 0f) {
+            hasRecorded = false
             return drawContent()
         }
 
@@ -113,25 +124,54 @@ internal class HighlightNode(
                     ceil(size.height).toInt() + 2
                 )
 
-            val outline = shapeProvider.shape.createOutline(size, layoutDirection, density)
-            val clipPath =
-                if (outline is Outline.Rounded) {
+            val currentShape = shapeProvider.shape
+            val isDirty = !hasRecorded ||
+                safeSize != lastSafeSize ||
+                density.density != lastDensity ||
+                density.fontScale != lastFontScale ||
+                layoutDirection != lastLayoutDirection ||
+                currentShape != lastShape ||
+                highlight.width != lastHighlightWidth ||
+                highlight.blurRadius != lastHighlightBlur ||
+                highlight.style != lastHighlightStyle
+
+            if (isDirty) {
+                lastSafeSize = safeSize
+                lastDensity = density.density
+                lastFontScale = density.fontScale
+                lastLayoutDirection = layoutDirection
+                lastShape = currentShape
+                lastHighlightWidth = highlight.width
+                lastHighlightBlur = highlight.blurRadius
+                lastHighlightStyle = highlight.style
+
+                val outline = currentShape.createOutline(size, layoutDirection, density)
+                val path = if (outline is Outline.Rounded) {
                     clipPath ?: Path().also { clipPath = it }
                 } else {
                     null
                 }
 
-            configurePaint(highlight)
+                configurePaint(highlight)
 
-            highlightLayer.alpha = highlight.alpha
-            highlightLayer.blendMode = highlight.style.blendMode
-            highlightLayer.record(safeSize) {
-                translate(1f, 1f) {
-                    val canvas = drawContext.canvas
-                    canvas.save()
-                    canvas.clipOutline(outline, clipPath)
-                    canvas.drawOutline(outline, paint)
-                    canvas.restore()
+                highlightLayer.alpha = highlight.alpha
+                highlightLayer.blendMode = highlight.style.blendMode
+                highlightLayer.record(safeSize) {
+                    translate(1f, 1f) {
+                        val canvas = drawContext.canvas
+                        canvas.save()
+                        canvas.clipOutline(outline, path)
+                        canvas.drawOutline(outline, paint)
+                        canvas.restore()
+                    }
+                }
+                hasRecorded = true
+            } else {
+                if (highlightLayer.alpha != highlight.alpha) {
+                    highlightLayer.alpha = highlight.alpha
+                }
+                if (highlightLayer.blendMode != highlight.style.blendMode) {
+                    highlightLayer.blendMode = highlight.style.blendMode
                 }
             }
 
@@ -153,8 +193,11 @@ internal class HighlightNode(
             highlightLayer = null
         }
         clipPath = null
+        hasRecorded = false
+        lastSafeSize = IntSize.Zero
+        lastShape = null
+        lastHighlightStyle = null
         runtimeShaderCache.clear()
-        prevStyle = null
     }
 
     private fun DrawScope.configurePaint(highlight: Highlight) {
