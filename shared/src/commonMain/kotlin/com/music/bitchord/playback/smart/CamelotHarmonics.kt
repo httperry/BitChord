@@ -513,6 +513,9 @@ object CamelotHarmonics {
     fun scoreCompatibility(currentKey: CamelotKey, nextKey: CamelotKey): Double =
         scoreCompatibility(currentKey.id, nextKey.id)
 
+    fun scoreCompatibility(currentAnalysis: TrackAnalysis, nextAnalysis: TrackAnalysis): Double =
+        scoreCompatibility(currentAnalysis.key, nextAnalysis.key)
+
     /**
      * Returns true if two keys meet the harmonic compatibility threshold (default 0.65).
      */

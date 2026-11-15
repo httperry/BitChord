@@ -177,6 +177,7 @@ object LoopMix {
         why: StringBuilder? = null,
     ): Plan? {
         if (outVideo || inVideo) return null.also { why?.append("a music video") }
+        if (CamelotHarmonics.isClash(out, inn)) return null.also { why?.append("harmonic clash") }
         val outGrid = constantGrid(out, isOutro = true) ?: return null.also { why?.append("no grid on the outgoing song") }
         val inGrid = constantGrid(inn) ?: return null.also { why?.append("no grid on the incoming song") }
         val outCount = Rejections()

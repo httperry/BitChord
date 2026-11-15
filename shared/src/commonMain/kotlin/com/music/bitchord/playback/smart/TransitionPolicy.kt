@@ -128,6 +128,25 @@ const val MAX_DISCARDED_MUSIC_SECONDS = 12.0
 const val MAX_OUTRO_DISCARDED_MUSIC_SECONDS = 48.0
 
 /**
+ * Maximum deferral ceiling for continuous musical buildup or cliffhanger (15 seconds).
+ * After 15 seconds from the initial mix-out anchor, the transition is allowed to execute
+ * on the next phrase downbeat.
+ */
+const val MAX_DEFER_SECONDS = 15.0
+
+/**
+ * 4-bar rolling average smoothed energy slope threshold (+0.15).
+ * A slope above this indicates an active musical buildup or cliffhanger.
+ */
+const val CLIFFHANGER_ENERGY_SLOPE_THRESHOLD = 0.15
+
+/** Maximum tempo difference ratio (6%) permitted for advanced breakdown / vocal mashup blends. */
+const val MAX_BREAKDOWN_BPM_DIFF = 0.06
+
+/** Minimum Camelot harmonic score (0.8) permitted for advanced breakdown / vocal mashup blends. */
+const val MIN_BREAKDOWN_HARMONIC_SCORE = 0.8
+
+/**
  * Fraction of a track's own loud-end reference below which a sample counts as
  * silence rather than music, so a genuine gap costs nothing against the budget.
  */
@@ -328,6 +347,130 @@ fun audibleSecondsBetween(analysis: TrackAnalysis, start: Double, end: Double): 
     }
     return audible
 }
+
+/**
+ * Computes average energy across a curve between [from] and [until] seconds.
+ * Null if no valid samples exist in the window or until <= from.
+ */
+fun averageEnergyInWindow(curve: List<EnergySample>, from: Double, until: Double): Double? {
+    if (curve.isEmpty() || until <= from) return null
+    var sum = 0.0
+    var count = 0
+    for (point in curve) {
+        if (!point.time.isFinite() || point.time < from) continue
+        if (point.time > until) break
+        if (point.energy.isFinite() && point.energy >= 0) {
+            sum += point.energy
+            count += 1
+        }
+    }
+    return if (count > 0) sum / count else null
+}
+
+/**
+ * Computes 4-bar rolling average smoothed energy slope at [candidateTime]:
+ * Delta E_4bar = E_curr_4bar - E_prev_4bar
+ *
+ * Current 4-bar window: [candidateTime, candidateTime + 4 bars]
+ * Preceding 4-bar window: [candidateTime - 4 bars, candidateTime]
+ */
+fun smoothedEnergySlope4Bar(
+    curve: List<EnergySample>,
+    candidateTime: Double,
+    barIntervalSec: Double,
+): Double? {
+    if (curve.isEmpty() || !candidateTime.isFinite() || candidateTime <= 0.0 || barIntervalSec <= 0.0) return null
+    val fourBarsSec = 4.0 * barIntervalSec
+    val prevAvg = averageEnergyInWindow(curve, candidateTime - fourBarsSec, candidateTime)
+    val currAvg = averageEnergyInWindow(curve, candidateTime, candidateTime + fourBarsSec)
+    if (prevAvg == null || currAvg == null) return null
+    return currAvg - prevAvg
+}
+
+fun smoothedEnergySlope4Bar(
+    analysis: TrackAnalysis,
+    candidateTime: Double,
+): Double? {
+    val beatSec = analysis.beatInterval.orZero().takeIf { it > 0.0 }
+        ?: analysis.bpm.orZero().takeIf { it > 0.0 }?.let { 60.0 / it }
+        ?: 0.5
+    return smoothedEnergySlope4Bar(analysis.energyCurve, candidateTime, 4.0 * beatSec)
+}
+
+/**
+ * Checks whether [candidateTime] should be vetoed due to an active musical buildup or cliffhanger
+ * (Delta E_4bar > +0.15), subject to [MAX_DEFER_SECONDS] deferral ceiling from [initialMixOutTime].
+ */
+fun isEnergyCliffhangerVetoed(
+    curve: List<EnergySample>,
+    candidateTime: Double,
+    barIntervalSec: Double,
+): Boolean {
+    val slope = smoothedEnergySlope4Bar(curve, candidateTime, barIntervalSec) ?: return false
+    return slope > CLIFFHANGER_ENERGY_SLOPE_THRESHOLD
+}
+
+fun isEnergyCliffhangerVetoed(
+    analysis: TrackAnalysis,
+    candidateTime: Double,
+    initialMixOutTime: Double? = null,
+): Boolean {
+    // Maximum deferral ceiling: after 15 seconds from the initial mix-out anchor, do not veto
+    if (initialMixOutTime != null && candidateTime >= initialMixOutTime + MAX_DEFER_SECONDS - 1e-6) {
+        return false
+    }
+    val slope = smoothedEnergySlope4Bar(analysis, candidateTime) ?: return false
+    return slope > CLIFFHANGER_ENERGY_SLOPE_THRESHOLD
+}
+
+/**
+ * Finds the earliest phrase downbeat in [analysis] at or after [afterTime] and before [maxTime].
+ */
+fun findNextPhraseDownbeatAfter(
+    analysis: TrackAnalysis,
+    afterTime: Double,
+    maxTime: Double,
+): Double? {
+    val downs = analysis.downbeats
+    if (downs.isEmpty()) return null
+    for (i in downs.indices step 4) {
+        val t = downs[i]
+        if (t >= afterTime && t < maxTime) {
+            return t
+        }
+    }
+    analysis.phraseBoundaries.firstOrNull { it >= afterTime && it < maxTime }?.let { return it }
+    return downs.firstOrNull { it >= afterTime && it < maxTime }
+}
+
+/**
+ * Evaluates whether an advanced breakdown blend or vocal mashup blend is permitted.
+ * Strict Gate:
+ * Only permit breakdown blend if harmonicScore >= 0.8 (relative, adjacent, or energy boost)
+ * AND bpmDiff <= 0.06 (within +-6% tempo stretch range).
+ */
+fun isBreakdownBlendPermitted(
+    currentKey: String?,
+    nextKey: String?,
+    currentBpm: Double,
+    nextBpm: Double,
+): Boolean {
+    if (currentBpm <= 0.0 || nextBpm <= 0.0) return false
+    val harmonicScore = CamelotHarmonics.scoreCompatibility(currentKey, nextKey)
+    val alignedNextBpm = alignTempoOctave(currentBpm, nextBpm)
+    val bpmDiff = kotlin.math.abs(currentBpm - alignedNextBpm) / currentBpm
+    return harmonicScore >= MIN_BREAKDOWN_HARMONIC_SCORE && bpmDiff <= MAX_BREAKDOWN_BPM_DIFF
+}
+
+fun isBreakdownBlendPermitted(
+    analysis: TrackAnalysis,
+    nextAnalysis: TrackAnalysis,
+): Boolean = isBreakdownBlendPermitted(
+    currentKey = analysis.key,
+    nextKey = nextAnalysis.key,
+    currentBpm = analysis.bpm.orZero(),
+    nextBpm = nextAnalysis.bpm.orZero(),
+)
 
 /**
  * The earliest point the analysis claims the track makes sound.
@@ -557,9 +700,13 @@ fun rankMixOutCandidates(
 ): List<RankedMixCandidate> {
     val end = resolveContentEnd(analysis, contentEnd, duration)
     if (end <= 0) return emptyList()
+    val rawCandidates = mixOutCandidatesOf(analysis, end)
+    val initialMixOutTime = rawCandidates
+        .filter { it.type != "content_end" && it.time.isFinite() && it.time > 0 }
+        .minByOrNull { it.time }?.time
     val keyClash = incomingAnalysis != null && hasKeyClash(analysis, incomingAnalysis)
     val lastSung = sungOut?.maxOfOrNull { it.end }
-    return mixOutCandidatesOf(analysis, end)
+    return rawCandidates
         .map { candidate ->
             val measured = audibleSecondsBetween(analysis, candidate.time, end)
             // With no energy curve there is no way to tell skipped music from skipped silence, so
@@ -617,6 +764,10 @@ fun rankMixOutCandidates(
                 if (midLyric) return@filter false
                 val vocalAtPoint = vocalActivityBetween(analysis, candidate.time - 0.25, candidate.time + 0.25)
                 if (vocalAtPoint != null && vocalAtPoint >= VOCAL_ACTIVE_THRESHOLD) return@filter false
+                // Veto candidate if 4-bar rolling average smoothed energy slope indicates active buildup / cliffhanger
+                if (isEnergyCliffhangerVetoed(analysis, candidate.time, initialMixOutTime)) {
+                    return@filter false
+                }
             }
             if (candidate.type == "content_end") return@filter true
             val maxAllowed = when (candidate.type) {
@@ -641,7 +792,36 @@ fun resolveMixOutAnchor(
     sungOut: List<LoopMix.Span>? = null,
 ): MixOutAnchor {
     val end = resolveContentEnd(analysis, contentEnd, duration)
-    val best = rankMixOutCandidates(analysis, end, duration, incomingAnalysis, sungOut).firstOrNull()
+    val ranked = rankMixOutCandidates(analysis, end, duration, incomingAnalysis, sungOut)
+    val best = ranked.firstOrNull()
+    if (best != null && best.type != "content_end") {
+        return MixOutAnchor(
+            time = best.time,
+            type = best.type,
+            discardedMusicSeconds = best.discardedMusicSeconds,
+        )
+    }
+
+    // Prolonged continuous buildup deferral handling:
+    // If initial structural candidate was vetoed due to cliffhanger buildup, allow transition
+    // to execute on the next phrase downbeat after MAX_DEFER_SECONDS (15.0s)
+    val rawCandidates = mixOutCandidatesOf(analysis, end)
+    val initialCandidate = rawCandidates
+        .filter { it.type != "content_end" && it.time.isFinite() && it.time > 0 }
+        .minByOrNull { it.time }
+    if (initialCandidate != null && isEnergyCliffhangerVetoed(analysis, initialCandidate.time)) {
+        val ceilingTime = initialCandidate.time + MAX_DEFER_SECONDS
+        val nextPhraseDownbeat = findNextPhraseDownbeatAfter(analysis, ceilingTime, end)
+        if (nextPhraseDownbeat != null && nextPhraseDownbeat < end - 1.0) {
+            val measured = audibleSecondsBetween(analysis, nextPhraseDownbeat, end)
+            return MixOutAnchor(
+                time = nextPhraseDownbeat,
+                type = "deferred_phrase_downbeat",
+                discardedMusicSeconds = measured ?: max(0.0, end - nextPhraseDownbeat),
+            )
+        }
+    }
+
     return MixOutAnchor(
         time = best?.time ?: end,
         type = best?.type ?: "content_end",

@@ -137,6 +137,9 @@ enum class TransitionStyle {
 
     /** Filtered handoff for tempi too far apart to blend flat. */
     DJ_FILTER,
+
+    /** Advanced breakdown blend or vocal mashup blend across harmonic downbeats. */
+    BREAKDOWN_BLEND,
 }
 
 /**
@@ -505,6 +508,97 @@ private fun alignedTransitionStart(
     return clamp(target, minimum, end)
 }
 
+/** Minimum beat tracking confidence (0.75) required for advanced transitions. */
+const val QUALITY_GATE_MIN_BEAT_CONFIDENCE = 0.75
+
+/**
+ * Checks whether the downbeat grid of [analysis] is consistent and aligned with its tempo.
+ */
+fun isDownbeatGridAligned(analysis: TrackAnalysis, toleranceRatio: Double = 0.2): Boolean {
+    val downs = analysis.downbeats
+    if (downs.size < 2) return false
+    val beatSec = analysis.beatInterval.orZero().takeIf { it > 0.0 }
+        ?: analysis.bpm.orZero().takeIf { it > 0.0 }?.let { 60.0 / it }
+        ?: return false
+    val expectedBar = 4.0 * beatSec
+    val checkCount = minOf(downs.size - 1, 8)
+    for (i in 0 until checkCount) {
+        val interval = downs[i + 1] - downs[i]
+        val singleBarError = abs(interval - expectedBar) / expectedBar
+        val doubleBarError = abs(interval - 2 * expectedBar) / (2 * expectedBar)
+        if (singleBarError > toleranceRatio && doubleBarError > toleranceRatio) {
+            return false
+        }
+    }
+    return true
+}
+
+/**
+ * Checks whether both tracks pass the quality gate for advanced transitions:
+ * Beat tracking confidence >= 0.75 on both tracks, and downbeat grids are aligned.
+ */
+fun passesAdvancedQualityGate(
+    analysis: TrackAnalysis,
+    nextAnalysis: TrackAnalysis,
+): Boolean {
+    val outConfidence = analysis.beatConfidence.orZero()
+    val inConfidence = nextAnalysis.beatConfidence.orZero()
+    if (outConfidence < QUALITY_GATE_MIN_BEAT_CONFIDENCE || inConfidence < QUALITY_GATE_MIN_BEAT_CONFIDENCE) {
+        return false
+    }
+    if (!isDownbeatGridAligned(analysis) || !isDownbeatGridAligned(nextAnalysis)) {
+        return false
+    }
+    return true
+}
+
+/**
+ * Creates a clean equal-power blend anchored at [contentEnd].
+ */
+fun createEqualPowerContentEndPlan(
+    analysis: TrackAnalysis,
+    nextAnalysis: TrackAnalysis,
+    contentEnd: Double,
+    playbackTime: Double,
+    safeMinFade: Double,
+    policyReasons: List<String> = emptyList(),
+    reason: String = "quality-gate-downgrade",
+): TransitionPlan {
+    val musicalFade = if (analysis.bpm.orZero() > 0.0) {
+        val beatSec = 60.0 / analysis.bpm
+        val fourBars = 16.0 * beatSec
+        val eightBars = 32.0 * beatSec
+        when {
+            eightBars in 5.0..12.0 -> eightBars
+            fourBars in 5.0..12.0 -> fourBars
+            else -> safeMinFade.coerceIn(5.0, 12.0)
+        }
+    } else {
+        safeMinFade.coerceIn(5.0, 12.0)
+    }
+    val targetStart = max(0.0, contentEnd - musicalFade)
+    val transitionStart = alignedTransitionStart(
+        analysis = analysis,
+        target = targetStart,
+        end = contentEnd - 0.05,
+        preferEarlier = true,
+        minimum = 0.0,
+    )
+    val started = playbackTime >= transitionStart
+    return TransitionPlan(
+        shouldStart = started,
+        markerVisible = true,
+        transitionStart = transitionStart,
+        transitionEnd = contentEnd,
+        fadeSeconds = contentEnd - transitionStart,
+        transitionStyle = TransitionStyle.EQUAL_POWER,
+        incomingCueTime = incomingStartPoint(nextAnalysis),
+        incomingHandoffTime = incomingStartPoint(nextAnalysis),
+        policyReasons = policyReasons + "quality-gate-downgrade",
+        reason = if (started) reason else "before-$reason",
+    )
+}
+
 /**
  * However well a later drop scores, a transition never cues the incoming song
  * more than this far into itself. Without it a main drop two minutes in was a
@@ -624,6 +718,7 @@ private fun phraseBarPlan(
     mixAnchor: Double,
     advanced: Boolean,
 ): TransitionPlan? {
+    if (advanced && !passesAdvancedQualityGate(analysis, nextAnalysis)) return null
     val outgoingBpm = analysis.bpm.orZero()
     if (outgoingBpm < MIN_BPM || outgoingBpm > MAX_BPM) return null
     val beatSeconds = analysis.beatInterval.orZero().takeIf { it > 0 } ?: (60.0 / outgoingBpm)
@@ -1214,6 +1309,7 @@ private fun phraseSwitch(
     advanced: Boolean,
     sungOut: List<LoopMix.Span>? = null,
 ): TransitionPlan? {
+    if (advanced && !passesAdvancedQualityGate(analysis, nextAnalysis)) return null
     if (!CamelotHarmonics.isHarmonicallyCompatible(analysis, nextAnalysis)) return null
 
     val planned = planWsolaTransition(
@@ -1231,6 +1327,54 @@ private fun phraseSwitch(
 
     val overlap = planned.transitionEnd - planned.transitionStart
     val renderedIncomingRate = incomingRateFor(planned.stretchRatio, advanced)
+
+    val currentBpm = analysis.bpm.orZero()
+    val nextBpm = nextAnalysis.bpm.orZero()
+    val harmonicScore = CamelotHarmonics.scoreCompatibility(analysis.key, nextAnalysis.key)
+    val alignedNextBpm = alignTempoOctave(currentBpm, nextBpm)
+    val bpmDiff = if (currentBpm > 0.0) kotlin.math.abs(currentBpm - alignedNextBpm) / currentBpm else 1.0
+
+    val vocalOverlap = plannedVocalOverlap(
+        analysis = analysis,
+        nextAnalysis = nextAnalysis,
+        transitionStart = planned.transitionStart,
+        transitionEnd = planned.transitionEnd,
+        incomingCueTime = planned.incomingCueTime,
+        incomingPlaybackRate = renderedIncomingRate,
+    )
+
+    val isBreakdownOrMashup = planned.mixOutType == "breakdown" ||
+        planned.mixOutType == "energy_cliff" ||
+        vocalOverlap > 0.0
+
+    val finalStyle: TransitionStyle
+    val finalFilterVariant: FilterTransitionVariant
+    val finalBassSwap: Boolean
+    val finalFilterSweep: Double
+
+    if (isBreakdownOrMashup && harmonicScore >= 0.8 && bpmDiff <= 0.06) {
+        val outVocalOverlap = vocalActivityBetween(analysis, planned.transitionStart, planned.transitionEnd) ?: 0.0
+        val inVocalOverlap = vocalActivityBetween(nextAnalysis, planned.incomingCueTime, planned.incomingResumeTime) ?: 0.0
+        finalStyle = TransitionStyle.BREAKDOWN_BLEND
+        finalFilterVariant = FilterTransitionVariant.SWEEP
+        finalBassSwap = true
+        finalFilterSweep = if (outVocalOverlap >= VOCAL_ACTIVE_THRESHOLD && inVocalOverlap < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
+    } else if (isBreakdownOrMashup) {
+        // Gated out due to harmonic clash (< 0.8) or large tempo divergence (> 6%):
+        // Automatically fall back to Linkwitz-Riley 4th-order (<150Hz) Bass Swap (DJ_FILTER with bass crossover).
+        finalStyle = TransitionStyle.DJ_FILTER
+        finalFilterVariant = FilterTransitionVariant.BASS_HANDOFF
+        finalBassSwap = true
+        finalFilterSweep = 0.0
+    } else {
+        val outVocalOverlap = vocalActivityBetween(analysis, planned.transitionStart, planned.transitionEnd) ?: 0.0
+        val inVocalOverlap = vocalActivityBetween(nextAnalysis, planned.incomingCueTime, planned.incomingResumeTime) ?: 0.0
+        finalStyle = TransitionStyle.DJ_BLEND
+        finalFilterVariant = FilterTransitionVariant.SWEEP
+        finalBassSwap = true
+        finalFilterSweep = if (outVocalOverlap >= VOCAL_ACTIVE_THRESHOLD && inVocalOverlap < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
+    }
+
     return TransitionPlan(
         markerVisible = true,
         transitionStart = planned.transitionStart,
@@ -1244,37 +1388,19 @@ private fun phraseSwitch(
         outgoingPlaybackRate = outgoingRateFor(planned.stretchRatio, advanced),
         pickupSeconds = incomingAudibleStart(nextAnalysis),
         transitionBeats = planned.beats,
-        bassSwap = true,
+        bassSwap = finalBassSwap,
         handoffFraction = planned.handoffFraction,
         bedPosition = planned.bedPosition,
         bassSwapFraction = planned.bassSwapFraction,
-        // When the outgoing track is singing into an instrumental intro, maintain a smooth
-        // blend with a closing filter sweep over the vocals instead of a zero sweep.
-        filterSweep = run {
-            val outVocalOverlap = vocalActivityBetween(analysis, planned.transitionStart, planned.transitionEnd) ?: 0.0
-            val inVocalOverlap = vocalActivityBetween(nextAnalysis, planned.incomingCueTime, planned.incomingResumeTime) ?: 0.0
-            if (outVocalOverlap >= VOCAL_ACTIVE_THRESHOLD && inVocalOverlap < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
-        },
-        // The separation this style *does* need, and the one it cannot get from
-        // alignment. Two tracks on a shared grid are the worst case for
-        // overlapping voices precisely because nothing about the arrangement
-        // pulls them apart — they sit in the same bar, in the same range, for the
-        // whole blend. The renderer uses this to deepen the entry high-pass and
-        // the exit low-pass without turning the blend into a filter ride.
-        vocalOverlap = plannedVocalOverlap(
-            analysis = analysis,
-            nextAnalysis = nextAnalysis,
-            transitionStart = planned.transitionStart,
-            transitionEnd = planned.transitionEnd,
-            incomingCueTime = planned.incomingCueTime,
-            incomingPlaybackRate = renderedIncomingRate,
-        ),
+        filterSweep = finalFilterSweep,
+        filterVariant = finalFilterVariant,
+        vocalOverlap = vocalOverlap,
         outgoingBpm = planned.outgoingBpm,
         incomingBpm = planned.incomingBpm,
         beatSeconds = 60 / planned.outgoingBpm,
         // Playback speed remains fixed once either deck is audible.
         phaseLock = false,
-        transitionStyle = TransitionStyle.DJ_BLEND,
+        transitionStyle = finalStyle,
     )
 }
 
@@ -1824,6 +1950,17 @@ private fun planTransitionInner(
     // means the evidence will not support it, so the adaptive plan below runs
     // unchanged.
     if (phraseBars == PHRASE_BARS_SHORT || phraseBars == PHRASE_BARS_LONG) {
+        if (advanced && !passesAdvancedQualityGate(analysis, nextAnalysis)) {
+            return createEqualPowerContentEndPlan(
+                analysis = analysis,
+                nextAnalysis = nextAnalysis,
+                contentEnd = finalMixAnchor,
+                playbackTime = playbackTime,
+                safeMinFade = safeMinFade,
+                policyReasons = policy.reasons,
+                reason = "smart-quality-downgrade-phrase-bars",
+            )
+        }
         phraseBarPlan(
             analysis = analysis,
             nextAnalysis = nextAnalysis,
@@ -1899,6 +2036,17 @@ private fun planTransitionInner(
         nextAnalysis,
         nextLength,
     )
+    if (finalPlan.transitionStyle == TransitionStyle.BREAKDOWN_BLEND && !passesAdvancedQualityGate(analysis, nextAnalysis)) {
+        return createEqualPowerContentEndPlan(
+            analysis = analysis,
+            nextAnalysis = nextAnalysis,
+            contentEnd = finalMixAnchor,
+            playbackTime = playbackTime,
+            safeMinFade = safeMinFade,
+            policyReasons = policy.reasons,
+            reason = "smart-quality-downgrade-breakdown-blend",
+        )
+    }
     if (finalPlan.fadeSeconds < safeMinFade && !finalPlan.blocked && finalPlan.transitionStyle != TransitionStyle.GAPLESS) {
         val targetStart = max(0.0, finalPlan.transitionEnd - safeMinFade)
         val adjustedStart = alignedTransitionStart(
@@ -2089,6 +2237,48 @@ private fun mixPlan(
     // and the dry kill under them was heard as the song cutting out.
     val echoSeconds = 0.0
     val resolvedFilterVariant = if (vocalSafeFallback) FilterTransitionVariant.SWEEP else filterVariant
+
+    val isBreakdownOrMashup = mixOutType == "breakdown" || mixOutType == "energy_cliff" || vocalOverlap > 0.0
+    val harmonicScore = CamelotHarmonics.scoreCompatibility(analysis.key, nextAnalysis.key)
+    val bpmDiff = if (currentBpm > 0.0) kotlin.math.abs(currentBpm - alignedIncomingBpm) / currentBpm else 1.0
+
+    val finalStyle: TransitionStyle
+    val finalFilterVariant: FilterTransitionVariant
+    val finalBassSwap: Boolean
+    val finalFilterSweep: Double
+
+    if (traits != null && isBreakdownOrMashup && harmonicScore >= 0.8 && bpmDiff <= 0.06) {
+        finalStyle = TransitionStyle.BREAKDOWN_BLEND
+        finalFilterVariant = FilterTransitionVariant.SWEEP
+        finalBassSwap = true
+        finalFilterSweep = run {
+            val outVocal = vocalActivityBetween(analysis, transitionStart, mixEnd) ?: 0.0
+            val inVocal = vocalActivityBetween(nextAnalysis, finalIncomingCueTime, finalIncomingCueTime + alignedOverlap) ?: 0.0
+            if (outVocal >= VOCAL_ACTIVE_THRESHOLD && inVocal < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
+        }
+    } else if (traits != null && isBreakdownOrMashup && (harmonicScore < 0.8 || bpmDiff > 0.06)) {
+        // Gated out due to harmonic clash (< 0.8) or large tempo divergence (> 6%):
+        // Automatically fall back to Linkwitz-Riley 4th-order (<150Hz) Bass Swap (DJ_FILTER with bass crossover).
+        finalStyle = TransitionStyle.DJ_FILTER
+        finalFilterVariant = FilterTransitionVariant.BASS_HANDOFF
+        finalBassSwap = true
+        finalFilterSweep = 0.0
+    } else if (sameBeatBlend) {
+        finalStyle = TransitionStyle.DJ_BLEND
+        finalFilterVariant = FilterTransitionVariant.SWEEP
+        finalBassSwap = sameBeatBlend || hasBassContent
+        finalFilterSweep = run {
+            val outVocal = vocalActivityBetween(analysis, transitionStart, mixEnd) ?: 0.0
+            val inVocal = vocalActivityBetween(nextAnalysis, finalIncomingCueTime, finalIncomingCueTime + alignedOverlap) ?: 0.0
+            if (outVocal >= VOCAL_ACTIVE_THRESHOLD && inVocal < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
+        }
+    } else {
+        finalStyle = TransitionStyle.DJ_FILTER
+        finalFilterVariant = resolvedFilterVariant
+        finalBassSwap = hasBassContent
+        finalFilterSweep = FILTER_SWEEP
+    }
+
     return TransitionPlan(
         markerVisible = true,
         transitionStart = transitionStart,
@@ -2102,21 +2292,10 @@ private fun mixPlan(
         outgoingPlaybackRate = outgoingRateFor(incomingPlaybackRate, traits != null),
         pickupSeconds = pickupSeconds,
         transitionBeats = transitionBeats,
-        bassSwap = sameBeatBlend || hasBassContent,
-        transitionStyle = if (sameBeatBlend) TransitionStyle.DJ_BLEND else TransitionStyle.DJ_FILTER,
-        // The two styles are alternatives, not a scale: a matched pair hands the
-        // low end over on a beat and otherwise stays open, while an unmatched
-        // pair has no shared grid to hand anything over on and instead pulls the
-        // outgoing track behind a closing low-pass. When the outgoing track is
-        // singing into an incoming instrumental intro, maintain a closing filter sweep.
-        filterSweep = if (sameBeatBlend) {
-            val outVocal = vocalActivityBetween(analysis, transitionStart, mixEnd) ?: 0.0
-            val inVocal = vocalActivityBetween(nextAnalysis, finalIncomingCueTime, finalIncomingCueTime + alignedOverlap) ?: 0.0
-            if (outVocal >= VOCAL_ACTIVE_THRESHOLD && inVocal < VOCAL_ACTIVE_THRESHOLD) FILTER_SWEEP else 0.0
-        } else {
-            FILTER_SWEEP
-        },
-        filterVariant = if (sameBeatBlend) FilterTransitionVariant.SWEEP else resolvedFilterVariant,
+        bassSwap = finalBassSwap,
+        transitionStyle = finalStyle,
+        filterSweep = finalFilterSweep,
+        filterVariant = finalFilterVariant,
         vocalOverlap = vocalOverlap,
         beatSeconds = gridBeatSeconds,
         // Tempo is fixed while audible. Live phase-lock pulses changed

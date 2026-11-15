@@ -489,7 +489,7 @@ class CrossfadeController(
          */
         val handoffAt = when {
             !advanced -> HANDOFF_AT
-            style == TransitionStyle.DJ_BLEND && bassSwap -> swapAtF
+            (style == TransitionStyle.DJ_BLEND || style == TransitionStyle.BREAKDOWN_BLEND) && bassSwap -> swapAtF
             style == TransitionStyle.DJ_FILTER && filterVariant == FilterTransitionVariant.BASS_HANDOFF -> filterSwapAtF
             else -> HANDOFF_AT
         }
@@ -683,7 +683,18 @@ class CrossfadeController(
             // The listener moving the playhead is something no half-finished
             // crossfade should survive. Nothing this class does registers here
             // any more: the handoff is a role swap, not a seek.
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) bail()
+            when (reason) {
+                Player.DISCONTINUITY_REASON_SEEK,
+                Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT,
+                Player.DISCONTINUITY_REASON_REMOVE,
+                Player.DISCONTINUITY_REASON_SKIP -> disarmTransition()
+            }
+        }
+
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                disarmTransition()
+            }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -694,13 +705,13 @@ class CrossfadeController(
                 // does *not* fire when AutoPlay appends to the end, since the
                 // playing item doesn't change: extending the queue mid-fade is
                 // harmless and shouldn't cost the listener the blend.
-                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> bail()
-                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> bail()
+                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> disarmTransition()
+                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> disarmTransition()
                 Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> ranOutBeforeHandoff()
             }
         }
 
-        override fun onPlayerError(error: PlaybackException) = bail()
+        override fun onPlayerError(error: PlaybackException) = disarmTransition()
 
         // The session reached the end of a track [holdAtEnd] is holding, before
         // the handoff took it off that track. Only ever a late handoff, or a
@@ -839,8 +850,40 @@ class CrossfadeController(
      * its way down as the new one starts, and the listener's own seek lands on a
      * player this class has finished with.
      */
+    /**
+     * Disarms any in-flight or pre-armed transition plan, stems, loop jobs, or blend parameters,
+     * immediately resetting state to clean defaults (Phase.IDLE).
+     */
+    fun disarmTransition() {
+        loopBuildJob?.cancel()
+        loopBuildJob = null
+        loopAlignJob?.cancel()
+        loopAlignJob = null
+        loopSession?.let { session ->
+            session.outPort.disarm()
+            session.inPort.disarm()
+            session.renderer?.let(::closeLater)
+        }
+        loopSession = null
+        clearMixView()
+        when (phase) {
+            Phase.IDLE -> {
+                filters.open()
+                filters.parkEchoes()
+                onBlendHeadroom(1f)
+                render = Render()
+                AppSettings.smartMixInProgress.value = false
+                AppSettings.smartMixBlend.value = null
+            }
+            Phase.BAILING -> finish()
+            Phase.LOOP_ARMING, Phase.LOOP_RUNNING -> loopBail("disarmed", settle = false)
+            Phase.ARMING -> bail()
+            Phase.FADING, Phase.SLEEP_FADE -> bail()
+        }
+    }
+
     fun onSkipRequested() {
-        if (phase != Phase.IDLE) bail()
+        disarmTransition()
     }
 
     // ---- Ticker -------------------------------------------------------------
@@ -3230,7 +3273,8 @@ class CrossfadeController(
                 FilterTransitionVariant.ECHO_RIDE,
                 -> rideFilterSweep(progress)
             }
-            TransitionStyle.DJ_BLEND ->
+            TransitionStyle.DJ_BLEND,
+            TransitionStyle.BREAKDOWN_BLEND ->
                 if (render.bassSwap) rideBassSwap(progress) else rideVocalSeparation(progress)
             // GAPLESS is an album being played through, where any filtering would
             // be an edit the record didn't ask for — so it stays open whatever
@@ -3545,6 +3589,7 @@ class CrossfadeController(
      */
     private fun isRealMix(): Boolean = smartFadeActive && (
         render.style == TransitionStyle.DJ_BLEND ||
+            render.style == TransitionStyle.BREAKDOWN_BLEND ||
             render.style == TransitionStyle.DJ_FILTER ||
             incomingCueTimeMs > 0L ||
             incomingPlaybackRate != 1.0 ||
@@ -3572,7 +3617,8 @@ class CrossfadeController(
     private fun mixRise(progress: Float): Float {
         if (!render.advanced) return riseGain(progress)
         val styled = when (render.style) {
-            TransitionStyle.DJ_BLEND ->
+            TransitionStyle.DJ_BLEND,
+            TransitionStyle.BREAKDOWN_BLEND ->
                 if (render.bassSwap) held(riseGain(progress), riseGain(progress / render.swapAtF)) else riseGain(progress)
             // One smooth pair for every filter gesture: the filters are what
             // tell the variants apart, and the low end changes hands on a beat
@@ -3596,7 +3642,8 @@ class CrossfadeController(
         // fades the dry signal in the chain instead — see [rideEchoOut].
         if (render.echo) return 1f
         val styled = when (render.style) {
-            TransitionStyle.DJ_BLEND -> {
+            TransitionStyle.DJ_BLEND,
+            TransitionStyle.BREAKDOWN_BLEND -> {
                 val p = progress.coerceIn(0f, 1f)
                 val blendCurve = cos(p * PI.toFloat() / 2f).pow(1.2f)
                 held(fallGain(progress), blendCurve)
