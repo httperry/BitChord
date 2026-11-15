@@ -585,69 +585,39 @@ internal fun CurrentLyricStrip(
     loadingText: String,
     onClick: () -> Unit,
 ) {
-    // Compute the active lyric text so we can determine RTL direction at the
-    // strip level.  This lets us override the parent Column's forced
-    // CenterHorizontally alignment and flush RTL lines to the right edge.
-    val isSynced = remember(lines) { lines.any { it.timeMs > 0L } }
-    var stripRtl by remember { mutableStateOf(false) }
-    var activeText by remember { mutableStateOf("") }
-    if (isSynced) {
-        val clock = rememberLyricClock(trackKey, playhead, isPlaying)
-        val index by remember(lines) {
-            derivedStateOf { lines.indexOfLast { it.timeMs <= clock.longValue } }
-        }
-        val current = lines.getOrNull(index)
-        val instrumental = current == null || current.isGap
-        val firstSung = remember(lines) { lines.indexOfFirst { !it.isGap } }
-        val intro = instrumental && firstSung >= 0 && index < firstSung
-        val introLines = stringArrayResource(Res.array.lyrics_intro_lines)
-        val introLine = remember(trackKey) { introLines.random() }
-        activeText = when {
-            intro -> introLine
-            instrumental -> stringResource(Res.string.instrumental)
-            else -> current.text
-        }
-        stripRtl = isRtl(activeText)
-    }
-
-    val align: Alignment = if (stripRtl) Alignment.CenterStart else Alignment.CenterStart
-
-    CompositionLocalProvider(LocalLayoutDirection provides if (stripRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                // The slider's touch target reaches ~13dp above the drawn bar, so
-                // the strip reads as further off it than it is. Nudged down into
-                // that dead space, the same way the timestamps below are pulled
-                // back up into it.
-                .offset(y = 6.dp),
-        ) {
-            if (lines.isNotEmpty()) {
-                CurrentLyricLine(
-                    lines = lines,
-                    trackKey = trackKey,
-                    playhead = playhead,
-                    isPlaying = isPlaying,
-                    durationMs = durationMs,
-                    onClick = onClick,
-                    modifier = Modifier
-                        .align(align),
-                )
-            } else if (lyricsUnavailable) {
-                LyricsUnavailableLine(
-                    trackKey = trackKey,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(align),
-                )
-            } else {
-                LyricsLoadingLine(
-                    text = loadingText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(align),
-                )
-            }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            // The slider's touch target reaches ~13dp above the drawn bar, so
+            // the strip reads as further off it than it is. Nudged down into
+            // that dead space, the same way the timestamps below are pulled
+            // back up into it.
+            .offset(y = 6.dp),
+    ) {
+        if (lines.isNotEmpty()) {
+            CurrentLyricLine(
+                lines = lines,
+                trackKey = trackKey,
+                playhead = playhead,
+                isPlaying = isPlaying,
+                durationMs = durationMs,
+                onClick = onClick,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+        } else if (lyricsUnavailable) {
+            LyricsUnavailableLine(
+                trackKey = trackKey,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.CenterStart),
+            )
+        } else {
+            LyricsLoadingLine(
+                text = loadingText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.CenterStart),
+            )
         }
     }
 }
@@ -706,16 +676,17 @@ private fun rememberLyricClock(
     trackKey: Any,
     playhead: LyricPlayhead,
     isPlaying: Boolean,
+    continuousMotion: Boolean = true,
 ): MutableLongState {
     val clock = remember(trackKey) {
         mutableLongStateOf(Snapshot.withoutReadObservation { playhead.positionMs })
     }
     val engine = remember(trackKey) { LyricClock(clock.longValue) }
 
-    // Not moving: each reading is the truth, including a seek made while paused.
-    // Followed off the snapshot rather than read here, so a reading recomposes
-    // nothing.
-    if (!isPlaying) {
+    // When continuous per-frame motion is not needed (e.g. paused or plain line-synced lyrics without
+    // word-level sweep), follow the playhead's reported updates without spinning a 120Hz VSYNC loop.
+    val activeContinuous = isPlaying && continuousMotion
+    if (!activeContinuous) {
         LaunchedEffect(engine, playhead) {
             snapshotFlow { playhead.positionMs }.collect { positionMs ->
                 engine.hold(positionMs, nanosToMs(System.nanoTime()))
@@ -729,16 +700,9 @@ private fun rememberLyricClock(
     // which is a request to render continuously for as long as it runs. That is
     // the right trade for a lyric being read and the wrong one for a phone in a
     // pocket, and the composition alone cannot tell the two apart.
-    //
-    // Every start is a fresh run from the latest reading, so neither a pause
-    // nor a spell in the background is mistaken for one very long frame.
-    //
-    // One loop for the whole run, reading the playhead itself. Keyed on the
-    // reading instead, every reading restarted it, and each restart spent a
-    // frame waiting for its first frame time — a hitch twice a second.
     val foreground = rememberIsForeground()
-    LaunchedEffect(engine, playhead, isPlaying, foreground) {
-        if (!isPlaying || !foreground) return@LaunchedEffect
+    LaunchedEffect(engine, playhead, activeContinuous, foreground) {
+        if (!activeContinuous || !foreground) return@LaunchedEffect
         engine.restart()
         while (true) {
             withFrameNanos { frameNanos ->
@@ -2848,10 +2812,14 @@ private fun CurrentLyricLine(
         return
     }
 
-    val clock = rememberLyricClock(trackKey, playhead, isPlaying)
+    val hasWordSync = remember(lines) { lines.any { it.isWordSynced } }
+    val clock = rememberLyricClock(trackKey, playhead, isPlaying, continuousMotion = hasWordSync)
 
     val index by remember(lines) {
-        derivedStateOf { lines.indexOfLast { it.timeMs <= clock.longValue } }
+        derivedStateOf(structuralEqualityPolicy()) {
+            val res = lines.binarySearchBy(clock.longValue) { it.timeMs }
+            if (res >= 0) res else (-res - 2)
+        }
     }
     val current = lines.getOrNull(index)
     // Before the first line, and through instrumental breaks, show the note.

@@ -1221,6 +1221,7 @@ class TrackAnalyzer(
         val dspStart = SystemClock.elapsedRealtime()
         val structural = structure(trackId, uri, copy, effectiveDuration)
         val dspTook = SystemClock.elapsedRealtime() - dspStart
+        com.music.bitchord.profiler.ProcessProfiler.logEvent("Automix", "DSP pass complete for $trackId in ${dspTook}ms")
         // A party started while Pass 1 was decoding. Dropped as "no result"
         // rather than as a failure — the track was never measured, so nothing
         // should be recorded against it and nothing should stop it being
@@ -1379,6 +1380,7 @@ class TrackAnalyzer(
                 "vocalMask=${if (regions.any { it.vocalMask != null }) "model" else "dsp"} " +
                 "windows=${regions.size} vocalWindows=${regions.count { it.vocalWindow != null }}",
         )
+        com.music.bitchord.profiler.ProcessProfiler.logEvent("Automix", "Analysis ready for $trackId in ${SystemClock.elapsedRealtime() - wholeStart}ms (BPM: ${"%.1f".format(Locale.ROOT, leading?.bpm ?: features.bpm)})")
 
         return WholeTrack(
                 TrackAnalysis(

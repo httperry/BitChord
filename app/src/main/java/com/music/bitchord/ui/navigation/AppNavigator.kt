@@ -49,6 +49,9 @@ sealed interface AppRoute {
 
     /** The Equalizer's list of preset curves. */
     data object EqualizerPresets : AppRoute
+
+    /** Developer Process & Thread Profiler tool. */
+    data object ProcessProfiler : AppRoute
 }
 
 /**
