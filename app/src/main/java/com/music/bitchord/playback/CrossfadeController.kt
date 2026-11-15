@@ -3046,9 +3046,16 @@ class CrossfadeController(
                 // unstretched track goes straight to the listener's speed.
                 beginEase(it, incomingPlaybackRate, incomingAnalysis)
             }
-            active().volume = 1f
+            val activePlayer = active()
+            activePlayer.volume = 1f
+            if (!activePlayer.playWhenReady) {
+                activePlayer.playWhenReady = true
+            }
             outgoing?.let(::retire)
-            active().volume = 1f
+            activePlayer.volume = 1f
+            if (!activePlayer.playWhenReady) {
+                activePlayer.playWhenReady = true
+            }
         } else {
             // The transition never became audible, so the session player never
             // moved and the standby is the one to throw away.
@@ -3059,9 +3066,16 @@ class CrossfadeController(
                     beginEase(out, outgoingPlaybackRate, out.currentMediaItem?.let(analysisFor) ?: TrackAnalysis())
                 }
             }
-            active().volume = 1f
+            val activePlayer = active()
+            activePlayer.volume = 1f
+            if (!activePlayer.playWhenReady) {
+                activePlayer.playWhenReady = true
+            }
             incoming?.let(::retire)
-            active().volume = 1f
+            activePlayer.volume = 1f
+            if (!activePlayer.playWhenReady) {
+                activePlayer.playWhenReady = true
+            }
         }
 
         outgoing = null
@@ -3086,19 +3100,17 @@ class CrossfadeController(
     }
 
     /**
-     * Puts a player back in the drawer: emptied, silent no longer, and on the
+     * Puts a player back in the drawer: paused, emptied, silent no longer, and on the
      * listener's own playback rate again.
-     *
-     * Avoids volume=0 or pause() cycles on the shared session which can trigger
-     * OEM hardware stream fade-out (e.g. oplusAudioFade) on the shared Bluetooth stream.
-     * Clearing media items halts decoding cleanly while leaving the active player's
-     * sink unperturbed.
      */
     private fun retire(player: ExoPlayer) {
-        player.clearMediaItems()
-        player.pauseAtEndOfMediaItems = false
-        player.volume = 1f
-        player.setPlaybackSpeed(AppSettings.playbackSpeed.value)
+        if (player !== active()) {
+            player.pause()
+            player.clearMediaItems()
+            player.pauseAtEndOfMediaItems = false
+            player.volume = 1f
+            player.setPlaybackSpeed(AppSettings.playbackSpeed.value)
+        }
     }
 
     // ---- Numbers ------------------------------------------------------------

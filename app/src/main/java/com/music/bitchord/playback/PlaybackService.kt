@@ -2663,8 +2663,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun adoptPlayerForVersionSwap(outgoing: ExoPlayer, incoming: ExoPlayer) {
-        setSessionOwner(outgoing, owns = false)
         setSessionOwner(incoming, owns = true)
+        setSessionOwner(outgoing, owns = false)
 
         outgoing.removeListener(playbackListener)
         outgoing.removeAnalyticsListener(formatListener)
@@ -3546,13 +3546,13 @@ class PlaybackService : MediaLibraryService() {
      * incoming track on. This is the whole of the handoff: no seek, no
      * re-buffer, and no audio rendered twice.
      *
-     * Order matters in one place — focus is released on the outgoing player
-     * *before* the incoming one asks for it, so the app never holds two focus
-     * requests at once and never briefly holds none.
+     * Order matters: incoming takes focus ownership BEFORE outgoing releases it,
+     * so the app never loses audio focus and never triggers OS/HAL audio focus
+     * abandonment (e.g. oplusAudioFade on OnePlus/Bluetooth).
      */
     private fun adoptPlayer(outgoing: ExoPlayer, incoming: ExoPlayer) {
-        setSessionOwner(outgoing, owns = false)
         setSessionOwner(incoming, owns = true)
+        setSessionOwner(outgoing, owns = false)
 
         outgoing.removeListener(playbackListener)
         outgoing.removeAnalyticsListener(formatListener)
@@ -4644,6 +4644,18 @@ class PlaybackService : MediaLibraryService() {
             TrackLog.d("BitChord", "looking again for a better copy of $mediaId", about = mediaId)
         }
         upgradeJob = scope.launch(TrackLog.about(mediaId)) {
+            // Guard: suppress/delay lookForBetterCopy while an Automix transition is in progress
+            // and for 5 seconds after it finishes, so audition teardowns cannot collide with handoff.
+            while (crossfade?.isTransitioning() == true) {
+                delay(500L)
+                if (this@PlaybackService.player?.currentMediaItem?.mediaId != mediaId) return@launch
+            }
+            val msSince = crossfade?.msSinceTransition()
+            if (msSince != null && msSince < 5000L) {
+                delay((5000L - msSince).coerceIn(100L, 5000L))
+                if (this@PlaybackService.player?.currentMediaItem?.mediaId != mediaId) return@launch
+            }
+
             // A previous visit to this track already did all the expensive
             // parts and lost the swap to a skip. Nothing about the answer has
             // gone stale — the stream is still parked and its bytes are still
@@ -7640,17 +7652,18 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun setupLoudness(mediaId: String?) {
         val exoPlayer = player ?: return
-        val gain = loudnessGainFor(mediaId ?: "")
+        val rawGain = loudnessGainFor(mediaId ?: "")
+        val gain = if (rawGain.isFinite() && rawGain > 0.01f) rawGain else 1.0f
         val eq = activeEqualizer()
         val sp = activeSpatial()
         val activeEq = eq.isShaping || eq.isEnabled
         val activeSpatial = sp.enabled
         val isTransitioning = crossfade?.isTransitioning() == true
-        val canOffloadVolume = !activeEq && !activeSpatial && gain <= 1.0f && !isTransitioning
+        val canOffloadVolume = !activeEq && !activeSpatial && gain <= 1.0f && gain >= 0.05f && !isTransitioning
 
         activeLoudness().offloadedToHardwareVolume = canOffloadVolume
         if (canOffloadVolume) {
-            exoPlayer.volume = gain
+            exoPlayer.volume = gain.coerceIn(0.05f, 1.0f)
         } else {
             exoPlayer.volume = 1f
         }

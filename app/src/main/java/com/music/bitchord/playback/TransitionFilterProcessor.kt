@@ -192,6 +192,11 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         flipSampleIndex = 0
         flipFromBassCut = false
         flipToBassCut = false
+        echoEngaged = false
+        echoTargetSend = 0f
+        echoTargetDry = 1f
+        echoSend = 0f
+        echoDry = 1f
         lowState.fill(0f)
         highState.fill(0f)
         crossoverState.fill(0f)
@@ -237,6 +242,8 @@ class TransitionFilterProcessor : BaseAudioProcessor() {
         echoEngaged = false
         echoTargetSend = 0f
         echoTargetDry = 1f
+        echoSend = 0f
+        echoDry = 1f
     }
 
     /**

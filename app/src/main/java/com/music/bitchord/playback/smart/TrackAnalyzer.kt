@@ -47,10 +47,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
@@ -269,12 +267,6 @@ class TrackAnalyzer(
         }
     }
 
-    private val decodeExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "bitchord-audio-decoder").apply {
-            isDaemon = true
-            priority = Thread.NORM_PRIORITY
-        }
-    }
 
     private enum class PacingStage {
         POST_DSP,
@@ -1306,37 +1298,21 @@ class TrackAnalyzer(
                 }
             }
         } else {
-            // Standard track: 2-span chunked decode with asynchronous pipeline overlap
+            // Standard track: 2-span chunked decode executed sequentially on analyzer thread
+            // to avoid hardware codec exhaustion, libstagefright native race conditions,
+            // and OutOfMemoryError from concurrent MediaCodec decoding while NNAPI inference runs.
             val tailWindows = windowsForSpan(tailStart, effectiveDuration, span)
             val headWindows = windowsForSpan(0.0, headEnd, span)
 
-            // Step 1: Decode Tail Span on current thread
+            // Step 1: Decode Tail Span (tailStart to effectiveDuration)
             val tailDecoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, tailStart, effectiveDuration) { stopped } }
             if (stopped) return WholeTrack(null)
 
-            // Step 2: Asynchronously kick off Head Span decode while GPU executes Tail windows
-            val headFuture = CompletableFuture.supplyAsync({
-                if (stopped) null
-                else {
-                    Process.setThreadPriority(
-                        if (AppSettings.automixPerformanceMode.value == AutomixPerformanceMode.EFFICIENT) {
-                            Process.THREAD_PRIORITY_BACKGROUND
-                        } else {
-                            Process.THREAD_PRIORITY_DEFAULT
-                        },
-                    )
-                    openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
-                }
-            }, decodeExecutor)
-
-            // Step 3: Run Tail windows on GPU from the decoded Tail buffer
+            // Step 2: Run Tail windows through analyzeStereoRegion
             if (tailDecoded != null) {
                 val (tailStereo, tailActualStart) = tailDecoded
                 for ((from, to) in tailWindows) {
-                    if (stopped) {
-                        headFuture.cancel(true)
-                        return WholeTrack(null)
-                    }
+                    if (stopped) return WholeTrack(null)
                     waitForPlaybackHeadroom()
                     val winStart = SystemClock.elapsedRealtime()
                     val sliced = sliceStereoPcm(tailStereo, tailActualStart, from, to)
@@ -1354,12 +1330,12 @@ class TrackAnalyzer(
                 }
             }
 
-            // Step 4: Retrieve pre-decoded Head Span (typically completed while GPU was running)
-            val headDecoded = runCatching { headFuture.get(15, TimeUnit.SECONDS) }.getOrNull()
-                ?: openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
+            // Step 3: Decode Head Span (0.0 to headEnd)
+            if (stopped) return WholeTrack(null)
+            val headDecoded = openSource()?.use { AudioDecoder.decodeRegionStereo(it, 0.0, headEnd) { stopped } }
             if (stopped) return WholeTrack(null)
 
-            // Step 5: Run Head windows on GPU from the decoded Head buffer
+            // Step 4: Run Head windows through analyzeStereoRegion
             if (headDecoded != null) {
                 val (headStereo, headActualStart) = headDecoded
                 for ((from, to) in headWindows) {
@@ -1856,7 +1832,6 @@ class TrackAnalyzer(
 
     fun release() {
         executor.shutdownNow()
-        decodeExecutor.shutdownNow()
         sourceResolutionScope.cancel()
         sourceAnalysisUris.clear()
         sourceResolutions.clear()
