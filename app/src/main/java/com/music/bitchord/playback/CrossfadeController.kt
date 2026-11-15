@@ -1139,6 +1139,8 @@ class CrossfadeController(
             AppSettings.smartMixInProgress.value = false
             return
         }
+        val minAllowedOutMs = minOf(45_000L, (duration * 0.55).roundToLong())
+        if (player.currentPosition < minAllowedOutMs && !markerOnly) return
         val nextDuration = nextItemDurationMs(nextIndex, nextItem)
 
         // Even for the marker alone: a stored analysis is only loaded off disk
@@ -3091,13 +3093,23 @@ class CrossfadeController(
             }
             val activePlayer = active()
             activePlayer.volume = 1f
-            if (!activePlayer.playWhenReady) {
+            if (activePlayer.playbackState == Player.STATE_ENDED) {
+                activePlayer.seekTo(activePlayer.currentPosition.coerceAtLeast(0L))
+                activePlayer.prepare()
+            }
+            if (!activePlayer.playWhenReady || !activePlayer.isPlaying) {
                 activePlayer.playWhenReady = true
+                activePlayer.play()
             }
             outgoing?.let(::retire)
             activePlayer.volume = 1f
-            if (!activePlayer.playWhenReady) {
+            if (activePlayer.playbackState == Player.STATE_ENDED) {
+                activePlayer.seekTo(activePlayer.currentPosition.coerceAtLeast(0L))
+                activePlayer.prepare()
+            }
+            if (!activePlayer.playWhenReady || !activePlayer.isPlaying) {
                 activePlayer.playWhenReady = true
+                activePlayer.play()
             }
         } else {
             // The transition never became audible, so the session player never
@@ -3111,13 +3123,23 @@ class CrossfadeController(
             }
             val activePlayer = active()
             activePlayer.volume = 1f
-            if (!activePlayer.playWhenReady) {
+            if (activePlayer.playbackState == Player.STATE_ENDED) {
+                activePlayer.seekTo(activePlayer.currentPosition.coerceAtLeast(0L))
+                activePlayer.prepare()
+            }
+            if (!activePlayer.playWhenReady || !activePlayer.isPlaying) {
                 activePlayer.playWhenReady = true
+                activePlayer.play()
             }
             incoming?.let(::retire)
             activePlayer.volume = 1f
-            if (!activePlayer.playWhenReady) {
+            if (activePlayer.playbackState == Player.STATE_ENDED) {
+                activePlayer.seekTo(activePlayer.currentPosition.coerceAtLeast(0L))
+                activePlayer.prepare()
+            }
+            if (!activePlayer.playWhenReady || !activePlayer.isPlaying) {
                 activePlayer.playWhenReady = true
+                activePlayer.play()
             }
         }
 
@@ -3148,7 +3170,7 @@ class CrossfadeController(
      */
     private fun retire(player: ExoPlayer) {
         if (player !== active()) {
-            player.pause()
+            player.volume = 0f
             player.clearMediaItems()
             player.pauseAtEndOfMediaItems = false
             player.volume = 1f

@@ -90,10 +90,10 @@ class PhraseBarAutomixTest {
     @Test
     fun aSlowerIncomingSongIsStillSpedUpToMatchUnderPhraseMode() {
         val current = track("a", 120.0, "C major", vocal = 0.1)
-        val next = track("b", 111.0, "C major", vocal = 0.1)
+        val next = track("b", 115.0, "C major", vocal = 0.1)
         val plan = plan(current, next, PHRASE_BARS_SHORT)
         assertEquals(TransitionStyle.DJ_BLEND, plan.transitionStyle)
-        assertEquals(120.0 / 111.0, plan.incomingPlaybackRate, 1e-3)
+        assertEquals(120.0 / 115.0, plan.incomingPlaybackRate, 1e-3)
         assertEquals(1.0, plan.outgoingPlaybackRate, "an audible deck must never change speed")
     }
 

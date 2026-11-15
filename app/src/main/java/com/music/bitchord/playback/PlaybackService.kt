@@ -4622,6 +4622,10 @@ class PlaybackService : MediaLibraryService() {
         val item = player.currentMediaItem ?: return
         val mediaId = item.mediaId
         val uri = item.localConfiguration?.uri
+        if (StreamChoice.isSubstitute(mediaId) || uri?.authority == "source" || uri?.scheme == "bitchord") {
+            QualityUpgrade.unshelve(mediaId)
+            return
+        }
         val alreadyPending = QualityUpgrade.isPending(mediaId)
         val shelved = QualityUpgrade.shelvedFor(mediaId)
         if (shelved == null && !alreadyPending && !QualityUpgrade.couldStillUpgrade(mediaId, uri)) return
@@ -4644,15 +4648,19 @@ class PlaybackService : MediaLibraryService() {
             TrackLog.d("BitChord", "looking again for a better copy of $mediaId", about = mediaId)
         }
         upgradeJob = scope.launch(TrackLog.about(mediaId)) {
+            if (StreamChoice.isSubstitute(mediaId) || uri?.authority == "source" || uri?.scheme == "bitchord") {
+                QualityUpgrade.unshelve(mediaId)
+                return@launch
+            }
             // Guard: suppress/delay lookForBetterCopy while an Automix transition is in progress
-            // and for 5 seconds after it finishes, so audition teardowns cannot collide with handoff.
+            // and for 20 seconds after it finishes, so audition teardowns cannot collide with handoff.
             while (crossfade?.isTransitioning() == true) {
                 delay(500L)
                 if (this@PlaybackService.player?.currentMediaItem?.mediaId != mediaId) return@launch
             }
             val msSince = crossfade?.msSinceTransition()
-            if (msSince != null && msSince < 5000L) {
-                delay((5000L - msSince).coerceIn(100L, 5000L))
+            if (msSince != null && msSince < 20000L) {
+                delay((20000L - msSince).coerceIn(100L, 20000L))
                 if (this@PlaybackService.player?.currentMediaItem?.mediaId != mediaId) return@launch
             }
 
@@ -5089,12 +5097,16 @@ class PlaybackService : MediaLibraryService() {
                     .withResolvedStreamType(stream.url)
                     .build(),
             )
+            player.playWhenReady = true
+            player.play()
             val upgradedSourceName = stream.sourceConfigId?.let { SourceRegistry.config(it)?.displayName }
                 ?: "Upgrade"
             NerdStats.onSourceStream(mediaId, stream.format, upgradedSourceName)
             NerdStats.recordSource(mediaId, upgradedSourceName)
             player.seekTo(player.currentMediaItemIndex, now.position)
             player.prepare()
+            player.playWhenReady = true
+            player.play()
             QualityUpgrade.unshelve(mediaId)
             TrackLog.d("BitChord", "upgraded to ${stream.format.summary} at ${now.position}ms ($upgradedSourceName)")
             watchUpgrade(mediaId, now.uri, now.position, now.duration, previousFormat)
@@ -5524,6 +5536,8 @@ class PlaybackService : MediaLibraryService() {
             )
             player.seekTo(player.currentMediaItemIndex, position)
             player.prepare()
+            player.playWhenReady = true
+            player.play()
             // Whatever the replacement wrote is a prefix of a file nothing will
             // ever finish, under a key the *next* upgrade of this track would
             // key to as well — see [AudioCache.discardRendition]. Off the main
@@ -9880,7 +9894,7 @@ class PlaybackService : MediaLibraryService() {
          * delayed — and it applies only where a transition actually ran, so the
          * ordinary swap, minutes from any blend, is as immediate as it was.
          */
-        const val UPGRADE_AFTER_CROSSFADE_MS = 5_000L
+        const val UPGRADE_AFTER_CROSSFADE_MS = 20_000L
 
         /**
          * How long a replacement gets to report a length before it is

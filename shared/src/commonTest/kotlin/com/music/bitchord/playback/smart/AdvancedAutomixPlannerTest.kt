@@ -142,24 +142,24 @@ class AdvancedAutomixPlannerTest {
     @Test
     fun aSlowerIncomingSongIsSpedUpToMatch() {
         val current = track("a", 120.0, "C major", vocal = 0.1)
-        val next = track("b", 111.0, "C major", vocal = 0.1)
+        val next = track("b", 115.0, "C major", vocal = 0.1)
         val plan = plan(current, next, advanced = true)
-        assertEquals(TransitionStyle.DJ_BLEND, plan.transitionStyle, "8% apart should now beat-match")
-        assertEquals(120.0 / 111.0, plan.incomingPlaybackRate, 1e-3)
+        assertEquals(TransitionStyle.DJ_BLEND, plan.transitionStyle, "4% apart should now beat-match")
+        assertEquals(120.0 / 115.0, plan.incomingPlaybackRate, 1e-3)
         assertEquals(1.0, plan.outgoingPlaybackRate)
     }
 
     @Test
     fun aFasterIncomingSongDoesNotRetempoTheAudibleOutgoingDeck() {
-        // 135 against 120 would need the incoming song slowed by 11%: past the 10% window.
+        // 135 against 120 would need the incoming song slowed by 11%: past the 6% window.
         val current = track("a", 120.0, "C major", vocal = 0.1)
         val next = track("b", 135.0, "C major", vocal = 0.1)
         val plan = plan(current, next, advanced = true)
         assertEquals(TransitionStyle.DJ_FILTER, plan.transitionStyle)
         assertEquals(1.0, plan.incomingPlaybackRate, "past the window the incoming song keeps its tempo")
         assertEquals(1.0, plan.outgoingPlaybackRate, "an audible deck must never change speed")
-        // Inside the window (130: slowed by 7.7%) both modes slow the incoming song down.
-        val near = track("c", 130.0, "C major", vocal = 0.1)
+        // Inside the window (125: slowed by 4%) both modes slow the incoming song down.
+        val near = track("c", 125.0, "C major", vocal = 0.1)
         assertTrue(plan(current, near, advanced = false).incomingPlaybackRate < 1.0)
         assertEquals(1.0, plan(current, near, advanced = true).outgoingPlaybackRate)
     }
@@ -201,7 +201,7 @@ class AdvancedAutomixPlannerTest {
     @Test
     fun anAdvancedOverlapIsWholeBars() {
         val current = track("a", 120.0, "C major", vocal = 0.1)
-        val next = track("b", 110.0, "G major", vocal = 0.1)
+        val next = track("b", 115.0, "G major", vocal = 0.1)
         val plan = plan(current, next, advanced = true)
         assertTrue(plan.beatSeconds > 0, "a trusted grid should be passed to the renderer")
         val bars = plan.fadeSeconds / (4 * plan.beatSeconds)

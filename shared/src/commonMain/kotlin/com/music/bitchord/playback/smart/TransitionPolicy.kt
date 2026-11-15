@@ -58,16 +58,12 @@ const val MIN_BPM = 40.0
 const val MAX_BPM = 220.0
 
 /**
- * The blend's stretch window: the incoming song may be slowed down by at most
- * 10% and sped up by at most 25% to meet the outgoing tempo. Asymmetric
- * because the two directions fail differently: a stretch that speeds up drops
- * slivers of audio and stays clean far past 10%, while one that slows down has
- * to repeat them, which is where the metallic smear comes from. Past either
- * end the pair is not beatmatched (the filter mix). The web player uses the
- * same window.
+ * The blend's stretch window: strict +-6% tempo gating. The incoming song may
+ * be slowed down by at most 6% and sped up by at most 6% to meet the outgoing tempo.
+ * Past either end the pair is not beatmatched (the filter mix).
  */
-const val MIN_INCOMING_RATE = 0.9
-const val MAX_INCOMING_RATE = 1.25
+const val MIN_INCOMING_RATE = 0.94
+const val MAX_INCOMING_RATE = 1.06
 
 /**
  * The rate the incoming song plays at to meet [outgoingBpm] (its tempo folded

@@ -605,11 +605,11 @@ fun createEqualPowerContentEndPlan(
  * perfectly good mix-in candidate, and the listener arrived at a song with
  * twenty seconds left.
  */
-const val MAX_INCOMING_SKIP_FRACTION = 0.25
+const val MAX_INCOMING_SKIP_FRACTION = 0.18
 
 /** The deepest an incoming song of [length] seconds may be cued; unbounded when the length is unknown. */
 fun latestIncomingCue(length: Double): Double =
-    if (length.isFinite() && length > 0) length * MAX_INCOMING_SKIP_FRACTION else Double.POSITIVE_INFINITY
+    if (length.isFinite() && length > 0) min(45.0, length * 0.18) else Double.POSITIVE_INFINITY
 
 /**
  * Where the incoming track's arrangement arrives: the point the outgoing
@@ -1237,13 +1237,26 @@ fun planWsolaTransition(
     val outgoingOverlapSeconds = overlapBeats * outgoingBeatSeconds
     val overlapSeconds = overlapBeats * incomingBeatSeconds
 
-    val requestedIncomingHandoff =
-        incomingDropTime + ARRANGEMENT_OVERLAP_BEATS * incomingBeatSeconds
-    val maxIncomingHandoff = incomingLength - MIN_CLEARANCE_SECONDS
-    if (maxIncomingHandoff < incomingDropTime) return WsolaPlanResult.Refused("incoming-too-short")
-    val incomingHandoffTime = min(requestedIncomingHandoff, maxIncomingHandoff)
-    val incomingCueTime = incomingHandoffTime - overlapSeconds
-    if (incomingCueTime < audibleStart - 0.05) return WsolaPlanResult.Refused("incoming-no-runway")
+    val introDuration = incomingDropTime - audibleStart
+    val introVocal = vocalActivityBetween(nextAnalysis, audibleStart, incomingDropTime)
+    val hasInstrumentalIntro = introDuration >= 6.0 && (introVocal ?: 0.0) < VOCAL_ACTIVE_THRESHOLD
+
+    val incomingCueTime: Double
+    if (hasInstrumentalIntro) {
+        // Option C: Play from track's audible beginning so instrumental intro builds up under outgoing track
+        incomingCueTime = audibleStart.coerceAtLeast(0.0)
+    } else {
+        // Option A: For short intro or vocal cold-open, cue directly on a 4-bar phrase downbeat
+        val phraseSnap = alignedTransitionStart(
+            analysis = nextAnalysis,
+            target = incomingDropTime,
+            end = incomingLength - MIN_CLEARANCE_SECONDS,
+            preferEarlier = false,
+            minimum = 0.0,
+        )
+        incomingCueTime = phraseSnap.coerceAtLeast(0.0)
+    }
+    val incomingHandoffTime = min(incomingCueTime + overlapSeconds, incomingLength - MIN_CLEARANCE_SECONDS)
 
     val startTarget = overlapEndTarget - outgoingOverlapSeconds
     val transitionStart = alignedTransitionStart(
@@ -1793,7 +1806,8 @@ private fun planTransitionInner(
     val mixOutAnchor = rankedMixOuts.firstOrNull()
         ?.let { MixOutAnchor(it.time, it.type, it.discardedMusicSeconds) }
         ?: MixOutAnchor(finalMixAnchor, "content_end", 0.0)
-    val hasInteriorMixOut = mixOutAnchor.time < finalMixAnchor - 1
+    val safeMixOutTime = mixOutAnchor.time.coerceAtLeast((length * 0.60).coerceAtMost(max(0.0, length - 60.0)))
+    val hasInteriorMixOut = safeMixOutTime < finalMixAnchor - 1
 
     if (albumSequential && sameAlbum(currentTrack, nextTrack) && !hasInteriorMixOut) {
         val transitionStart = max(0.0, length - 0.45)
@@ -1849,7 +1863,7 @@ private fun planTransitionInner(
         )
     }
 
-    val preferredMixAnchor = min(length, mixOutAnchor.time)
+    val preferredMixAnchor = min(length, safeMixOutTime)
     val mixAnchor =
         if (playbackTime >= preferredMixAnchor - 0.05 && preferredMixAnchor < finalMixAnchor - 1) {
             finalMixAnchor
@@ -2156,7 +2170,7 @@ private fun mixPlan(
             incomingDropTime
         }
     val maxIncomingHandoff = nextLength - MIN_INCOMING_CLEARANCE_SECONDS
-    val incomingHandoffTime =
+    var incomingHandoffTime =
         if (maxIncomingHandoff >= incomingDropTime) {
             min(requestedIncomingHandoff, maxIncomingHandoff)
         } else {
@@ -2180,8 +2194,22 @@ private fun mixPlan(
             preferEarlier = true,
             minimum = earliestTransitionStart,
         )
-        finalIncomingCueTime =
-            max(0.0, incomingHandoffTime - (mixEnd - transitionStart) * incomingPlaybackRate)
+        val introDuration = incomingDropTime - rawIncomingCueTime
+        val introVocal = vocalActivityBetween(nextAnalysis, rawIncomingCueTime, incomingDropTime)
+        val hasInstrumentalIntro = introDuration >= 6.0 && (introVocal ?: 0.0) < VOCAL_ACTIVE_THRESHOLD
+        finalIncomingCueTime = if (hasInstrumentalIntro) {
+            rawIncomingCueTime.coerceAtLeast(0.0)
+        } else {
+            val phraseSnap = alignedTransitionStart(
+                analysis = nextAnalysis,
+                target = incomingDropTime,
+                end = nextLength.takeIf { it > 0 } ?: 300.0,
+                preferEarlier = false,
+                minimum = 0.0,
+            )
+            phraseSnap.coerceAtLeast(0.0)
+        }
+        incomingHandoffTime = finalIncomingCueTime + (mixEnd - transitionStart) * incomingPlaybackRate
     } else {
         val clamped = clamp(overlap, handoffSeconds.coerceAtLeast(5.0), max(handoffSeconds.coerceAtLeast(5.0), maximumOverlap))
         val actualOverlap = if (traits != null) wholeBars(clamped, beatSeconds, maximumOverlap) else clamped
